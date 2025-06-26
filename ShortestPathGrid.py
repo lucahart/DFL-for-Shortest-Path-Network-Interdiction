@@ -136,5 +136,18 @@ class ShortestPathGrid(ShortestPath):
         # TODO: Colored edges, Dashed edges
         pass
 
+    def get_num_edges(self) -> int:
+        """
+        Returns the number of edges in the graph.
+
+        ------------
+        Returns
+        ------------
+        int
+            Number of edges in the graph.
+        ------------
+        """
+        
+        return (self.m * (self.n - 1) + (self.m - 1) * self.n)
     
 

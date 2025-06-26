@@ -95,3 +95,16 @@ class ShortestPath:
         raise NotImplementedError("Visualization method is not implemented yet.")
     
         pass
+
+    def get_num_edges(self) -> int:
+        """
+        Returns the number of edges in the graph.
+
+        ------------
+        Returns
+        ------------
+        int
+            Number of edges in the graph.
+        ------------
+        """
+        return self.graph.number_of_edges()
