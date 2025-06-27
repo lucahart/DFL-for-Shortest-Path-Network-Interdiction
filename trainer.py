@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
+from numpy import ndarray
 
 class Trainer:
     def __init__(self,
@@ -99,9 +100,9 @@ class Trainer:
     def fit(self,
             train_loader: DataLoader,
             val_loader: DataLoader = None,
-            epochs: int = 100,
+            epochs: int = 101,
             n_epochs: int = -1
-            ) -> None:
+            ) -> ndarray[float]:
         """
         Fits the model to the training data.
 
@@ -139,4 +140,4 @@ class Trainer:
                 else:
                     print(f"Epoch {epoch:03d} | Train Loss: {train_loss:.4f}")
 
-
+        return train_loss_vector, (val_loss_vector if val_loader else None)
