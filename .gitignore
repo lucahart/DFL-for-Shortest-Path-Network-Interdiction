@@ -1,5 +1,8 @@
-%%% Gitignore file %%%
+### Gitignore file ###
 
-./.venv/*
-./__pycache__/*
+# Ignore virtual environment and cache files
+.venv/
+__pycache__/
 
+# MacOS specific files
+.DS_Store
