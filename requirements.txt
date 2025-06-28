@@ -1,0 +1,18 @@
+# Terminal script for creating a virtual environment and installing dependencies
+# This script assumes you have Python 3 and pip installed.
+# Commands might differ on windows systems.
+
+# Create a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+# Install required packages
+pip install numpy
+pip install networkx
+pip install matplotlib
+pip install pyepo
+pip install torch
+pip install sklearn
+# Install the package in editable mode
+pip install -e .
+

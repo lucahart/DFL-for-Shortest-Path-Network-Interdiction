@@ -1,0 +1,5 @@
+%%% Gitignore file %%%
+
+./.venv/*
+./__pycache__/*
+
