@@ -1,8 +1,9 @@
 from typing import Tuple, Optional
+from pyepo.model.opt import optModel
 import numpy as np
 import networkx as nx
 
-class ShortestPath:
+class ShortestPath(optModel):
     """
     This class can solve shortest path problems for generic graphs.
     """
@@ -43,13 +44,11 @@ class ShortestPath:
         self.graph = nx.Graph()
         self.graph.add_nodes_from(self.vertices)
 
-        # Check if cost length matches the number of arcs
-        if len(self.cost) != len(self.arcs) and len(self.cost) != 1:
-            raise ValueError(f"cost has length {len(self.cost)}, expected {len(self.arcs)}")
-        for i, arc in enumerate(self.arcs):
-            u, v = arc
-            w = self.cost[i] if len(self.cost) > 1 else self.cost[0]
-            self.graph.add_edge(u, v, weight=w)
+        # Set cost
+        self.setObj(self.cost)
+
+        # Call the parent constructor
+        super().__init__()
         pass
 
     def solve(self,
@@ -93,8 +92,6 @@ class ShortestPath:
         """
 
         raise NotImplementedError("Visualization method is not implemented yet.")
-    
-        pass
 
     def get_num_edges(self) -> int:
         """
@@ -108,3 +105,39 @@ class ShortestPath:
         ------------
         """
         return self.graph.number_of_edges()
+    
+    def _getModel(self) -> nx.Graph:
+        """
+        Returns the underlying graph model.
+        
+        ------------
+        Returns
+        ------------
+        nx.Graph
+            The graph representing the shortest path model.
+        ------------
+        """
+        return self.graph, self.cost
+
+    def setObj(self, c: np.ndarray[float] | list[float] | float | None) -> None:
+        """
+        Sets the graph's weights.
+
+        ------------
+        Parameters
+        ------------
+        c : np.ndarray[float] | list[float] | None
+            1D array or list of coefficients for the objective function. If a list/ndarray
+            with a single value is provided, it is applied uniformly to all arcs.
+        ------------
+        """
+
+        if len(self.cost) != len(self.arcs) and len(self.cost) != 1:
+            # Check if cost length matches the number of arcs
+            raise ValueError(f"cost has length {len(self.cost)}, expected {len(self.arcs)}")
+        for i, arc in enumerate(self.arcs):
+            # Add edges to the graph with the specified weights
+            u, v = arc
+            w = self.cost[i] if len(self.cost) > 1 else self.cost[0]
+            self.graph.add_edge(u, v, weight=w)
+        pass
