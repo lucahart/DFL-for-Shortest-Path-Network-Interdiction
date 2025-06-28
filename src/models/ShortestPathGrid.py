@@ -1,7 +1,7 @@
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-from ShortestPath import ShortestPath
+from src.models.ShortestPath import ShortestPath
 
 class ShortestPathGrid(ShortestPath):
     """
@@ -53,8 +53,8 @@ class ShortestPathGrid(ShortestPath):
         pass
 
     def visualize(self,
-                s: int = None,
-                t: int = None,
+                source: int = None,
+                target: int = None,
                 color_edges: list[int, int] | None = None,
                 dashed_edges: list[tuple[int, int]] | None = None
                 ) -> None:
@@ -102,16 +102,16 @@ class ShortestPathGrid(ShortestPath):
             )
 
         # Highlight start and end nodes
-        if s is not None:
+        if source is not None:
             nx.draw_networkx_nodes(
                 self.graph, pos,
-                nodelist=[s],
+                nodelist=[source],
                 node_color='green'
             )
-        if t is not None:
+        if target is not None:
             nx.draw_networkx_nodes(
                 self.graph, pos,
-                nodelist=[t],
+                nodelist=[target],
                 node_color='red'
             )
         

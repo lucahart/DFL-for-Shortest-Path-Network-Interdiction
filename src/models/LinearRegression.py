@@ -24,11 +24,6 @@ class LinearRegression(nn.Module):
 
         out = self.linear(x)
         return out
-    
-    def backward(self, loss):
-        """
-        Backward pass of the linear regression model.
-        """
 
         
         

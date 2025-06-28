@@ -83,8 +83,8 @@ class ShortestPath:
         return solution_edges, objective
         
     def visualize(self,
-                  s: int = None,
-                  t: int = None,
+                  source: int = None,
+                  target: int = None,
                   color_edges: list[tuple[int, int]] | None = None,
                   dashed_edges: list[tuple[int, int]] | None = None
                   ) -> None:
