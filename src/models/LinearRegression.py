@@ -2,6 +2,11 @@ from torch import nn
 
 # build linear model
 class LinearRegression(nn.Module):
+    """Linear Regression Model for Edge Weight Prediction"""
+
+    linear: nn.Linear
+    
+    
 
     def __init__(self, num_feat: int, num_edges: int) -> None:
         """
