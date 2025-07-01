@@ -1,3 +1,4 @@
+from typing import Tuple
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -51,6 +52,47 @@ class ShortestPathGrid(ShortestPath):
         # Run parent class constructor
         super().__init__(arcs, vertices=np.arange(m*n), cost=cost)
         pass
+
+        def _arcs_one_hot(self, 
+                     shortest_path_nodes: list[int]
+                     ) -> Tuple[np.ndarray[float], float]:
+            """
+            Converts a list of arcs to a one-hot encoded tensor.
+
+            ------------
+            Parameters
+            ------------
+            shortest_path_nodes : list of integers
+                List of node indices representing the shortest path.
+            ------------
+            Returns
+            ------------
+            one_hot_vector : np.ndarray[float]
+                A one-hot encoded vector representing the arcs.
+            objective : float
+                The total cost of the shortest path represented by the one-hot vector.
+            ------------
+            """
+
+            # This is an implementation of the arcs_one_hot function exploiting the
+            # grid structure of the graph to reduce the number of loops.
+
+            # Find the arc indices using the grid structure
+            arc_indices = []
+            objective = 0.0
+            for i, u in enumerate(shortest_path_nodes[:-1]):
+                v = shortest_path_nodes[i + 1]
+                if v == u + self.m:
+                    arc_indices.append((self.n-1)*self.m + u - 1)
+                else:
+                    arc_indices.append((u//self.n)*(self.n-1) + u % self.n - 1)
+                objective += self.cost[arc_indices[-1]]
+
+            # Create a one-hot encoded tensor for the arcs
+            one_hot_vector = np.zeros(len(self.arcs), dtype=np.float32)
+            one_hot_vector[arc_indices] = 1.0
+
+            return one_hot_vector, objective
 
     def visualize(self,
                 color_edges: list[int, int] | None = None,
@@ -113,7 +155,7 @@ class ShortestPathGrid(ShortestPath):
         if color_edges is not None:
             nx.draw_networkx_edges(
                 self.graph, pos,
-                edgelist=color_edges,
+                edgelist=ShortestPath.one_hot_to_arcs(self, color_edges),
                 edge_color='red',
                 width=2.5
             )

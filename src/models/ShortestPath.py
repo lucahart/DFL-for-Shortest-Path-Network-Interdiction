@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Tuple
 from pyepo.model.opt import optModel
 import torch
 import numpy as np
@@ -104,12 +104,9 @@ class ShortestPath(optModel):
             method='dijkstra'
             )
 
-        # Convert the path to a list of arcs and compute total cost
-        shortest_path = [ShortestPath.__sort(shortest_path_nodes[i], 
-                                              shortest_path_nodes[i+1]
-                                            ) 
-                          for i in range(len(shortest_path_nodes)-1)]
-        objective = sum(self.graph.edges[edge]['weight'] for edge in shortest_path)
+        # Convert the path to a one-hot vector representation
+
+        shortest_path, objective = self._arcs_one_hot(shortest_path_nodes)
 
         return shortest_path, objective
     
@@ -147,7 +144,7 @@ class ShortestPath(optModel):
             # Set the costs for the current instance
             self.setObj(cost)
             sol, obj = self.solve(source=source, target=target, cost=cost)
-            one_hot_sol = self.arcs_one_hot(sol)
+            one_hot_sol = self._arcs_one_hot(sol)
             solutions_list.append(one_hot_sol)
             objectives_list.append(obj)
         
@@ -177,32 +174,41 @@ class ShortestPath(optModel):
         """
         return (min(u, v), max(u, v))
     
-    def arcs_one_hot(self, 
-                     arcs: list[tuple[int, int]]) -> torch.Tensor:
+    def _arcs_one_hot(self, 
+                     shortest_path_nodes: list[int]
+                     ) -> Tuple[np.ndarray[float], float]:
         """
         Converts a list of arcs to a one-hot encoded tensor.
 
         ------------
         Parameters
         ------------
-        arcs : list of tuples (int, int)
-            List of arcs (edges) in the graph, where each arc is represented as a tuple
-            of two integers (source, target).
+        shortest_path_nodes : list of integers
+            List of node indices representing the shortest path.
         ------------
         Returns
         ------------
-        torch.Tensor
-            A one-hot encoded tensor representing the arcs.
+        one_hot_vector : np.ndarray[float]
+            A one-hot encoded vector representing the arcs.
+        objective : float
+            The total cost of the shortest path represented by the one-hot vector.
         ------------
         """
-        
+
+        # Create list of arcs form shortest path nodes
+        shortest_path = [ShortestPath.__sort(shortest_path_nodes[i],
+                                              shortest_path_nodes[i + 1]
+                                              )
+                         for i in range(len(shortest_path_nodes) - 1)]
+        objective = sum(self.graph.edges[edge]['weight'] for edge in shortest_path)
+
         # Create a one-hot encoded tensor for the arcs
         num_arcs = len(self.arcs)
-        arc_indices = [self.arcs.index(arc) for arc in arcs]
-        one_hot_tensor = torch.zeros(num_arcs, dtype=torch.float32)
-        one_hot_tensor[arc_indices] = 1.0
+        arc_indices = [self.arcs.index(arc) for arc in shortest_path]
+        one_hot_vector = np.zeros(num_arcs, dtype=np.float32)
+        one_hot_vector[arc_indices] = 1.0
 
-        return one_hot_tensor
+        return one_hot_vector, objective
 
     def visualize(self,
                   color_edges: list[tuple[int, int]] | None = None,
@@ -213,20 +219,6 @@ class ShortestPath(optModel):
         """
 
         raise NotImplementedError("Visualization method is not implemented yet.")
-
-    @property
-    def num_edges(self) -> int:
-        """
-        Returns the number of edges in the graph.
-
-        ------------
-        Returns
-        ------------
-        int
-            Number of edges in the graph.
-        ------------
-        """
-        return len(self.arcs)
     
     def _getModel(self) -> nx.Graph:
         """
@@ -295,3 +287,41 @@ class ShortestPath(optModel):
             w = c[i] if len(c) > 1 else c[0]
             self.graph.add_edge(u, v, weight=w)
         pass
+
+    @staticmethod
+    def one_hot_to_arcs(model: 'ShortestPath',
+                         one_hot_vector: np.ndarray[float]
+                         ) -> list[tuple[int, int]]:
+        """
+        Converts a one-hot encoded vector back to a list of arcs.
+
+        ------------
+        Parameters
+        ------------
+        model : ShortestPath
+            The ShortestPath model instance.
+        one_hot_vector : np.ndarray[float]
+            A one-hot encoded vector representing the arcs.
+        ------------
+        Returns
+        ------------
+        arcs : list of tuples (int, int)
+            List of arcs (edges) in the graph, where each arc is represented as a tuple
+            of two integers.
+        ------------
+        """
+        return [arc for arc in model.arcs if one_hot_vector[model.arcs.index(arc)] > 0]
+
+    @property
+    def num_edges(self) -> int:
+        """
+        Returns the number of edges in the graph.
+
+        ------------
+        Returns
+        ------------
+        int
+            Number of edges in the graph.
+        ------------
+        """
+        return len(self.arcs)
