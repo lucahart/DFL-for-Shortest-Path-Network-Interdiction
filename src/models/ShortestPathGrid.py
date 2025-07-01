@@ -11,7 +11,7 @@ class ShortestPathGrid(ShortestPath):
     def __init__(self, 
                 m: int,
                 n: int,
-                cost: list[float] | np.ndarray[float] | None = None
+                cost: np.ndarray[float] | None = None
                 ):
         """
         Constructs shortest path model for a grid of the size m x n.
@@ -24,7 +24,7 @@ class ShortestPathGrid(ShortestPath):
             Number of rows.
         n : int
             Number of columns.
-        cost : sequence of float, length m*(n-1) + (m-1)*n
+        cost : ndarray, length m*(n-1) + (m-1)*n
             Edge‐weights, first all horizontal edges (left -> right, row by row),
             then all vertical edges (top -> bottom, column by column).
         ------------
@@ -53,8 +53,6 @@ class ShortestPathGrid(ShortestPath):
         pass
 
     def visualize(self,
-                source: int = None,
-                target: int = None,
                 color_edges: list[int, int] | None = None,
                 dashed_edges: list[tuple[int, int]] | None = None
                 ) -> None:
@@ -65,8 +63,6 @@ class ShortestPathGrid(ShortestPath):
         ------------ 
         Parameters
         ------------
-        s, t : int
-            Start and end node indices: 0 ≤ s, t < m*n.
         color_edges : list of tuples (int, int), optional
             Edges to highlight in color.
         dashed_edges : list of tuples (int, int), optional
@@ -90,7 +86,7 @@ class ShortestPathGrid(ShortestPath):
         # Draw weight labels if exists
         if len(self.cost) > 1:
             edge_labels = {
-                edge: f"{self.cost[idx]}"
+                edge: f"{self.cost[idx]:.2f}"
                 for idx, edge in enumerate(self.arcs)
             }
             nx.draw_networkx_edge_labels(
@@ -102,18 +98,16 @@ class ShortestPathGrid(ShortestPath):
             )
 
         # Highlight start and end nodes
-        if source is not None:
-            nx.draw_networkx_nodes(
-                self.graph, pos,
-                nodelist=[source],
-                node_color='green'
-            )
-        if target is not None:
-            nx.draw_networkx_nodes(
-                self.graph, pos,
-                nodelist=[target],
-                node_color='red'
-            )
+        nx.draw_networkx_nodes(
+            self.graph, pos,
+            nodelist=[self.source],
+            node_color='green'
+        )
+        nx.draw_networkx_nodes(
+            self.graph, pos,
+            nodelist=[self.target],
+            node_color='red'
+        )
         
         # Highlight color edges
         if color_edges is not None:
@@ -132,22 +126,6 @@ class ShortestPathGrid(ShortestPath):
                 style='dashed',
                 width=1.5
             )
-
-        # TODO: Colored edges, Dashed edges
         pass
-
-    def num_edges(self) -> int:
-        """
-        Returns the number of edges in the graph.
-
-        ------------
-        Returns
-        ------------
-        int
-            Number of edges in the graph.
-        ------------
-        """
-        
-        return (self.m * (self.n - 1) + (self.m - 1) * self.n)
     
 
