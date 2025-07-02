@@ -3,6 +3,7 @@
 # Ignore virtual environment and cache files
 .venv/
 __pycache__/
+.egg-info/
 
 # MacOS specific files
 .DS_Store

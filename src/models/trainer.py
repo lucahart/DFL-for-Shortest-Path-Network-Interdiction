@@ -163,10 +163,10 @@ class Trainer:
 
         # Initialize loss and regret vectors
         train_loss_vector = []
-        train_regret_vector = []
+        train_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)]
         if test_loader is not None:
             test_loss_vector = []
-            test_regret_vector = []
+            test_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, test_loader)]
 
         # Training loop
         for epoch in range(epochs):
