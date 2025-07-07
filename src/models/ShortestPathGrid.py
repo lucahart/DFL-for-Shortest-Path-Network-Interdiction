@@ -164,7 +164,7 @@ class ShortestPathGrid(ShortestPath):
         if dashed_edges is not None:
             nx.draw_networkx_edges(
                 self.graph, pos,
-                edgelist=dashed_edges,
+                edgelist=ShortestPath.one_hot_to_arcs(self, dashed_edges),
                 style='dashed',
                 width=1.5
             )

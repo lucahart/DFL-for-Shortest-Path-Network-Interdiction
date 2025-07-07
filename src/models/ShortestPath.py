@@ -68,90 +68,90 @@ class ShortestPath(optModel):
         super().__init__()
         pass
 
-    # def solve(self,
-    #           cost: torch.Tensor | np.ndarray[float] | None = None
-    #           ) -> Tuple[list[tuple[int, int]], float]:
-    #     """
-    #     Solves the shortest path problem using Dijkstra's algorithm.
+    def solve(self,
+              cost: torch.Tensor | np.ndarray[float] | None = None
+              ) -> Tuple[list[tuple[int, int]], float]:
+        """
+        Solves the shortest path problem using Dijkstra's algorithm.
 
-    #     ------------
-    #     Returns
-    #     ------------
-    #     shortest_path : list of tuples (int, int)
-    #         List of arcs (edges) in the shortest path, where each arc is 
-    #         represented as a tuple of two integers (source, target).
-    #     objective : float
-    #         Total cost of the shortest path.
-    #     ------------
-    #     """
+        ------------
+        Returns
+        ------------
+        shortest_path : list of tuples (int, int)
+            List of arcs (edges) in the shortest path, where each arc is 
+            represented as a tuple of two integers (source, target).
+        objective : float
+            Total cost of the shortest path.
+        ------------
+        """
         
-    #     # If costs are provided, update the graph's weights
-    #     if isinstance(cost, torch.Tensor):
-    #         # If a tensor is provided, return a batch of solutions
-    #         return self._solve_tensor(cost, self.source, self.target)
-    #     elif isinstance(cost, np.ndarray):
-    #         self.setObj(cost)
-    #     elif cost is not None:
-    #         raise ValueError(
-    #             f"Expected costs to be a 1D array or tensor, got {type(cost)} instead.")
+        # If costs are provided, update the graph's weights
+        if isinstance(cost, torch.Tensor):
+            # If a tensor is provided, return a batch of solutions
+            return self._solve_tensor(cost, self.source, self.target)
+        elif isinstance(cost, np.ndarray):
+            self.setObj(cost)
+        elif cost is not None:
+            raise ValueError(
+                f"Expected costs to be a 1D array or tensor, got {type(cost)} instead.")
 
-    #     # Compute the shortest path and its total cost with Dijkstra's algorithm
-    #     shortest_path_nodes = nx.shortest_path(
-    #         self.graph, 
-    #         source=self.source, 
-    #         target=self.target, 
-    #         weight='weight', 
-    #         method='dijkstra'
-    #         )
+        # Compute the shortest path and its total cost with Dijkstra's algorithm
+        shortest_path_nodes = nx.shortest_path(
+            self.graph, 
+            source=self.source, 
+            target=self.target, 
+            weight='weight', 
+            method='dijkstra'
+            )
 
-    #     # Convert the path to a one-hot vector representation
+        # Convert the path to a one-hot vector representation
 
-    #     shortest_path, objective = self._arcs_one_hot(shortest_path_nodes)
+        shortest_path, objective = self._arcs_one_hot(shortest_path_nodes)
 
-    #     return shortest_path, objective
+        return shortest_path, objective
     
-    # def _solve_tensor(self, 
-    #                   costs: torch.Tensor,
-    #                   source: int,
-    #                   target: int) -> None:
-    #     """
-    #     Solves a batch of shortest path problems using the provided costs tensor.
+    def _solve_tensor(self, 
+                      costs: torch.Tensor,
+                      source: int,
+                      target: int) -> None:
+        """
+        Solves a batch of shortest path problems using the provided costs tensor.
 
-    #     ------------
-    #     Parameters
-    #     ------------
-    #     costs : Tensor[float]
-    #         A tensor containing the costs for all instances of the data batch.
-    #     ------------
-    #     """
+        ------------
+        Parameters
+        ------------
+        costs : Tensor[float]
+            A tensor containing the costs for all instances of the data batch.
+        ------------
+        """
         
-    #     # Ensure costs is a 2D tensor of appropriate shape
-    #     costs_arr = costs.detach().numpy()
-    #     if costs_arr.ndim != 2:
-    #         raise ValueError(
-    #             f"Expected costs to be a 2D tensor, got {costs_arr.ndim}D tensor instead.")
-    #     if costs_arr.shape[1] != len(self.arcs):
-    #         raise ValueError(
-    #             f"Expected costs to have {len(self.arcs)} columns, " + 
-    #             f"got {costs_arr.shape[1]} columns instead.")
+        # Ensure costs is a 2D tensor of appropriate shape
+        costs_arr = costs.detach().numpy()
+        if costs_arr.ndim != 2:
+            raise ValueError(
+                f"Expected costs to be a 2D tensor, got {costs_arr.ndim}D tensor instead.")
+        if costs_arr.shape[1] != len(self.arcs):
+            raise ValueError(
+                f"Expected costs to have {len(self.arcs)} columns, " + 
+                f"got {costs_arr.shape[1]} columns instead.")
 
-    #     # Initialize lists to store solutions and objectives
-    #     solutions_list = []
-    #     objectives_list = []
+        # Initialize lists to store solutions and objectives
+        solutions_list = []
+        objectives_list = []
 
-    #     # Iterate over each instance in the batch
-    #     for cost in costs_arr:
-    #         # Set the costs for the current instance
-    #         self.setObj(cost)
-    #         sol, obj = self.solve(source=source, target=target, cost=cost)
-    #         one_hot_sol = self._arcs_one_hot(sol)
-    #         solutions_list.append(one_hot_sol)
-    #         objectives_list.append(obj)
+        # Iterate over each instance in the batch
+        for cost in costs_arr:
+            # Set the costs for the current instance
+            self.setObj(cost)
+            sol, obj = self.solve(source=source, target=target, cost=cost)
+            one_hot_sol = self._arcs_one_hot(sol)
+            solutions_list.append(one_hot_sol)
+            objectives_list.append(obj)
         
-    #     # Return the solutions and objectives
-    #     solutions = torch.from_numpy(np.array(solutions_list))
-    #     objectives = torch.from_numpy(np.array(objectives_list))
-    #     return solutions, objectives
+        # Return the solutions and objectives
+        solutions = torch.from_numpy(np.array(solutions_list))
+        objectives = torch.from_numpy(np.array(objectives_list))
+        return solutions, objectives
     
     @staticmethod
     def __sort(u: int, v: int) -> tuple[int, int]:
@@ -200,13 +200,14 @@ class ShortestPath(optModel):
                                               shortest_path_nodes[i + 1]
                                               )
                          for i in range(len(shortest_path_nodes) - 1)]
-        objective = sum(self.graph.edges[edge]['weight'] for edge in shortest_path)
+        # objective = sum(self.graph.edges[edge]['weight'] for edge in shortest_path)
 
         # Create a one-hot encoded tensor for the arcs
         num_arcs = len(self.arcs)
         arc_indices = [self.arcs.index(arc) for arc in shortest_path]
         one_hot_vector = np.zeros(num_arcs, dtype=np.float32)
         one_hot_vector[arc_indices] = 1.0
+        objective = one_hot_vector @ self.cost
 
         return one_hot_vector, objective
 
@@ -221,42 +222,44 @@ class ShortestPath(optModel):
         raise NotImplementedError("Visualization method is not implemented yet.")
     
     def _getModel(self):
-        """
-        A method to build Gurobi model (from PyEPO Documentation).
+        # """
+        # A method to build Gurobi model (from PyEPO Documentation).
 
-        Returns:
-            tuple: optimization model and variables
-        """
-        import gurobipy as gp
-        from gurobipy import GRB
-        # ceate a model
-        m = gp.Model("shortest path")
-        # varibles
-        x = m.addVars(self.arcs, name="x")
-        # sense
-        m.modelSense = GRB.MINIMIZE
-        # flow conservation constraints
-        for i in range(self.grid[0]):
-            for j in range(self.grid[1]):
-                v = i * self.grid[1] + j
-                expr = 0
-                for e in self.arcs:
-                    # flow in
-                    if v == e[1]:
-                        expr += x[e]
-                    # flow out
-                    elif v == e[0]:
-                        expr -= x[e]
-                # source
-                if i == 0 and j == 0:
-                    m.addConstr(expr == -1)
-                # sink
-                elif i == self.grid[0] - 1 and j == self.grid[0] - 1:
-                    m.addConstr(expr == 1)
-                # transition
-                else:
-                    m.addConstr(expr == 0)
-        return m, x
+        # Returns:
+        #     tuple: optimization model and variables
+        # """
+        # import gurobipy as gp
+        # from gurobipy import GRB
+        # # ceate a model
+        # m = gp.Model("shortest path")
+        # # varibles
+        # x = m.addVars(self.arcs, name="x")
+        # # sense
+        # m.modelSense = GRB.MINIMIZE
+        # # flow conservation constraints
+        # for i in range(self.grid[0]):
+        #     for j in range(self.grid[1]):
+        #         v = i * self.grid[1] + j
+        #         expr = 0
+        #         for e in self.arcs:
+        #             # flow in
+        #             if v == e[1]:
+        #                 expr += x[e]
+        #             # flow out
+        #             elif v == e[0]:
+        #                 expr -= x[e]
+        #         # source
+        #         if i == 0 and j == 0:
+        #             m.addConstr(expr == -1)
+        #         # sink
+        #         elif i == self.grid[0] - 1 and j == self.grid[0] - 1:
+        #             m.addConstr(expr == 1)
+        #         # transition
+        #         else:
+        #             m.addConstr(expr == 0)
+        # return m, x
+
+        return self.graph, self.cost
 
     def setObj(self, 
                c: np.ndarray[float] | list[float] | float | None,
