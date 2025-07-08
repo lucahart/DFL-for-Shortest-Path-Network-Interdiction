@@ -9,6 +9,10 @@ class ShortestPathGrid(ShortestPath):
     Generic shortest path for grids.
     """
 
+    # Attributes
+    m: int # Number of rows in the grid
+    n: int # Number of columns in the grid
+
     def __init__(self, 
                 m: int,
                 n: int,
@@ -169,5 +173,15 @@ class ShortestPathGrid(ShortestPath):
                 width=1.5
             )
         pass
-    
 
+    def copy(self) -> 'ShortestPathGrid':
+        """
+        Create a copy of the current grid object.
+
+        Returns
+        -------
+        ShortestPathGrid
+            A new instance of ShortestPathGrid with the same properties.
+        """
+
+        return ShortestPathGrid(self.m, self.n, self.cost.copy() if self.cost is not None else None)

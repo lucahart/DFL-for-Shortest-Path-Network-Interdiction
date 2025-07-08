@@ -316,6 +316,24 @@ class ShortestPath(optModel):
             self.graph.add_edge(u, v, weight=w)
         pass
 
+    def copy(self) -> 'ShortestPath':
+        """
+        Creates a copy of the current ShortestPath instance.
+
+        ------------
+        Returns
+        ------------
+        ShortestPath
+            A new instance of ShortestPath with the same attributes.
+        ------------
+        """
+        new_instance = ShortestPath(
+            arcs=self.arcs.copy(),
+            vertices=self.vertices.copy(),
+            cost=self.cost.copy()
+        )
+        return new_instance
+
     @staticmethod
     def one_hot_to_arcs(model: 'ShortestPath',
                          one_hot_vector: np.ndarray[float]
