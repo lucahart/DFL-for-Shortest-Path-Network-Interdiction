@@ -70,7 +70,7 @@ class ShortestPath(optModel):
 
     def solve(self,
               cost: torch.Tensor | np.ndarray[float] | None = None
-              ) -> Tuple[list[tuple[int, int]], float]:
+              ) -> Tuple[np.ndarray, float]:
         """
         Solves the shortest path problem using Dijkstra's algorithm.
 
@@ -212,8 +212,8 @@ class ShortestPath(optModel):
         return one_hot_vector, objective
 
     def visualize(self,
-                  color_edges: list[tuple[int, int]] | None = None,
-                  dashed_edges: list[tuple[int, int]] | None = None
+                  colored_edges: np.ndarray | None = None,
+                  dashed_edges: np.ndarray | None = None
                   ) -> None:
         """
         TODO: Implement visualization method.

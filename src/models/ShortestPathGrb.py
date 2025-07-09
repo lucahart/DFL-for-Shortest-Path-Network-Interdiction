@@ -1,33 +1,61 @@
-# build optModel
+import gurobipy as gp
+from gurobipy import GRB
 from pyepo.model.grb import optGrbModel
+from typing import Tuple
+from numpy import ndarray
+from src.models.ShortestPath import ShortestPath
 
 class shortestPathGrb(optGrbModel):
 
-    def __init__(self):
-        self.grid = (5,5)
-        self.arcs = self._getArcs()
+    _graph: 'ShortestPath'
+
+    def __init__(self,
+                 graph: 'ShortestPath'):
+        
+        # Store graph instance
+        self._graph = graph
+        # Run parent class constructors
         super().__init__()
+        # Update the gurobi model with the edge weights of the graph
+        self.setObj(self._graph.cost)
+        pass
 
-    def _getArcs(self):
+    @property
+    def cost(self):
         """
-        A helper method to get list of arcs for grid network
+        Linear cost vector representing edge weights.
+        """
 
-        Returns:
-            list: arcs
-        """
-        arcs = []
-        for i in range(self.grid[0]):
-            # edges on rows
-            for j in range(self.grid[1] - 1):
-                v = i * self.grid[1] + j
-                arcs.append((v, v + 1))
-            # edges in columns
-            if i == self.grid[0] - 1:
-                continue
-            for j in range(self.grid[1]):
-                v = i * self.grid[1] + j
-                arcs.append((v, v + self.grid[1]))
-        return arcs
+        return self._graph.cost
+    
+    def solve(self,
+              versatile: bool = False
+              ) -> Tuple[ndarray, float]:
+        
+        # Run solver to find solution
+        sol, obj = super().solve()
+
+        # Show solution in graph if versatile is True
+        if versatile:
+            self._graph.visualize(colored_edges=sol)
+
+        # Return solution
+        return sol, obj
+    
+    def visualize(self,
+                  colored_edges: ndarray | None = None,
+                  dashed_edges: ndarray | None = None):
+        
+        # Run visualize method of graph instance
+        self._graph.visualize(colored_edges=colored_edges, 
+                              dashed_edges=dashed_edges)
+
+    def setObj(self,
+               c: ndarray
+               ) -> None:
+        
+        self._graph.setObj(c)
+        super().setObj(c)
 
     def _getModel(self):
         """
@@ -36,33 +64,33 @@ class shortestPathGrb(optGrbModel):
         Returns:
             tuple: optimization model and variables
         """
-        import gurobipy as gp
-        from gurobipy import GRB
         # ceate a model
         m = gp.Model("shortest path")
         # varibles
-        x = m.addVars(self.arcs, name="x")
+        x = m.addVars(self._graph.arcs, name="x")
         # sense
         m.modelSense = GRB.MINIMIZE
         # flow conservation constraints
-        for i in range(self.grid[0]):
-            for j in range(self.grid[1]):
-                v = i * self.grid[1] + j
-                expr = 0
-                for e in self.arcs:
-                    # flow in
-                    if v == e[1]:
-                        expr += x[e]
-                    # flow out
-                    elif v == e[0]:
-                        expr -= x[e]
-                # source
-                if i == 0 and j == 0:
-                    m.addConstr(expr == -1)
-                # sink
-                elif i == self.grid[0] - 1 and j == self.grid[0] - 1:
-                    m.addConstr(expr == 1)
-                # transition
-                else:
-                    m.addConstr(expr == 0)
+        for v in self._graph.vertices:
+            expr = 0
+            for e in self._graph.arcs:
+                # flow in
+                if v == e[1]:
+                    expr += x[e]
+                # flow out
+                elif v == e[0]:
+                    expr -= x[e]
+            # source
+            if v == self._graph.source:
+                m.addConstr(expr == -1)
+            # sink
+            elif v == self._graph.target:
+                m.addConstr(expr == 1)
+            # transition
+            else:
+                m.addConstr(expr == 0)
         return m, x
+    
+    def copy(self):
+
+        return shortestPathGrb(self._graph)

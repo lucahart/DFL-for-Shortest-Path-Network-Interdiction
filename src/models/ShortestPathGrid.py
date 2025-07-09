@@ -99,8 +99,8 @@ class ShortestPathGrid(ShortestPath):
             return one_hot_vector, objective
 
     def visualize(self,
-                color_edges: list[int, int] | None = None,
-                dashed_edges: list[tuple[int, int]] | None = None
+                colored_edges: np.ndarray | None = None,
+                dashed_edges: np.ndarray | None = None
                 ) -> None:
         """
         Visualize an m×n grid with edge‐weights. Optionally add
@@ -156,10 +156,10 @@ class ShortestPathGrid(ShortestPath):
         )
         
         # Highlight color edges
-        if color_edges is not None:
+        if colored_edges is not None:
             nx.draw_networkx_edges(
                 self.graph, pos,
-                edgelist=ShortestPath.one_hot_to_arcs(self, color_edges),
+                edgelist=ShortestPath.one_hot_to_arcs(self, colored_edges),
                 edge_color='red',
                 width=2.5
             )

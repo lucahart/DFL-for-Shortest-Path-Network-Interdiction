@@ -8,7 +8,7 @@ from src.models.ShortestPath import ShortestPath
 class BendersDecomposition:
 
     # Attributes
-    _graph: 'ShortestPath'  # Reference to the ShortestPath object
+    opt_model: 'ShortestPath'  # Reference to the ShortestPath object
     _model: gp.Model  # Gurobi model
     k: int  # Budget for the max-min knapsack problem
     max_cnt: int  # Maximum number of iterations for Bender's algorithm
@@ -17,7 +17,7 @@ class BendersDecomposition:
     # n: int  # Number of arcs (edges) in the grid (also number of decision variables in the max-min knapsack problem)
 
     def __init__(self,
-                 graph: 'ShortestPath',
+                 opt_model: 'ShortestPath',
                  k: int = 5,
                  interdiction_cost: np.ndarray | None = None,
                  max_cnt: int = 10,
@@ -26,7 +26,7 @@ class BendersDecomposition:
                  ):
 
         # Copy the provided instance of a graph
-        self._graph = graph.copy()
+        self.opt_model = opt_model.copy()
 
         # Initialize the Gurobi model
         # If output_flag is False, suppress Gurobi log output
@@ -42,12 +42,12 @@ class BendersDecomposition:
 
         # Set interdiction costs if provided
         if interdiction_cost is not None:
-            if len(interdiction_cost) != self._graph.num_cost:
+            if len(interdiction_cost) != self.opt_model.num_cost:
                 raise ValueError("Interdiction cost must match the number of edges in the graph.")
             self.interdiction_cost = interdiction_cost
         else:
             # If no interdiction cost is provided, initialize with zeros
-            self.interdiction_cost = np.zeros(self._graph.num_cost)
+            self.interdiction_cost = np.zeros(self.opt_model.num_cost)
         pass
 
     def solve_maxmin_knapsack(self,
@@ -127,6 +127,10 @@ class BendersDecomposition:
             The difference between the max-min and min-max objective values.
         """
 
+        # Print that Bender's decomposition algorithm started
+        print("Bender's decomposition running:\n"
+              "-------------------------------")
+
         # Initialization
         diff = np.inf
         cnt = 0
@@ -134,7 +138,7 @@ class BendersDecomposition:
         while (diff > self.eps and cnt < self.max_cnt):
             cnt += 1
             # Solve the shortest path problem of the follower
-            shortest_path_y, z_min = self._graph.solve()
+            shortest_path_y, z_min = self.opt_model.solve()
             # 
             if cnt == 1:
                 A = np.reshape(interdiction_cost * shortest_path_y, (1, -1))
@@ -145,17 +149,18 @@ class BendersDecomposition:
             # Solve the max-min knapsack problem of the leader
             interdictions_x, z_max = self.solve_maxmin_knapsack(A, b)
             # Update costs
-            self._graph.setObj(self._graph.cost + interdiction_cost * interdictions_x)
+            self.opt_model.setObj(self.opt_model.cost + interdiction_cost * interdictions_x)
             # Calculate the difference
             diff = z_max - z_min
             print(f"Iteration {cnt}: z_max = {z_max}, z_min = {z_min}")
 
-        print("------------------------\n" + 
+        print("-------------------------------\n" + 
               f"Found epsilon-optimal solution after {cnt} iterations with epsilon = {diff:.2f}")
 
         return interdictions_x, shortest_path_y, z_min
     
-    def solve(self) -> tuple[np.ndarray, np.ndarray, float]:
+    def solve(self,
+              versatile: bool = False) -> tuple[np.ndarray, np.ndarray, float]:
         """
         Solve the Benders decomposition problem.
         
@@ -169,7 +174,15 @@ class BendersDecomposition:
             The minimum cost of the shortest path.
         """
 
-        return self.benders_decomposition(self.interdiction_cost)
+        # Compute solution
+        interdictions_x, shortest_path_y, z_min = self.benders_decomposition(self.interdiction_cost)
+
+        # Show solution in graph if versatile is True
+        if versatile:
+            self.opt_model.visualize(colored_edges=shortest_path_y, dashed_edges=interdictions_x)
+            
+        # Return solution
+        return interdictions_x, shortest_path_y, z_min
     
     def __call__(self) -> tuple[np.ndarray, np.ndarray, float]:
         """
