@@ -3,6 +3,7 @@ from gurobipy import GRB
 from pyepo.model.grb import optGrbModel
 from typing import Tuple
 from numpy import ndarray
+from torch import Tensor
 from src.models.ShortestPath import ShortestPath
 
 class shortestPathGrb(optGrbModel):
@@ -10,14 +11,14 @@ class shortestPathGrb(optGrbModel):
     _graph: 'ShortestPath'
 
     def __init__(self,
-                 graph: 'ShortestPath'):
+                 graph: 'ShortestPath' = None):
         
         # Store graph instance
         self._graph = graph
         # Run parent class constructors
         super().__init__()
         # Update the gurobi model with the edge weights of the graph
-        self.setObj(self._graph.cost)
+        super().setObj(self._graph.cost)
         pass
 
     @property
@@ -54,8 +55,15 @@ class shortestPathGrb(optGrbModel):
                c: ndarray
                ) -> None:
         
-        self._graph.setObj(c)
+        # Update local graph model objective
+        if isinstance(c, Tensor):
+            self._graph.setObj(c.numpy())
+        else:
+            self._graph.setObj(c)
+        
+        # Update gurobi model's objective
         super().setObj(c)
+        pass
 
     def _getModel(self):
         """

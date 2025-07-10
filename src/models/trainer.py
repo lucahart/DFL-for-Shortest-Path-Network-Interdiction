@@ -84,12 +84,6 @@ class Trainer:
             sols = sols.to(self.device)
             objs = objs.to(self.device)
 
-            
-
-            # # Reset gradients
-            # self.model.train()
-            # self.optimizer.zero_grad()
-
             # Forward pass
             costs_pred = self.pred_model(feats)
             loss = type(self).compute_loss(
@@ -150,7 +144,6 @@ class Trainer:
                                                       objs,
                                                       self.method_name
                                                     ).item() * feats.size(0)
-
         # Compute regret
         regret = pyepo.metric.regret(self.pred_model, self.opt_model, loader)
 
@@ -191,19 +184,19 @@ class Trainer:
         if test_loader is not None:
             test_loss_vector = []
             test_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, test_loader)]
-
+        
         # Training loop
         for epoch in range(epochs):
             # Train the model for one epoch
             train_loss = self.train_epoch(train_loader)
-
+            
             # Evaluate training regret
             train_regret = pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)
 
             # Append loss and regret to vectors
             train_loss_vector.append(train_loss)
             train_regret_vector.append(train_regret)
-
+            
             # Print loss every n_epochs
             if epoch % self.n_epochs == 0:
                 if test_loader:
