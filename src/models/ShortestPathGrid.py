@@ -3,6 +3,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from src.models.ShortestPath import ShortestPath
+from copy import deepcopy
 
 class ShortestPathGrid(ShortestPath):
     """
@@ -22,9 +23,8 @@ class ShortestPathGrid(ShortestPath):
         Constructs shortest path model for a grid of the size m x n.
         A cost can optionally be specified.
 
-        ------------
         Parameters
-        ------------
+        ----------
         m : int
             Number of rows.
         n : int
@@ -32,7 +32,6 @@ class ShortestPathGrid(ShortestPath):
         cost : ndarray, length m*(n-1) + (m-1)*n
             Edge‐weights, first all horizontal edges (left -> right, row by row),
             then all vertical edges (top -> bottom, column by column).
-        ------------
         """
 
         # Store grid dimensions
@@ -57,46 +56,56 @@ class ShortestPathGrid(ShortestPath):
         super().__init__(arcs, vertices=np.arange(m*n), cost=cost)
         pass
 
-        def _arcs_one_hot(self, 
-                     shortest_path_nodes: list[int]
-                     ) -> Tuple[np.ndarray[float], float]:
-            """
-            Converts a list of arcs to a one-hot encoded tensor.
+    def __deepcopy__(self, memo) -> 'ShortestPathGrid':
+        """
+        Create a deepcopy of the current grid object.
 
-            ------------
-            Parameters
-            ------------
-            shortest_path_nodes : list of integers
-                List of node indices representing the shortest path.
-            ------------
-            Returns
-            ------------
-            one_hot_vector : np.ndarray[float]
-                A one-hot encoded vector representing the arcs.
-            objective : float
-                The total cost of the shortest path represented by the one-hot vector.
-            ------------
-            """
+        Returns
+        -------
+        ShortestPathGrid
+            A new instance of ShortestPathGrid with the same properties.
+        """
+        
+        return ShortestPathGrid(self.m, self.n, deepcopy(self.cost, memo) if self.cost is not None else None)
 
-            # This is an implementation of the arcs_one_hot function exploiting the
-            # grid structure of the graph to reduce the number of loops.
+    def _arcs_one_hot(self, 
+                    shortest_path_nodes: list[int]
+                    ) -> Tuple[np.ndarray[float], float]:
+        """
+        Converts a list of arcs to a one-hot encoded tensor.
 
-            # Find the arc indices using the grid structure
-            arc_indices = []
-            objective = 0.0
-            for i, u in enumerate(shortest_path_nodes[:-1]):
-                v = shortest_path_nodes[i + 1]
-                if v == u + self.m:
-                    arc_indices.append((self.n-1)*self.m + u - 1)
-                else:
-                    arc_indices.append((u//self.n)*(self.n-1) + u % self.n - 1)
-                objective += self.cost[arc_indices[-1]]
+        Parameters
+        ----------
+        shortest_path_nodes : list of integers
+            List of node indices representing the shortest path.
+            
+        Returns
+        -------
+        one_hot_vector : np.ndarray[float]
+            A one-hot encoded vector representing the arcs.
+        objective : float
+            The total cost of the shortest path represented by the one-hot vector.
+        """
 
-            # Create a one-hot encoded tensor for the arcs
-            one_hot_vector = np.zeros(len(self.arcs), dtype=np.float32)
-            one_hot_vector[arc_indices] = 1.0
+        # This is an implementation of the arcs_one_hot function exploiting the
+        # grid structure of the graph to reduce the number of loops.
 
-            return one_hot_vector, objective
+        # Find the arc indices using the grid structure
+        arc_indices = []
+        objective = 0.0
+        for i, u in enumerate(shortest_path_nodes[:-1]):
+            v = shortest_path_nodes[i + 1]
+            if v == u + self.m:
+                arc_indices.append((self.n-1)*self.m + u - 1)
+            else:
+                arc_indices.append((u//self.n)*(self.n-1) + u % self.n - 1)
+            objective += self.cost[arc_indices[-1]]
+
+        # Create a one-hot encoded tensor for the arcs
+        one_hot_vector = np.zeros(len(self.arcs), dtype=np.float32)
+        one_hot_vector[arc_indices] = 1.0
+
+        return one_hot_vector, objective
 
     def visualize(self,
                 colored_edges: np.ndarray | None = None,
@@ -106,14 +115,12 @@ class ShortestPathGrid(ShortestPath):
         Visualize an m×n grid with edge‐weights. Optionally add
         start/end labels, highlight color edges, or highlight dashed edges.
 
-        ------------ 
         Parameters
-        ------------
+        ----------
         color_edges : list of tuples (int, int), optional
             Edges to highlight in color.
         dashed_edges : list of tuples (int, int), optional
             Edges to draw with dashed style.
-        ------------
         """
 
         # Specify positions for nodes in the grid
@@ -173,15 +180,3 @@ class ShortestPathGrid(ShortestPath):
                 width=1.5
             )
         pass
-
-    def copy(self) -> 'ShortestPathGrid':
-        """
-        Create a copy of the current grid object.
-
-        Returns
-        -------
-        ShortestPathGrid
-            A new instance of ShortestPathGrid with the same properties.
-        """
-
-        return ShortestPathGrid(self.m, self.n, self.cost.copy() if self.cost is not None else None)

@@ -1,6 +1,7 @@
 import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
+from copy import deepcopy
 
 from src.models.ShortestPath import ShortestPath
 
@@ -26,7 +27,7 @@ class BendersDecomposition:
                  ):
 
         # Copy the provided instance of a graph
-        self.opt_model = opt_model.copy()
+        self.opt_model = deepcopy(opt_model)
 
         # Initialize the Gurobi model
         # If output_flag is False, suppress Gurobi log output
@@ -49,6 +50,29 @@ class BendersDecomposition:
             # If no interdiction cost is provided, initialize with zeros
             self.interdiction_cost = np.zeros(self.opt_model.num_cost)
         pass
+
+    def __deepcopy__(self, memo):
+        """
+        Create a deep copy of the BendersDecomposition instance.
+        
+        Parameters
+        ----------
+        memo : dict
+            A dictionary to keep track of already copied objects.
+
+        Returns
+        -------
+        BendersDecomposition
+            A new instance of BendersDecomposition with the same attributes.
+        """
+        
+        # Create a new instance and copy the graph and other attributes
+        new_instance = BendersDecomposition(self.opt_model, 
+                                            self.k, 
+                                            self.interdiction_cost.copy() if self.interdiction_cost is not None else None,
+                                            self.max_cnt, 
+                                            self.eps)
+        return new_instance
 
     def solve_maxmin_knapsack(self,
                               A: np.ndarray, 
@@ -114,9 +138,7 @@ class BendersDecomposition:
             The grid object containing the graph and costs.
         interdiction_cost : ndarray
             The cost of interdicting each edge.
-        k : int
-            The budget for interdiction.
-        
+
         Returns
         -------
         interdictions_x : ndarray
@@ -134,6 +156,7 @@ class BendersDecomposition:
         # Initialization
         diff = np.inf
         cnt = 0
+        org_cost = self.opt_model.cost.copy()
 
         while (diff > self.eps and cnt < self.max_cnt):
             cnt += 1
@@ -142,14 +165,14 @@ class BendersDecomposition:
             # 
             if cnt == 1:
                 A = np.reshape(interdiction_cost * shortest_path_y, (1, -1))
-                b = np.reshape(z_min, 1)
+                b = np.reshape(org_cost @ shortest_path_y, 1)
             else:
                 A = np.vstack((A, np.reshape(interdiction_cost * shortest_path_y, (1, -1))))
-                b = np.vstack((b, np.reshape(z_min, 1)))
+                b = np.vstack((b, np.reshape(org_cost @ shortest_path_y, 1)))
             # Solve the max-min knapsack problem of the leader
             interdictions_x, z_max = self.solve_maxmin_knapsack(A, b)
             # Update costs
-            self.opt_model.setObj(self.opt_model.cost + interdiction_cost * interdictions_x)
+            self.opt_model.setObj(org_cost + interdiction_cost * interdictions_x)
             # Calculate the difference
             diff = z_max - z_min
             print(f"Iteration {cnt}: z_max = {z_max}, z_min = {z_min}")
@@ -160,7 +183,8 @@ class BendersDecomposition:
         return interdictions_x, shortest_path_y, z_min
     
     def solve(self,
-              versatile: bool = False) -> tuple[np.ndarray, np.ndarray, float]:
+              versatile: bool = False
+              ) -> tuple[np.ndarray, np.ndarray, float]:
         """
         Solve the Benders decomposition problem.
         
