@@ -1,9 +1,11 @@
+from operator import __call__
 import gurobipy as gp
 from gurobipy import GRB
 from pyepo.model.grb import optGrbModel
 from typing import Tuple
 from numpy import ndarray
 from torch import Tensor
+from copy import deepcopy
 from src.models.ShortestPath import ShortestPath
 
 class shortestPathGrb(optGrbModel):
@@ -20,6 +22,37 @@ class shortestPathGrb(optGrbModel):
         # Update the gurobi model with the edge weights of the graph
         super().setObj(self._graph.cost)
         pass
+    
+    def __call__(self,
+                 cost: ndarray | Tensor | None = None,
+                 versatile: bool = False
+                 ) -> Tuple[ndarray, float]:
+        """
+        Call method to solve the shortest path problem.
+        See `solve` method for details.
+        """
+
+
+        return self.solve(cost = cost, versatile=versatile)
+    
+    def __deepcopy__(self, memo):
+        """
+        Create a deep copy of the shortestPathGrb instance.
+        
+        Parameters:
+        -----------
+        memo : dict
+            A dictionary to keep track of already copied objects.
+
+        Returns:
+        --------
+        shortestPathGrb
+            A new instance of shortestPathGrb with the same attributes.
+        """
+        
+        # Create a new instance and copy the graph
+        new_instance = shortestPathGrb(deepcopy(self._graph, memo))
+        return new_instance
 
     @property
     def cost(self):
@@ -28,10 +61,33 @@ class shortestPathGrb(optGrbModel):
         """
 
         return self._graph.cost
-    
+
     def solve(self,
+              cost: ndarray | Tensor | None = None,
               versatile: bool = False
               ) -> Tuple[ndarray, float]:
+        """
+        Solve the shortest path problem.
+        
+        Parameters:
+        -----------
+        cost : ndarray | Tensor | None, Optional
+            Cost vector for the edges. If provided, it updates the model's objective
+            during the solve process. The original cost is restored after solving.
+        versatile : bool, Optional
+            If True, the solution is visualized in a graph. Default is False.
+
+        Returns:
+        --------
+        Tuple[ndarray, float]
+            A tuple containing the solution vector and the objective value.
+        """
+        
+        # Update only the gurobi model's objective if cost is provided
+        # if cost is not None:
+        #     org_cost = self._graph.cost
+        #     self.setObj(cost)
+        # self.setObj(cost)
         
         # Run solver to find solution
         sol, obj = super().solve()
@@ -39,6 +95,10 @@ class shortestPathGrb(optGrbModel):
         # Show solution in graph if versatile is True
         if versatile:
             self._graph.visualize(colored_edges=sol)
+
+        # Restore original cost if it was modified
+        # if cost is not None:
+        #     self.setObj(org_cost)
 
         # Return solution
         return sol, obj

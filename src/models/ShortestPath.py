@@ -3,6 +3,7 @@ from pyepo.model.opt import optModel
 import torch
 import numpy as np
 import networkx as nx
+from copy import deepcopy
 
 class ShortestPath(optModel):
     """
@@ -67,6 +68,28 @@ class ShortestPath(optModel):
         # Call the parent constructor
         super().__init__()
         pass
+
+    def __deepcopy__(self, memo) -> 'ShortestPath':
+        """
+        Creates a deepcopy of the current ShortestPath instance.
+        
+        Parameters
+        ----------
+        memo : dict
+            A dictionary to keep track of already copied objects.
+
+        Returns
+        -------
+        ShortestPath
+            A new instance of ShortestPath with the same attributes.
+        """
+
+        new_instance = ShortestPath(
+            arcs=deepcopy(self.arcs, memo),
+            vertices=deepcopy(self.vertices, memo),
+            cost=deepcopy(self.cost, memo)
+        )
+        return new_instance
 
     def solve(self,
               cost: torch.Tensor | np.ndarray[float] | None = None
@@ -315,24 +338,6 @@ class ShortestPath(optModel):
             w = c[i] if len(c) > 1 else c[0]
             self.graph.add_edge(u, v, weight=w)
         pass
-
-    def copy(self) -> 'ShortestPath':
-        """
-        Creates a copy of the current ShortestPath instance.
-
-        ------------
-        Returns
-        ------------
-        ShortestPath
-            A new instance of ShortestPath with the same attributes.
-        ------------
-        """
-        new_instance = ShortestPath(
-            arcs=self.arcs.copy(),
-            vertices=self.vertices.copy(),
-            cost=self.cost.copy()
-        )
-        return new_instance
 
     @staticmethod
     def one_hot_to_arcs(model: 'ShortestPath',
