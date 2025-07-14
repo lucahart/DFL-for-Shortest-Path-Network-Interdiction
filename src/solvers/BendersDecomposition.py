@@ -4,6 +4,7 @@ from gurobipy import GRB
 from copy import deepcopy
 
 from src.models.ShortestPath import ShortestPath
+from src.models.ShortestPathGrb import shortestPathGrb
 
 
 class BendersDecomposition:
@@ -73,6 +74,22 @@ class BendersDecomposition:
                                             self.max_cnt, 
                                             self.eps)
         return new_instance
+    
+    def __call__(self) -> tuple[np.ndarray, np.ndarray, float]:
+        """
+        Call the Benders decomposition method.
+        
+        Returns
+        -------
+        interdictions_x : ndarray
+            Optimal decision vector from the max-min knapsack problem.
+        shortest_path_y : ndarray
+            Decision vector from the shortest path problem.
+        z_min : float
+            The minimum cost of the shortest path.
+        """
+
+        return self.solve()
 
     def solve_maxmin_knapsack(self,
                               A: np.ndarray, 
@@ -207,21 +224,5 @@ class BendersDecomposition:
             
         # Return solution
         return interdictions_x, shortest_path_y, z_min
-    
-    def __call__(self) -> tuple[np.ndarray, np.ndarray, float]:
-        """
-        Call the Benders decomposition method.
-        
-        Returns
-        -------
-        interdictions_x : ndarray
-            Optimal decision vector from the max-min knapsack problem.
-        shortest_path_y : ndarray
-            Decision vector from the shortest path problem.
-        z_min : float
-            The minimum cost of the shortest path.
-        """
-
-        return self.solve()
         
 

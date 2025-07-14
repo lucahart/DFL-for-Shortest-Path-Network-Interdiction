@@ -13,6 +13,7 @@ pip install matplotlib
 pip install pyepo
 pip install torch
 pip install sklearn
+pip install tabulate
 # Install the package in editable mode
 pip install -e .
 
