@@ -90,6 +90,24 @@ class ShortestPath(optModel):
             cost=deepcopy(self.cost, memo)
         )
         return new_instance
+    
+    def __call__(self,
+                 path: np.ndarray[float]) -> float:
+        """
+        Call method to compute the cost of a given path.
+
+        Parameters
+        ----------
+        path : np.ndarray[float]
+            A one-hot encoded vector representing the arcs in the path.
+
+        Returns
+        -------
+        float
+            The total cost of the path represented by the one-hot vector.
+        """
+
+        return path @ self.cost
 
     def solve(self,
               cost: torch.Tensor | np.ndarray[float] | None = None

@@ -7,6 +7,7 @@ from numpy import ndarray
 from torch import Tensor
 from copy import deepcopy
 from src.models.ShortestPath import ShortestPath
+from src.models.ShortestPathGrid import ShortestPathGrid
 
 class shortestPathGrb(optGrbModel):
 
@@ -19,9 +20,20 @@ class shortestPathGrb(optGrbModel):
         self._graph = graph
         # Run parent class constructors
         super().__init__()
-        # Update the gurobi model with the edge weights of the graph
-        super().setObj(self._graph.cost)
+        # Update the gurobi model with the edge weights of the graph if provided
+        if graph.cost is not None:
+            super().setObj(self._graph.cost)
         pass
+
+    @classmethod
+    def empty_grid(cls,
+                 m: int,
+                 n: int) -> 'shortestPathGrb': 
+        
+        # Create an instance of ShortestPathGrid
+        graph = ShortestPathGrid(m, n)
+        # Run parent class constructors
+        return cls(graph)
     
     def __call__(self,
                  cost: ndarray | Tensor | None = None,
@@ -31,7 +43,6 @@ class shortestPathGrb(optGrbModel):
         Call method to solve the shortest path problem.
         See `solve` method for details.
         """
-
 
         return self.solve(cost = cost, versatile=versatile)
     
@@ -63,7 +74,7 @@ class shortestPathGrb(optGrbModel):
         return self._graph.cost
 
     def solve(self,
-              cost: ndarray | Tensor | None = None,
+              c: ndarray | Tensor | None = None,
               versatile: bool = False
               ) -> Tuple[ndarray, float]:
         """
@@ -102,6 +113,29 @@ class shortestPathGrb(optGrbModel):
 
         # Return solution
         return sol, obj
+    
+    def evaluate(self,
+                 x: ndarray | Tensor
+                 ) -> float:
+        """
+        Evaluate the objective function value for a given solution vector.
+
+        Parameters:
+        -----------
+        x : ndarray | Tensor
+            Solution vector representing the flow on each edge.
+
+        Returns:
+        --------
+        float
+            The objective function value for the provided solution vector.
+        """
+        
+        # Convert x to numpy array if it's a tensor
+        if isinstance(x, Tensor):
+            x = x.numpy()
+        
+        return self._graph(x)
     
     def visualize(self,
                   colored_edges: ndarray | None = None,
@@ -159,6 +193,3 @@ class shortestPathGrb(optGrbModel):
                 m.addConstr(expr == 0)
         return m, x
     
-    def copy(self):
-
-        return shortestPathGrb(self._graph)
