@@ -174,7 +174,7 @@ class BendersDecomposition:
         diff = np.inf
         cnt = 0
         org_cost = self.opt_model.cost.copy()
-
+ 
         while (diff > self.eps and cnt < self.max_cnt):
             cnt += 1
             # Solve the shortest path problem of the follower
@@ -193,6 +193,9 @@ class BendersDecomposition:
             # Calculate the difference
             diff = z_max - z_min
             print(f"Iteration {cnt}: z_max = {z_max}, z_min = {z_min}")
+        
+        # Restore original costs
+        self.opt_model.setObj(org_cost)
 
         print("-------------------------------\n" + 
               f"Found epsilon-optimal solution after {cnt} iterations with epsilon = {diff:.2f}")
