@@ -17,7 +17,7 @@ class shortestPathGrb(optGrbModel):
                  graph: 'ShortestPath' = None):
         
         # Store graph instance
-        self._graph = graph
+        self._graph = deepcopy(graph)
         # Run parent class constructors
         super().__init__()
         # Update the gurobi model with the edge weights of the graph if provided
