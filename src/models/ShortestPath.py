@@ -56,7 +56,7 @@ class ShortestPath(optModel):
                         )
 
         # Create a graph from the vertices and arcs
-        self.graph = nx.Graph()
+        self.graph = nx.DiGraph()
         self.graph.add_nodes_from(self.vertices)
 
         # Set cost
