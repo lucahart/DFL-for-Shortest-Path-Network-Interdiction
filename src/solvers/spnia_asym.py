@@ -74,29 +74,13 @@ class AsymmetricSPNI:
 
         # Compute theta as the maximum of the estimated delays
         longest_path = shortestPathGrb(self.graph)
-        longest_path.setObj(-(self.true_costs + self.true_delays))
+        longest_path.setObj(-(true_costs + true_delays))
         self.theta = -longest_path.solve()[1]/lsd
+
 
     def build_spnia_L(self):
         """
         Return a Gurobi model of the optimistic SPNIA-L.
-        
-        Parameters:
-        ----------
-        G : networkx.DiGraph
-            The directed graph representing the network.
-        budget : int
-            The budget for the max-min knapsack problem.
-        true_c : dict
-            True costs of the edges in the graph.
-        true_d : dict
-            True delays of the edges in the graph.
-        est_c : dict
-            Estimated costs of the edges in the graph.
-        est_d : dict
-            Estimated delays of the edges in the graph.
-        theta : float, optional
-            A parameter for the pessimistic model, if applicable.
 
         Returns:
         -------
@@ -141,9 +125,6 @@ class AsymmetricSPNI:
         m.addConstr(gp.quicksum(x[e] for e in self.G.edges) <= self.budget, name="budget")
         m.Params.OutputFlag = 0
         return m, x
-    
-
-
 
 
     def build_spnia_LG(self):
@@ -229,3 +210,20 @@ class AsymmetricSPNI:
         LG.optimize()
 
         return {e: xLG[e].X for e in self.G.edges()}, LG.ObjVal
+    
+    def solve(self):
+        """
+        Solve the asymmetric SPNI problem.
+
+        Returns
+        -------
+        x_star : list[float]
+            Optimal decision vector from the max-min knapsack problem.
+        z_star : float
+            Optimal objective value.
+        """
+
+        # Solve the SPNI problem using the two-step procedure
+        x_star, z_star = self.solve_spnia_LG()
+
+        return [x for x in x_star.values()], z_star
