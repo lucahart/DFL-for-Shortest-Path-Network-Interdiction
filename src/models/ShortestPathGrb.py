@@ -115,15 +115,20 @@ class shortestPathGrb(optGrbModel):
         return sol, obj
     
     def evaluate(self,
-                 x: ndarray | Tensor
+                 y: ndarray | Tensor,
+                 x: ndarray | Tensor | None = None
                  ) -> float:
         """
         Evaluate the objective function value for a given solution vector.
 
         Parameters:
         -----------
-        x : ndarray | Tensor
+        y : ndarray | Tensor
             Solution vector representing the flow on each edge.
+        x : ndarray | Tensor, Optional
+            Interdiction vector representing the interdicted edges. If provided,
+            it modifies the cost of the edges in the evaluation. The optimization
+            model's objective is NOT updated.
 
         Returns:
         --------
@@ -132,10 +137,12 @@ class shortestPathGrb(optGrbModel):
         """
         
         # Convert x to numpy array if it's a tensor
+        if isinstance(y, Tensor):
+            y = y.numpy()
         if isinstance(x, Tensor):
             x = x.numpy()
-        
-        return self._graph(x)
+
+        return self._graph(y, interdictions=x)
     
     def visualize(self,
                   colored_edges: ndarray | None = None,

@@ -92,7 +92,9 @@ class ShortestPath(optModel):
         return new_instance
     
     def __call__(self,
-                 path: np.ndarray[float]) -> float:
+                 path: np.ndarray[float],
+                 interdictions: np.ndarray[float] | None = None
+                 ) -> float:
         """
         Call method to compute the cost of a given path.
 
@@ -100,6 +102,9 @@ class ShortestPath(optModel):
         ----------
         path : np.ndarray[float]
             A one-hot encoded vector representing the arcs in the path.
+        interdictions : np.ndarray[float] | None, optional
+            A vector representing the interdiction values on the arcs. 
+            The graph model's objective is NOT updated.
 
         Returns
         -------
@@ -107,7 +112,7 @@ class ShortestPath(optModel):
             The total cost of the path represented by the one-hot vector.
         """
 
-        return path @ self.cost
+        return path @ (self.cost + interdictions)
 
     def solve(self,
               cost: torch.Tensor | np.ndarray[float] | None = None
@@ -263,42 +268,6 @@ class ShortestPath(optModel):
         raise NotImplementedError("Visualization method is not implemented yet.")
     
     def _getModel(self):
-        # """
-        # A method to build Gurobi model (from PyEPO Documentation).
-
-        # Returns:
-        #     tuple: optimization model and variables
-        # """
-        # import gurobipy as gp
-        # from gurobipy import GRB
-        # # ceate a model
-        # m = gp.Model("shortest path")
-        # # varibles
-        # x = m.addVars(self.arcs, name="x")
-        # # sense
-        # m.modelSense = GRB.MINIMIZE
-        # # flow conservation constraints
-        # for i in range(self.grid[0]):
-        #     for j in range(self.grid[1]):
-        #         v = i * self.grid[1] + j
-        #         expr = 0
-        #         for e in self.arcs:
-        #             # flow in
-        #             if v == e[1]:
-        #                 expr += x[e]
-        #             # flow out
-        #             elif v == e[0]:
-        #                 expr -= x[e]
-        #         # source
-        #         if i == 0 and j == 0:
-        #             m.addConstr(expr == -1)
-        #         # sink
-        #         elif i == self.grid[0] - 1 and j == self.grid[0] - 1:
-        #             m.addConstr(expr == 1)
-        #         # transition
-        #         else:
-        #             m.addConstr(expr == 0)
-        # return m, x
 
         return self.graph, self.cost
 
