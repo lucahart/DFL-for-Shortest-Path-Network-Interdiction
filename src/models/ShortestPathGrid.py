@@ -109,7 +109,11 @@ class ShortestPathGrid(ShortestPath):
 
     def visualize(self,
                 colored_edges: np.ndarray | None = None,
-                dashed_edges: np.ndarray | None = None
+                dashed_edges: np.ndarray | None = None,
+                *,
+                ax: plt.Axes | None = None,
+                title: str = None,
+                **kwargs
                 ) -> None:
         """
         Visualize an m×n grid with edge‐weights. Optionally add
@@ -127,7 +131,12 @@ class ShortestPathGrid(ShortestPath):
         pos = {i: (i % self.n, 1-i // self.n) for i in range(self.m * self.n)}
 
         # Draw base grid
-        plt.figure(figsize=(self.n, self.m))
+        if ax is None:
+            plt.figure(figsize=(self.n, self.m))
+            ax = plt.gca()
+        else:
+            plt.sca(ax)
+
         nx.draw(
             self.graph, pos,
             node_size=350,
@@ -179,4 +188,8 @@ class ShortestPathGrid(ShortestPath):
                 style='dashed',
                 width=1.5
             )
+
+        if title is not None:
+            ax.set_title(title)
+
         pass
