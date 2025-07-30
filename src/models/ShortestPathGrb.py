@@ -75,7 +75,8 @@ class shortestPathGrb(optGrbModel):
 
     def solve(self,
               c: ndarray | Tensor | None = None,
-              versatile: bool = False
+              versatile: bool = False,
+              **kwargs
               ) -> Tuple[ndarray, float]:
         """
         Solve the shortest path problem.
@@ -94,22 +95,12 @@ class shortestPathGrb(optGrbModel):
             A tuple containing the solution vector and the objective value.
         """
         
-        # Update only the gurobi model's objective if cost is provided
-        # if cost is not None:
-        #     org_cost = self._graph.cost
-        #     self.setObj(cost)
-        # self.setObj(cost)
-        
         # Run solver to find solution
         sol, obj = super().solve()
 
         # Show solution in graph if versatile is True
         if versatile:
-            self._graph.visualize(colored_edges=sol)
-
-        # Restore original cost if it was modified
-        # if cost is not None:
-        #     self.setObj(org_cost)
+            self._graph.visualize(colored_edges=sol, **kwargs)
 
         # Return solution
         return sol, obj
@@ -145,12 +136,10 @@ class shortestPathGrb(optGrbModel):
         return self._graph(y, interdictions=x)
     
     def visualize(self,
-                  colored_edges: ndarray | None = None,
-                  dashed_edges: ndarray | None = None):
+                  **kwargs):
         
         # Run visualize method of graph instance
-        self._graph.visualize(colored_edges=colored_edges, 
-                              dashed_edges=dashed_edges)
+        self._graph.visualize(**kwargs)
 
     def setObj(self,
                c: ndarray

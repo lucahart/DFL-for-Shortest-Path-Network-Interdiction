@@ -203,7 +203,8 @@ class BendersDecomposition:
         return interdictions_x, shortest_path_y, z_min
     
     def solve(self,
-              versatile: bool = False
+              versatile: bool = False,
+              **kwargs
               ) -> tuple[np.ndarray, np.ndarray, float]:
         """
         Solve the Benders decomposition problem.
@@ -223,7 +224,7 @@ class BendersDecomposition:
 
         # Show solution in graph if versatile is True
         if versatile:
-            self.opt_model.visualize(colored_edges=shortest_path_y, dashed_edges=interdictions_x)
+            self.opt_model.visualize(colored_edges=shortest_path_y, dashed_edges=interdictions_x, **kwargs)
             
         # Return solution
         return interdictions_x, shortest_path_y, z_min

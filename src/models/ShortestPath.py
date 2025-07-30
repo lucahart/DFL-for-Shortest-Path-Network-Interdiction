@@ -112,10 +112,33 @@ class ShortestPath(optModel):
             The total cost of the path represented by the one-hot vector.
         """
 
-        return path @ (self.cost + interdictions)
+        return path @ (self.cost + interdictions) if interdictions is not None else path @ self.cost
+    
+    def evaluate(self,
+                 path: np.ndarray[float],
+                 interdictions: np.ndarray[float] | None = None
+                 ) -> float:
+        """
+        Evaluate the cost of a given path. Use the __call__ method instead.
+
+        Parameters
+        ----------
+        path : np.ndarray[float]
+            A one-hot encoded vector representing the arcs in the path.
+        interdictions : np.ndarray[float] | None, optional
+            A vector representing the interdiction values on the arcs.
+            The graph model's objective is NOT updated.
+
+        Returns
+        -------
+        float
+            The total cost of the path represented by the one-hot vector.
+        """
+        return self.__call__(path, interdictions)
 
     def solve(self,
-              cost: torch.Tensor | np.ndarray[float] | None = None
+              cost: torch.Tensor | np.ndarray[float] | None = None,
+              **kwargs
               ) -> Tuple[np.ndarray, float]:
         """
         Solves the shortest path problem using Dijkstra's algorithm.

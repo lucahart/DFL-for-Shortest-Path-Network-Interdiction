@@ -108,11 +108,15 @@ class ShortestPathGrid(ShortestPath):
         return one_hot_vector, objective
 
     def visualize(self,
+                *,
                 colored_edges: np.ndarray | None = None,
                 dashed_edges: np.ndarray | None = None,
-                *,
                 ax: plt.Axes | None = None,
                 title: str = None,
+                scale_x: float = 1.3,
+                scale_y: float = 1.3,
+                width: float = 1.5,
+                interdictions: np.ndarray[float] | list[float] | None = None,
                 **kwargs
                 ) -> None:
         """
@@ -121,10 +125,25 @@ class ShortestPathGrid(ShortestPath):
 
         Parameters
         ----------
-        color_edges : list of tuples (int, int), optional
-            Edges to highlight in color.
-        dashed_edges : list of tuples (int, int), optional
-            Edges to draw with dashed style.
+        colored_edges : np.ndarray | None, optional
+            A one-hot encoded vector representing the edges to be colored.
+            If None, no edges are colored.
+        dashed_edges : np.ndarray | None, optional
+            A one-hot encoded vector representing the edges to be dashed.
+            If None, no edges are dashed.
+        ax : plt.Axes | None, optional
+            The matplotlib Axes object to draw on. If None, a new figure is created.
+        title : str, optional
+            Title for the plot. If None, no title is set.
+        scale_x : float, optional
+            Scaling factor for the x-axis. Default is 1.3.
+        scale_y : float, optional
+            Scaling factor for the y-axis. Default is 1.3.
+        width : float, optional
+            Width of the edges in the plot. Default is 1.5.
+        interdictions : np.ndarray[float] | list[float] | None, optional
+            A vector representing the additional interdiction costs on all edges.
+            If None, no additional interdiction costs are shown.    
         """
 
         # Specify positions for nodes in the grid
@@ -132,25 +151,31 @@ class ShortestPathGrid(ShortestPath):
 
         # Draw base grid
         if ax is None:
-            plt.figure(figsize=(self.n, self.m))
+            plt.figure(figsize=(self.n*scale_x, self.m*scale_y))
             ax = plt.gca()
+            ax.set_axis_off()
         else:
             plt.sca(ax)
+            plt.axis('off')
 
-        nx.draw(
-            self.graph, pos,
-            node_size=350,
-            node_color='lightgray',
-            edge_color='black',
-            with_labels=True
-        )
+        edge_artists = nx.draw_networkx_edges(self.graph, pos, ax=ax, edge_color="black", width=width, **kwargs)
+        nx.draw_networkx_nodes(self.graph, pos, ax=ax, node_color="w", edgecolors="k")
+        nx.draw_networkx_labels(self.graph, pos, ax=ax)
 
         # Draw weight labels if exists
         if len(self.cost) > 1:
-            edge_labels = {
-                edge: f"{self.cost[idx]:.2f}"
-                for idx, edge in enumerate(self.arcs)
-            }
+            if interdictions is not None:
+                edge_labels = {
+                    edge: f"{self.cost[idx]:.2f} + {interdictions[idx]:.2f}" 
+                    if interdictions[idx] > .01 
+                    else f"{self.cost[idx]:.2f}"
+                    for idx, edge in enumerate(self.arcs)
+                }
+            else:
+                edge_labels = {
+                    edge: f"{self.cost[idx]:.2f}"
+                    for idx, edge in enumerate(self.arcs)
+                }
             nx.draw_networkx_edge_labels(
                 self.graph, pos,
                 edge_labels=edge_labels,
@@ -173,21 +198,15 @@ class ShortestPathGrid(ShortestPath):
         
         # Highlight color edges
         if colored_edges is not None:
-            nx.draw_networkx_edges(
-                self.graph, pos,
-                edgelist=ShortestPath.one_hot_to_arcs(self, colored_edges),
-                edge_color='red',
-                width=2.5
-            )
+            for patch, e in zip(edge_artists, self.graph.edges()):
+                new_color = "red" if e in ShortestPath.one_hot_to_arcs(self, colored_edges) else "black"
+                patch.set_color(new_color)
 
         # Highlight dashed edges
         if dashed_edges is not None:
-            nx.draw_networkx_edges(
-                self.graph, pos,
-                edgelist=ShortestPath.one_hot_to_arcs(self, dashed_edges),
-                style='dashed',
-                width=1.5
-            )
+            for patch, e in zip(edge_artists, self.graph.edges()):
+                new_line_style = "dashed" if e in ShortestPath.one_hot_to_arcs(self, dashed_edges) else "solid"
+                patch.set_linestyle(new_line_style)
 
         if title is not None:
             ax.set_title(title)
