@@ -2,6 +2,7 @@
 import argparse, json
 from data.config import HP
 from scripts.bayrak08 import bayrak08
+from models.ShortestPathGrid import ShortestPathGrid
 
 def parse_cli() -> HP:
     p = argparse.ArgumentParser()
