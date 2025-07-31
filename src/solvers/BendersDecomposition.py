@@ -3,14 +3,13 @@ import gurobipy as gp
 from gurobipy import GRB
 from copy import deepcopy
 
-from src.models.ShortestPath import ShortestPath
 from src.models.ShortestPathGrb import shortestPathGrb
 
 
 class BendersDecomposition:
 
     # Attributes
-    opt_model: 'ShortestPath'  # Reference to the ShortestPath object
+    opt_model: 'shortestPathGrb'  # Reference to the ShortestPath object
     _model: gp.Model  # Gurobi model
     k: int  # Budget for the max-min knapsack problem
     max_cnt: int  # Maximum number of iterations for Bender's algorithm
@@ -19,7 +18,7 @@ class BendersDecomposition:
     # n: int  # Number of arcs (edges) in the grid (also number of decision variables in the max-min knapsack problem)
 
     def __init__(self,
-                 opt_model: 'ShortestPath',
+                 opt_model: 'shortestPathGrb',
                  k: int = 5,
                  interdiction_cost: np.ndarray | None = None,
                  max_cnt: int = 10,
@@ -68,7 +67,7 @@ class BendersDecomposition:
         """
         
         # Create a new instance and copy the graph and other attributes
-        new_instance = BendersDecomposition(self.opt_model, 
+        new_instance = BendersDecomposition(deepcopy(self.opt_model), 
                                             self.k, 
                                             self.interdiction_cost.copy() if self.interdiction_cost is not None else None,
                                             self.max_cnt, 
