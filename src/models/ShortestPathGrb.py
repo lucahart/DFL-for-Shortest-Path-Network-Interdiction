@@ -6,6 +6,7 @@ from typing import Tuple
 from numpy import ndarray
 from torch import Tensor
 from copy import deepcopy
+from tabulate import tabulate
 from src.models.ShortestPath import ShortestPath
 from src.models.ShortestPathGrid import ShortestPathGrid
 
@@ -165,7 +166,7 @@ class shortestPathGrb(optGrbModel):
         # ceate a model
         m = gp.Model("shortest path")
         # varibles
-        x = m.addVars(self._graph.arcs, name="x")
+        x = m.addVars(self._graph.arcs, vtype=GRB.CONTINUOUS, name="x")
         # sense
         m.modelSense = GRB.MINIMIZE
         # flow conservation constraints
@@ -188,4 +189,35 @@ class shortestPathGrb(optGrbModel):
             else:
                 m.addConstr(expr == 0)
         return m, x
-    
+
+    def pretty_print(self):
+        """
+        Print the Gurobi model in a human-readable format.
+        This includes variables, objective function, and constraints.
+        """
+        
+        model = self._model
+        # ---------- variables ----------
+        rows = [(v.VarName, v.VType, v.LB, v.UB, v.Obj)
+                for v in model.getVars()]
+        print("\nVariables")
+        print(tabulate(rows, headers=["name", "type", "LB", "UB", "obj"]))
+
+        # ---------- objective (assumes linear) ----------
+        obj = " + ".join(f"{v.Obj:g}·{v.VarName}"
+                        for v in model.getVars() if abs(v.Obj) > 1e-9)
+        print("\nObjective")
+        print(f" maximize {obj}\n")
+
+        # ---------- constraints ----------
+        con_rows = []
+        for c in model.getConstrs():
+            row  = model.getRow(c)
+            expr = " + ".join(f"{row.getCoeff(i):g}·{row.getVar(i).VarName}"
+                            for i in range(row.size()))
+            sense = {'<': '<=', '>': '>=', '=': '='}[c.Sense]
+            con_rows.append((c.ConstrName, f"{expr} {sense} {c.RHS:g}"))
+        print("Constraints")
+        print(tabulate(con_rows, headers=["name", "expression"]))
+
+        
