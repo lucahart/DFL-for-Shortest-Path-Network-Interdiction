@@ -1,5 +1,4 @@
 # spnia_asym.py
-import networkx as nx
 import gurobipy as gp
 
 from gurobipy import GRB
@@ -22,7 +21,6 @@ class AsymmetricSPNI:
     """
 
     graph: 'ShortestPath' # The directed graph representing the network
-    G: nx.DiGraph  # The directed graph representing the network
     budget: int  # The budget for the max-min knapsack problem
     true_costs: dict  # True costs of the edges in the graph
     true_delays: dict  # True delays of the edges in the graph
@@ -63,8 +61,14 @@ class AsymmetricSPNI:
 
         # Store the graph and budget as given
         self.graph = deepcopy(graph)
-        self.G = graph.graph
         self.budget = budget
+
+        # Pre-compute adjacency lists to avoid repeated filtering
+        self._out_edges = {v: [] for v in self.graph.vertices}
+        self._in_edges = {v: [] for v in self.graph.vertices}
+        for i, j in self.graph.arcs:
+            self._out_edges[i].append((i, j))
+            self._in_edges[j].append((i, j))
 
         # Store true costs and delays as dictionaries indexed by edge
         self.true_costs = {e: true_costs[i] for i,e in enumerate(self.graph.arcs)}
@@ -76,6 +80,12 @@ class AsymmetricSPNI:
         longest_path = shortestPathGrb(self.graph)
         longest_path.setObj(-(true_costs + true_delays))
         self.theta = -longest_path.solve()[1]/lsd
+
+    def out_edges(self, node):
+        return self._out_edges[node]
+
+    def in_edges(self, node):
+        return self._in_edges[node]
 
 
     def build_spnia_L(self):
@@ -104,25 +114,25 @@ class AsymmetricSPNI:
         s, t = 0, max(self.graph.vertices)
         for i in self.graph.vertices:
             m.addConstr(
-                gp.quicksum((v[e]+w[e]) for e in self.graph.graph.out_edges(i)) -
-                gp.quicksum((v[e]+w[e]) for e in self.graph.graph.in_edges(i))
+                gp.quicksum((v[e]+w[e]) for e in self.out_edges(i)) -
+                gp.quicksum((v[e]+w[e]) for e in self.in_edges(i))
                 == (1 if i == s else -1 if i == t else 0),
                 name=f"flow_{i}"
             )
 
-        for i, j in self.graph.graph.edges:
+        for i, j in self.graph.arcs:
             m.addConstr(u[i] - u[j] - self.est_delays[(i, j)]*x[(i, j)] <= self.est_costs[(i, j)],
                         name=f"dual_{i}_{j}")
 
         m.addConstr(u[t] - u[s] +
                     gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]
-                                for e in self.G.edges()) == 0, name="dual_link")
+                                for e in self.graph.arcs) == 0, name="dual_link")
 
-        for e in self.G.edges:
+        for e in self.graph.arcs:
             m.addConstr(v[e] + x[e] <= 1, name=f"link1_{e}")
             m.addConstr(w[e] - x[e] <= 0, name=f"link2_{e}")
 
-        m.addConstr(gp.quicksum(x[e] for e in self.G.edges) <= self.budget, name="budget")
+        m.addConstr(gp.quicksum(x[e] for e in self.graph.arcs) <= self.budget, name="budget")
         m.Params.OutputFlag = 0
         return m, x
 
@@ -146,34 +156,34 @@ class AsymmetricSPNI:
         """
 
         m  = gp.Model("SPNIA_LG")
-        x  = m.addVars(self.G.edges(), vtype=GRB.BINARY, name="x")
-        v  = m.addVars(self.G.edges(), lb=0.0,        name="v")
-        w  = m.addVars(self.G.edges(), lb=0.0,        name="w")
-        u  = m.addVars(self.G.nodes(), lb=-GRB.INFINITY, name="u")
+        x  = m.addVars(self.graph.arcs, vtype=GRB.BINARY, name="x")
+        v  = m.addVars(self.graph.arcs, lb=0.0,        name="v")
+        w  = m.addVars(self.graph.arcs, lb=0.0,        name="w")
+        u  = m.addVars(self.graph.vertices, lb=-GRB.INFINITY, name="u")
 
-        s, t = 0, max(self.G.nodes())
+        s, t = 0, max(self.graph.vertices)
         m.setObjective(
             u[s] - u[t] -
             self.theta*gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]
-                            for e in self.G.edges()),
+                            for e in self.graph.arcs),
             GRB.MAXIMIZE)
 
-        for i in self.G.nodes():
+        for i in self.graph.vertices:
             m.addConstr(
-                gp.quicksum((v[e]+w[e]) for e in self.G.out_edges(i)) -
-                gp.quicksum((v[e]+w[e]) for e in self.G.in_edges(i))
+                gp.quicksum((v[e]+w[e]) for e in self.out_edges(i)) -
+                gp.quicksum((v[e]+w[e]) for e in self.in_edges(i))
                 == (1 if i == s else -1 if i == t else 0))
 
-        for i, j in self.G.edges():
+        for i, j in self.graph.arcs:
             m.addConstr(
                 u[i] - u[j] - (self.theta*self.est_delays[(i, j)] + self.true_delays[(i, j)])*x[(i, j)]
                 <=  self.theta*self.est_costs[(i, j)] + self.true_costs[(i, j)])
 
-        for e in self.G.edges():
+        for e in self.graph.arcs:
             m.addConstr(v[e] + x[e] <= 1)
             m.addConstr(w[e] - x[e] <= 0)
 
-        m.addConstr(gp.quicksum(x[e] for e in self.G.edges()) <= self.budget)
+        m.addConstr(gp.quicksum(x[e] for e in self.graph.arcs) <= self.budget)
         m.Params.OutputFlag = 0
         return m, x, v, w, u
     
@@ -193,23 +203,23 @@ class AsymmetricSPNI:
         L, xL = self.build_spnia_L()
         L.optimize()
         z_star = L.ObjVal
-        x_star = {e: xL[e].X for e in self.G.edges()}
+        x_star = {e: xL[e].X for e in self.graph.arcs}
 
         # Step 2 – pessimistic with warm-start and cut
         LG, xLG, v, w, u = self.build_spnia_LG()
-        for e in self.G.edges():
+        for e in self.graph.arcs:
             xLG[e].Start = x_star[e]
 
         # bounding cut
-        s, t = 0, max(self.G.nodes())
+        s, t = 0, max(self.graph.vertices)
         LG.addConstr(
             u[s] - u[t] -
             self.theta*gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]
-                            for e in self.G.edges()) <= z_star, name="warm_cut")
+                            for e in self.graph.arcs) <= z_star, name="warm_cut")
 
         LG.optimize()
 
-        return {e: xLG[e].X for e in self.G.edges()}, LG.ObjVal
+        return {e: xLG[e].X for e in self.graph.arcs}, LG.ObjVal
     
     def solve(self):
         """
