@@ -95,11 +95,19 @@ class ShortestPathGrid(ShortestPath):
         objective = 0.0
         for i, u in enumerate(shortest_path_nodes[:-1]):
             v = shortest_path_nodes[i + 1]
-            if v == u + self.m:
-                arc_indices.append((self.n-1)*self.m + u - 1)
+
+            row = u // self.n
+            col = u % self.n
+
+            if v == u + self.n:
+                idx = row * (2 * self.n - 1) + (self.n - 1) + col
             else:
-                arc_indices.append((u//self.n)*(self.n-1) + u % self.n - 1)
-            objective += self.cost[arc_indices[-1]]
+                idx = row * (2 * self.n - 1) + col
+
+            assert self.arcs[idx] == (u, v), "Arc index mapping error"
+
+            arc_indices.append(idx)
+            objective += self.cost[idx]
 
         # Create a one-hot encoded tensor for the arcs
         one_hot_vector = np.zeros(len(self.arcs), dtype=np.float32)
