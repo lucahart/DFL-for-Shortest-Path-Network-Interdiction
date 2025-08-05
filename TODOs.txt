@@ -1,0 +1,8 @@
+- Change that Bender's Decomposition takes a graph and not a shortest path optimizer instance
+- Change the requirements.txt file so that it only lists the required libraries (not a shell script), so that the libraries can be installed with pip install requirements.txt
+- Figure out the imports (from src, weird first commands in notebooks, from Main.py)
+- Change module setup (Bender's decomp. is a solver, rename ShortestPath.py and ShortestPathGrid.py to Graph.py and Grid.py, respectively. Possibly make a broader restructurization (e.g., add an abstract solver class).)
+- Use a uniform naming convention
+- Use a more uniform naming system for Notebooks, too
+- Create scripts that can be run directly from Main.py
+- 
