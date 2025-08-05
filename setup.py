@@ -9,7 +9,13 @@ setup(
     version="0.1.0",
     package_dir={"": "src"},                # tells setuptools that packages live under src/
     packages=find_packages(where="src"),    # auto-discovers all packages under src/
+    py_modules=["Main"],                     # include top-level modules
     install_requires=[
         "torch>=1.10.0",
     ],
+    entry_points={
+        "console_scripts": [
+            "shortest-path=Main:main",
+        ]
+    },
 )
