@@ -69,7 +69,8 @@ class DataGenerator:
         costs = np.random.uniform(self.cost_range[0], self.cost_range[1], (num_samples, self.num_costs))
 
         # Generate features using the cost feature map
-        features = self.cost_feature_map.transform(costs)
+        # Note that the costs are normalized to the range [0, 1] first
+        features = self.cost_feature_map.transform(costs/(self.cost_range[1] - self.cost_range[0]) + self.cost_range[0])
 
         return costs, features
     
