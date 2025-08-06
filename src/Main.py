@@ -12,11 +12,15 @@ def parse_cli() -> HP:
     ns = p.parse_args()
     return HP(**vars(ns))
 
-if __name__ == "__main__":
+def main() -> None:
     # Parse command line arguments
     cfg = parse_cli()
     print(cfg)
-    
+
     # Execute simulation sweep from Bayrak & Bailey (2008)
     bayrak08(cfg)
+
+
+if __name__ == "__main__":
+    main()
 
