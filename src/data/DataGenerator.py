@@ -2,6 +2,7 @@ from copy import deepcopy
 import numpy as np
 
 from src.data.PolynomialKernelFeatureMap import PolynomialKernelFeatureMap
+from src.data.InversePolynomialFeatureMap import InversePolynomialFeatureMap
 
 class DataGenerator:
 
@@ -21,6 +22,8 @@ class DataGenerator:
         # Initialize the cost feature map
         if cost_feature_map == "PolynomialKernel":
             self.cost_feature_map = PolynomialKernelFeatureMap(num_costs, num_features, **kwargs)
+        elif cost_feature_map == "InversePolynomial":
+            self.cost_feature_map = InversePolynomialFeatureMap(num_costs, num_features, **kwargs)
         else:
             raise ValueError(f"Unknown cost feature map: {cost_feature_map}")
 
