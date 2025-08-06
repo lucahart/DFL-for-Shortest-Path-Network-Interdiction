@@ -2,10 +2,10 @@ import numpy as np
 import os
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from src.models.ShortestPathGrid import ShortestPathGrid
-from src.models.ShortestPath import ShortestPath
+from models.ShortestPathGrid import ShortestPathGrid
+from models.ShortestPath import ShortestPath
 
 def test_arcs_one_hot_matches_base():
     grid = ShortestPathGrid(3, 4)

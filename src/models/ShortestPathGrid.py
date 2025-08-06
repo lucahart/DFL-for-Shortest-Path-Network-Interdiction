@@ -2,7 +2,7 @@ from typing import Tuple
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-from src.models.ShortestPath import ShortestPath
+from .ShortestPath import ShortestPath
 from copy import deepcopy
 
 class ShortestPathGrid(ShortestPath):

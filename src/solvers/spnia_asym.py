@@ -6,8 +6,8 @@ from typing import List
 from numpy import ndarray
 from copy import deepcopy
 
-from src.models.ShortestPath import ShortestPath
-from src.models.ShortestPathGrb import shortestPathGrb
+from models.ShortestPath import ShortestPath
+from models.ShortestPathGrb import shortestPathGrb
 
 
 class AsymmetricSPNI:

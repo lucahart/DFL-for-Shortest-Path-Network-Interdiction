@@ -7,8 +7,8 @@ from numpy import ndarray
 from torch import Tensor
 from copy import deepcopy
 from tabulate import tabulate
-from src.models.ShortestPath import ShortestPath
-from src.models.ShortestPathGrid import ShortestPathGrid
+from .ShortestPath import ShortestPath
+from .ShortestPathGrid import ShortestPathGrid
 
 class shortestPathGrb(optGrbModel):
 

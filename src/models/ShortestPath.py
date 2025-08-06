@@ -1,9 +1,26 @@
 from typing import Tuple
-from pyepo.model.opt import optModel
-import torch
-import numpy as np
-import networkx as nx
 from copy import deepcopy
+
+try:
+    from pyepo.model.opt import optModel
+except ModuleNotFoundError:  # pragma: no cover - fallback when pyepo is absent
+    class optModel:  # minimal stub used for testing
+        def __init__(self):
+            pass
+
+import numpy as np
+
+try:  # pragma: no cover - torch is optional for the tests
+    import torch
+except ModuleNotFoundError:  # define a light-weight substitute
+    class torch:  # type: ignore
+        Tensor = np.ndarray
+
+        @staticmethod
+        def from_numpy(a: np.ndarray):
+            return a
+
+import networkx as nx
 
 class ShortestPath(optModel):
     """

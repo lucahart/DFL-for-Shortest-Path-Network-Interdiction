@@ -3,7 +3,7 @@ import gurobipy as gp
 from gurobipy import GRB
 from copy import deepcopy
 
-from src.models.ShortestPathGrb import shortestPathGrb
+from models.ShortestPathGrb import shortestPathGrb
 
 
 class BendersDecomposition:
