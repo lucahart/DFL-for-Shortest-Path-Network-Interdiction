@@ -47,35 +47,47 @@ class PolynomialKernelFeatureMap:
 
     def transform(self, c):
         """
-        Generate the polynomial‐kernel features for a given cost vector c.
+        Generate the polynomial-kernel features for one or more cost vectors.
 
         Parameters
         ----------
-        c : array‐like of shape (m,)
-            Input cost vector.
+        c : array-like of shape (n_samples, m) or (m,)
+            Input cost matrix or a single cost vector. The second dimension
+            must equal ``num_costs``.
 
         Returns
         -------
-        x : ndarray of shape (p,)
-            Output feature vector.
+        ndarray of shape (n_samples, p) or (p,)
+            The computed feature matrix (or vector for a single sample).
         """
+
         c = np.asarray(c, dtype=float)
-        if c.shape != (self.m,):
-            raise ValueError(f"Expected input of shape ({self.m},), got {c.shape}.")
+
+        # Allow passing a single cost vector; treat it as one sample.
+        was_1d = c.ndim == 1
+        if was_1d:
+            c = c[np.newaxis, :]
+
+        if c.shape[1] != self.num_costs:
+            raise ValueError(
+                f"Expected input with {self.num_costs} costs, got {c.shape}"
+            )
+
+        n_samples = c.shape[0]
 
         # 1) linear projection + shift
-        proj = self.B @ c                  # shape (p,)
-        shifted = proj + 3.0               # entrywise +3
+        proj = c @ self.B.T               # shape (n_samples, p)
+        shifted = proj + 3.0              # entrywise +3
 
         # 2) polynomial expansion and normalization
-        base = shifted**self.degree
-        norm = (3.5**self.degree) * np.sqrt(self.p)
-        base /= norm                       # shape (p,)
+        base = shifted ** self.degree
+        norm = (3.5 ** self.degree) * np.sqrt(self.num_features)
+        base /= norm                      # shape (n_samples, p)
 
         # 3) multiplicative uniform noise in [1-ε_bar, 1+ε_bar]
-        eps = self.rng.uniform(1 - self.epsilon_bar,
-                               1 + self.epsilon_bar,
-                               size=self.p)
+        eps = self.rng.uniform(
+            1 - self.epsilon_bar, 1 + self.epsilon_bar, size=(n_samples, self.num_features)
+        )
         x = base * eps
 
-        return x
+        return x.squeeze() if was_1d else x
