@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-class Trainer:
+class SPOTrainer:
     """
     A class to handle the training and evaluation of a PyTorch model.
     """
@@ -271,7 +271,7 @@ class Trainer:
             return loss_criterion(costs_pred, costs)
 
     @staticmethod
-    def vis_learning_curve(trainer: "Trainer",
+    def vis_learning_curve(trainer: "OptNetTrainer",
                         train_loss_log: ndarray[float],
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,
@@ -299,7 +299,7 @@ class Trainer:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16,4))
 
         # Plot regret learning curve with training and testing data
-        ax1.plot(train_regret_log, label='Training Regret')
+        ax1.plot(train_regret_log, marker='.', label='Training Regret')
         if test_regret_log is not None:
             ax1.scatter(
                 arange(len(test_regret_log))*trainer.n_epochs, 
@@ -315,7 +315,7 @@ class Trainer:
         
 
         # Plot loss learning curve with training and testing data
-        ax2.plot(train_loss_log, label='Training Loss')
+        ax2.plot(train_loss_log, marker='.', label='Training Loss')
         if test_loss_log is not None:
             ax2.scatter(arange(len(test_loss_log))*trainer.n_epochs, 
                 test_loss_log, 
