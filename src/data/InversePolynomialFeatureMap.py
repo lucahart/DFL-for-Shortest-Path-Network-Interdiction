@@ -92,7 +92,7 @@ class InversePolynomialFeatureMap:
         eps = self.rng.uniform(1 - self.epsilon_bar, 1 + self.epsilon_bar, size=(n_samples, self.num_costs))
 
         # Inverse polynomial transform and scaling
-        base = 3.5 * np.power(c / eps - 1.0, 1.0 / self.degree) - 3.0
+        base = 3.5 * np.power(c * eps - 1.0, 1.0 / self.degree) - 3.0
         base *= np.sqrt(self.num_features)
 
         # Random projection using the Bernoulli mask
