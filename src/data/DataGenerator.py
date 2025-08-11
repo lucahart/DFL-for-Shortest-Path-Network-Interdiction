@@ -3,6 +3,7 @@ import numpy as np
 
 from src.data.PolynomialKernelFeatureMap import PolynomialKernelFeatureMap
 from src.data.InversePolynomialFeatureMap import InversePolynomialFeatureMap
+from src.data.config import HP
 
 class DataGenerator:
 
@@ -20,10 +21,15 @@ class DataGenerator:
         """
         
         # Initialize the cost feature map
+        random_seed = kwargs.pop("random_state", HP.random_seed)
         if cost_feature_map == "PolynomialKernel":
-            self.cost_feature_map = PolynomialKernelFeatureMap(num_costs, num_features, **kwargs)
+            self.cost_feature_map = PolynomialKernelFeatureMap(
+                num_costs, num_features, random_state=random_seed, **kwargs
+            )
         elif cost_feature_map == "InversePolynomial":
-            self.cost_feature_map = InversePolynomialFeatureMap(num_costs, num_features, **kwargs)
+            self.cost_feature_map = InversePolynomialFeatureMap(
+                num_costs, num_features, random_state=random_seed, **kwargs
+            )
         else:
             raise ValueError(f"Unknown cost feature map: {cost_feature_map}")
 
