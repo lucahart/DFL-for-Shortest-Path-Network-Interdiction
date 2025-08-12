@@ -16,35 +16,35 @@ def compare_po_spo(cfg,
     Compare the performance of the PO and SPO models on a shortest path problem.
     """
 
-    # # Retrieve configuration parameters
-    # data_samples = cfg.get("test_data_samples") # number of training data
-    # m, n = cfg.get("grid_size")
+    # Retrieve configuration parameters
+    data_samples = cfg.get("test_data_samples") # number of training data
+    m, n = cfg.get("grid_size")
 
-    # # Generate data for shortest path problem
-    # features, costs = pyepo.data.shortestpath.genData(
-    #     data_samples,
-    #     cfg.get("num_features"),
-    #     (m, n),
-    #     deg=cfg.get("deg"),
-    #     noise_width=cfg.get("noise_width"),
-    #     seed=cfg.get("seed")
-    # )
-
-    deg=3
-    noise_width=0.05
-    seed=31
-    data_samples = 10
-    m,n = (6, 8)
-    num_features = 5
-    
+    # Generate data for shortest path problem
     features, costs = pyepo.data.shortestpath.genData(
         data_samples,
-        num_features,
+        cfg.get("num_features"),
         (m, n),
-        deg=deg,
-        noise_width=noise_width,
-        seed=seed
+        deg=cfg.get("deg"),
+        noise_width=cfg.get("noise_width"),
+        seed=cfg.get("seed")
     )
+
+    # deg=3
+    # noise_width=0.05
+    # seed=31
+    # data_samples = 10
+    # m,n = (6, 8)
+    # num_features = 5
+    
+    # features, costs = pyepo.data.shortestpath.genData(
+    #     data_samples,
+    #     num_features,
+    #     (m, n),
+    #     deg=deg,
+    #     noise_width=noise_width,
+    #     seed=seed
+    # )
 
     # Initialize lists to store results
     true_objs = []

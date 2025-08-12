@@ -12,13 +12,6 @@ class HP:
 
     # -------- General simulation parameters --------
     random_seed: int = 42
-    # Parameters for dataset generation and model configuration
-    test_data_samples: Optional[int] = None
-    deg: Optional[int] = None
-    noise_width: Optional[float] = None
-    seed: Optional[int] = None
-    num_features: Optional[int] = None
-    grid_size: Optional[Tuple[int, int]] = None
 
     # -------- Bailey & Bayrak (2008) simulation parameters --------
     c_min: float = 1.0
@@ -26,6 +19,15 @@ class HP:
     d_min: float = 1.0
     d_max: float = 10.0
     Q = .6
+
+    # -------- PO & SPO comparison --------
+    # Parameters for dataset generation and model configuration
+    test_data_samples: Optional[int] = None
+    deg: Optional[int] = None
+    noise_width: Optional[float] = None
+    seed: Optional[int] = None
+    num_features: Optional[int] = None
+    grid_size: Optional[Tuple[int, int]] = None
 
 
     # -------- Postprocessing parameters --------
