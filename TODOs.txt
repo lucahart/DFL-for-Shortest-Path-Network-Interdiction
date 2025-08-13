@@ -5,4 +5,4 @@
 - Use a uniform naming convention
 - Use a more uniform naming system for Notebooks, too
 - Create scripts that can be run directly from Main.py
-- 
+- Add a cost parameter to ShortestPathGrb's solve-function so that I can change the cost of it's optmodel and solve with that cost in one line.
