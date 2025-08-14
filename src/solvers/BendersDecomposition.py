@@ -143,7 +143,8 @@ class BendersDecomposition:
         
 
     def benders_decomposition(self, 
-                              interdiction_cost
+                              interdiction_cost: np.ndarray,
+                              versatile: bool = True
                             ) -> tuple[np.ndarray, np.ndarray, float]:
         """
         Perform Benders decomposition for the given grid and interdiction cost.
@@ -166,8 +167,9 @@ class BendersDecomposition:
         """
 
         # Print that Bender's decomposition algorithm started
-        print("Bender's decomposition running:\n"
-              "-------------------------------")
+        if versatile:
+            print("Bender's decomposition running:\n"
+                  "-------------------------------")
 
         # Initialization
         diff = np.inf
@@ -191,18 +193,21 @@ class BendersDecomposition:
             self.opt_model.setObj(org_cost + interdiction_cost * interdictions_x)
             # Calculate the difference
             diff = z_max - z_min
-            print(f"Iteration {cnt}: z_max = {z_max}, z_min = {z_min}")
+            if versatile:
+                print(f"Iteration {cnt}: z_max = {z_max}, z_min = {z_min}")
         
         # Restore original costs
         self.opt_model.setObj(org_cost)
 
-        print("-------------------------------\n" + 
-              f"Found epsilon-optimal solution after {cnt} iterations with epsilon = {diff:.2f}")
+        if versatile:
+            print("-------------------------------\n" + 
+                f"Found epsilon-optimal solution after {cnt} iterations with epsilon = {diff:.2f}")
 
         return interdictions_x, shortest_path_y, z_min
     
     def solve(self,
-              versatile: bool = False,
+              visualize: bool = False,
+              versatile: bool = True,
               **kwargs
               ) -> tuple[np.ndarray, np.ndarray, float]:
         """
@@ -219,10 +224,10 @@ class BendersDecomposition:
         """
 
         # Compute solution
-        interdictions_x, shortest_path_y, z_min = self.benders_decomposition(self.interdiction_cost)
+        interdictions_x, shortest_path_y, z_min = self.benders_decomposition(self.interdiction_cost, versatile=versatile)
 
-        # Show solution in graph if versatile is True
-        if versatile:
+        # Show solution in graph if visualize is True
+        if visualize:
             self.opt_model.visualize(colored_edges=shortest_path_y, dashed_edges=interdictions_x, **kwargs)
             
         # Return solution
