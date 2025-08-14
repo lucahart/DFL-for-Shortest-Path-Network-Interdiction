@@ -68,6 +68,7 @@ class POTrainer:
             divided by the number of samples in the dataset.
         """
 
+        self.pred_model.train()
         running_loss = 0.0
         for feats, costs, sols, objs  in loader:
 
@@ -164,6 +165,23 @@ class POTrainer:
             test_loss, test_regret = self.evaluate(test_loader)
             test_loss_vector = [test_loss]
             test_regret_vector = [test_regret]
+            
+        # Print the initial evaluation before starting training
+        if test_loader is not None:
+            print(
+                f"Epoch {0:02d} "
+                f"| Train Loss: {train_loss:.4f} "
+                f"| Train Regret: {train_regret:.4f} "
+                f"| Test Loss: {test_loss:.4f} "
+                f"| Test Regret: {test_regret:.4f}"
+            )
+        else:
+            print(
+                f"Epoch {0:02d} "
+                f"| Train Loss: {train_loss:.4f} "
+                f"| Train Regret: {train_regret:.4f}"
+            )
+
 
         # Training loop
         for epoch in range(epochs):

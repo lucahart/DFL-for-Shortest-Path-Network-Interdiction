@@ -75,6 +75,7 @@ class SPOTrainer:
             divided by the number of samples in the dataset.
         """
 
+        self.pred_model.train()
         running_loss = 0.0
         for feats, costs, sols, objs  in loader:
 
@@ -178,12 +179,40 @@ class SPOTrainer:
         if n_epochs < 0:
             self.n_epochs = max(1, epochs // 10)
 
-        # Initialize loss and regret vectors
-        train_loss_vector = []
-        train_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)]
+        # Initialize train loss and regret vectors
+        train_loss, train_regret = self.evaluate(train_loader)
+        train_loss_vector = [train_loss]
+        train_regret_vector = [train_regret]
+
+        # If test_loader is provided, initialize test loss and regret vectors
         if test_loader is not None:
-            test_loss_vector = []
-            test_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, test_loader)]
+            test_loss, test_regret = self.evaluate(test_loader)
+            test_loss_vector = [test_loss]
+            test_regret_vector = [test_regret]
+
+        # Print the initial evaluation before starting training
+        if test_loader is not None:
+            print(
+                f"Epoch {0:02d} "
+                f"| Train Loss: {train_loss:.4f} "
+                f"| Train Regret: {train_regret:.4f} "
+                f"| Test Loss: {test_loss:.4f} "
+                f"| Test Regret: {test_regret:.4f}"
+            )
+        else:
+            print(
+                f"Epoch {0:02d} "
+                f"| Train Loss: {train_loss:.4f} "
+                f"| Train Regret: {train_regret:.4f}"
+            )
+
+
+        # # Initialize loss and regret vectors
+        # train_loss_vector = []
+        # train_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)]
+        # if test_loader is not None:
+        #     test_loss_vector = []
+        #     test_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, test_loader)]
         
         # Training loop
         for epoch in range(epochs):
@@ -203,14 +232,14 @@ class SPOTrainer:
                     test_loss, test_regret = self.evaluate(test_loader)
                     test_loss_vector.append(test_loss)
                     test_regret_vector.append(test_regret)
-                    print(f"Epoch {epoch:02d} "
+                    print(f"Epoch {epoch+1:02d} "
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f} "
                           f"| Test Loss: {test_loss:.4f} "
                           f"| Test Regret: {test_regret:.4f}"
                     )
                 else:
-                    print(f"Epoch {epoch:02d} "
+                    print(f"Epoch {epoch+1:02d} "
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f}"
                     )
