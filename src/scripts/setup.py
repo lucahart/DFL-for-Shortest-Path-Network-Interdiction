@@ -28,6 +28,10 @@ def gen_train_data(
         seed=cfg.get("random_seed")
     )
 
+    # Normalize costs
+    normalization_constant = cfg.get("normalization_constant")
+    costs = costs / normalization_constant
+
     # Split the data into training and testing sets
     X_train, X_test, c_train, c_test = train_test_split(features, costs, test_size=cfg.get("test_size"), random_state=cfg.get("random_seed"))
 
@@ -55,6 +59,10 @@ def gen_test_data(cfg: HP) -> dict:
         noise_width=cfg.get("noise_width"),
         seed=cfg.get("random_seed")
     )
+
+    # Normalize costs
+    normalization_constant = cfg.get("normalization_constant")
+    costs = costs / normalization_constant
 
     return {
         "features": features,
@@ -86,7 +94,7 @@ def setup_po_model(
 
     # Define the loss function and optimizer
     po_criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(po_model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(po_model.parameters(), lr=cfg.get("po_lr"))
 
     po_trainer = POTrainer(
         pred_model=po_model,
@@ -99,7 +107,7 @@ def setup_po_model(
     train_loss_log, train_regret_log, test_loss_log, test_regret_log = po_trainer.fit(
         training_data["train_loader"], 
         training_data["test_loader"], 
-        epochs=cfg.get("epochs")
+        epochs=cfg.get("po_epochs")
     )
 
     if versatile:
@@ -145,7 +153,7 @@ def setup_spo_model(
     spop = pyepo.func.SPOPlus(opt_model, processes=1)
 
     # Init optimizer
-    optimizer = torch.optim.Adam(spo_model.parameters(), lr=.1)
+    optimizer = torch.optim.Adam(spo_model.parameters(), lr=cfg.get("spo_lr"))
 
     # Create a trainer instance
     spo_trainer = SPOTrainer(
@@ -159,7 +167,7 @@ def setup_spo_model(
     train_loss_log, train_regret_log, test_loss_log, test_regret_log = spo_trainer.fit(
         training_data["train_loader"], 
         training_data["test_loader"], 
-        epochs=cfg.get("epochs")
+        epochs=cfg.get("spo_epochs")
     )
 
     if versatile:
