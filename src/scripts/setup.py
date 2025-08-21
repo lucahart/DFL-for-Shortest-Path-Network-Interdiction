@@ -1,6 +1,7 @@
 import pyepo
 import torch
 from torch import nn
+from copy import deepcopy
 
 from sklearn.model_selection import train_test_split
 from models.ShortestPathGrid import ShortestPathGrid
@@ -130,6 +131,7 @@ def setup_spo_model(
         opt_model: 'shortestPathGrb',
         training_data: dict,
         versatile: bool = False,
+        transfer_model: nn.Sequential = None,
         **kwargs
         ):
     """
@@ -142,12 +144,15 @@ def setup_spo_model(
     output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
 
     # Build the model with nn.Sequential
-    spo_model = nn.Sequential(
-        nn.Linear(input_size, hidden_size),  # first affine layer
-        nn.ReLU(),                           # non‐linearity
-        nn.Linear(hidden_size, output_size),  # second affine layer
-        nn.Sigmoid()                         # output activation function
-    )
+    if transfer_model is None:
+        spo_model = nn.Sequential(
+            nn.Linear(input_size, hidden_size),  # first affine layer
+            nn.ReLU(),                           # non‐linearity
+            nn.Linear(hidden_size, output_size),  # second affine layer
+            nn.Sigmoid()                         # output activation function
+        )   
+    else:
+        spo_model = deepcopy(transfer_model)
 
     # Init SPO+ loss
     spop = pyepo.func.SPOPlus(opt_model, processes=1)

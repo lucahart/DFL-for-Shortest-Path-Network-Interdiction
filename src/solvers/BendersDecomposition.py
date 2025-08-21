@@ -175,11 +175,12 @@ class BendersDecomposition:
         diff = np.inf
         cnt = 0
         org_cost = self.opt_model.cost.copy()
+
+        # Solve the shortest path problem of the follower for the first time
+        shortest_path_y, z_min = self.opt_model.solve()
  
         while (diff > self.eps and cnt < self.max_cnt):
             cnt += 1
-            # Solve the shortest path problem of the follower
-            shortest_path_y, z_min = self.opt_model.solve()
             # 
             if cnt == 1:
                 A = np.reshape(interdiction_cost * shortest_path_y, (1, -1))
@@ -191,6 +192,8 @@ class BendersDecomposition:
             interdictions_x, z_max = self.solve_maxmin_knapsack(A, b)
             # Update costs
             self.opt_model.setObj(org_cost + interdiction_cost * interdictions_x)
+            # Solve the shortest path of the follower
+            shortest_path_y, z_min = self.opt_model.solve()
             # Calculate the difference
             diff = z_max - z_min
             if versatile:
