@@ -18,7 +18,7 @@ def compare_po_spo(cfg,
     """
 
     # Retrieve configuration parameters
-    data_samples = cfg.get("sim_data_samples") # number of training data
+    data_samples = cfg.get("num_test_samples") # number of training data
     m, n = cfg.get("grid_size")
 
     # Initialize lists to store results
@@ -30,7 +30,7 @@ def compare_po_spo(cfg,
     for i in range(data_samples):
         # Store temporary values
         cost = test_data["costs"][i]
-        feature = test_data["features"][i]
+        feature = test_data["feats"][i]
 
         # Set the cost for the grid (Optionally specify the source and target nodes)
         opt_model.setObj(cost)

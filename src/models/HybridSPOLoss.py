@@ -48,6 +48,8 @@ class HybridSPOLoss(nn.Module):
         L_spo = self.spo_plus(c_pred, c_true, sols, objs)
         if self.anchor == "mse":
             L_anchor = mse_anchor(c_pred, c_true)
-        else:
+        elif self.anchor == "meanstd":
             L_anchor = meanstd_anchor(c_pred, c_true)
+        else:
+            raise(f"Anchor {self.anchor} unknown.")
         return (1 - self.lam) * L_spo + self.lam * L_anchor

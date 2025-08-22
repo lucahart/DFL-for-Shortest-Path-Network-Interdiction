@@ -7,3 +7,6 @@ src/shortest_path_indiction.egg-info/
 
 # MacOS specific files
 .DS_Store
+
+# Gurobi logs
+gurobi.log
