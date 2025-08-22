@@ -1,4 +1,5 @@
-from typing import Tuple
+from typing import Optional, Tuple
+from matplotlib.axes import Axes
 from numpy import ndarray
 from numpy import arange
 import pyepo.metric
@@ -205,14 +206,6 @@ class SPOTrainer:
                 f"| Train Loss: {train_loss:.4f} "
                 f"| Train Regret: {train_regret:.4f}"
             )
-
-
-        # # Initialize loss and regret vectors
-        # train_loss_vector = []
-        # train_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)]
-        # if test_loader is not None:
-        #     test_loss_vector = []
-        #     test_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, test_loader)]
         
         # Training loop
         for epoch in range(epochs):
@@ -300,11 +293,12 @@ class SPOTrainer:
             return loss_criterion(costs_pred, costs)
 
     @staticmethod
-    def vis_learning_curve(trainer: "OptNetTrainer",
+    def vis_learning_curve(trainer: "SPOTrainer",
                         train_loss_log: ndarray[float],
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,
-                        test_regret_log: ndarray[float] = None) -> None:
+                        test_regret_log: ndarray[float] = None,
+                        ax: Optional[Axes] = None) -> None:
         """
         Visualizes the learning curve of the model during training.
 
@@ -325,7 +319,10 @@ class SPOTrainer:
         """
 
         # Create figure and subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16,4))
+        if ax is None:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16,4))
+        else:
+            ax1, ax2 = ax
 
         # Plot regret learning curve with training and testing data
         ax1.plot(train_regret_log, marker='.', label='Training Regret')
