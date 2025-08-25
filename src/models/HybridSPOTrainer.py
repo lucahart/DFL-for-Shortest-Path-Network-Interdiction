@@ -49,4 +49,5 @@ class HybridSPOTrainer(SPOTrainer):
                                        ax=ax[0:2])
         
         # Plot cost convergence
+        # alpha = 
 
