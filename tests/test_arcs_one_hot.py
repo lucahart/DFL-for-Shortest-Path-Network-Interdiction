@@ -1,8 +1,11 @@
 import numpy as np
 import os
 import sys
+import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+pytest.importorskip("pyepo")
 
 from src.models.ShortestPathGrid import ShortestPathGrid
 from src.models.ShortestPath import ShortestPath
