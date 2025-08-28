@@ -7,14 +7,14 @@ class CalibratedPredictor(nn.Module):
 
     base: nn.Module
     log_s: nn.Parameter
-    b: nn.Parameter
+    # b: nn.Parameter
     eps: float
 
     def __init__(self, base_model: nn.Module, eps: float = 1e-4) -> None:
         super().__init__()
         self.base = base_model
         self.log_s = nn.Parameter(torch.zeros(1))  # logarithm of scale
-        self.b = nn.Parameter(torch.zeros(1))
+        # self.b = nn.Parameter(torch.zeros(1))
         self.eps = eps
 
     def forward(self, feats: torch.Tensor, return_all: bool = False):
@@ -30,14 +30,14 @@ class CalibratedPredictor(nn.Module):
         """
         chat = self.base(feats)
         s = F.softplus(self.log_s) + self.eps
-        ctilde = s * chat + self.b
+        ctilde = s * chat
         if return_all:
             return ctilde, chat, s
         return ctilde
 
 @torch.no_grad()
-def scale_alignment_alpha(ctilde: torch.Tensor, ctrue: torch.Tensor) -> float:
+def scale_alignment_alpha(c_tilde: torch.Tensor, c_true: torch.Tensor) -> float:
     """Compute best scalar aligning predicted costs to true costs."""
-    num = (ctilde * ctrue).sum(dim=1)
-    den = (ctilde * ctilde).sum(dim=1).clamp_min(1e-12)
+    num = (c_tilde * c_true).sum()
+    den = max((c_tilde * c_tilde).sum(), 1e-12)
     return (num / den).mean().item()

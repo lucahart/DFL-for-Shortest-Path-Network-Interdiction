@@ -1,3 +1,4 @@
+from models.CalibratedPredictor import CalibratedPredictor
 import pyepo
 import torch
 from torch import nn
@@ -235,18 +236,31 @@ def setup_hybrid_spo_model(
     else:
         spo_model = deepcopy(transfer_model)
 
-    # Init SPO+ loss
-    spop = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
+    # Add a calibration layer
+    spo_model_calibrated = CalibratedPredictor(spo_model)
 
-    # Init optimizer
-    optimizer = torch.optim.Adam(spo_model.parameters(), lr=cfg.get("spo_lr"))
+    # Init SPO+ loss
+    spo_loss = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
+
+    # assuming model has .log_s and .b
+    calib_params = [spo_model_calibrated.log_s]
+    backbone_params = [p for n,p in spo_model_calibrated.named_parameters() if n not in {'log_s','b'}]
+
+    optimizer = torch.optim.Adam([
+        {'params': backbone_params, 'lr': cfg.get("spo_lr"), 'weight_decay': 1e-4},
+        {'params': calib_params,   'lr': cfg.get("spo_lr")*10, 'weight_decay': 0.0},  # 10× faster
+    ])
+
+
+    # # Init optimizer
+    # optimizer = torch.optim.Adam(spo_model_calibrated.parameters(), lr=cfg.get("spo_lr"))
 
     # Create a trainer instance
     spo_trainer = SPOTrainer(
-        pred_model=spo_model, 
+        pred_model=spo_model_calibrated, 
         opt_model=opt_model, 
         optimizer=optimizer, 
-        loss_fn=spop
+        loss_fn=spo_loss
     )
 
     # Train the model
@@ -268,5 +282,5 @@ def setup_hybrid_spo_model(
 
         print("Final regret on validation set: ", val_regret_log[-1])
 
-    return spo_model
+    return spo_model_calibrated
 
