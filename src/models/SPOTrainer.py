@@ -209,6 +209,10 @@ class SPOTrainer:
         
         # Training loop
         for epoch in range(epochs):
+            # Set lambda for hybrid method
+            if self.method_name == "hybrid":
+                self.loss_criterion.lam = SPOTrainer.lambda_schedule(epoch)
+
             # Train the model for one epoch
             train_loss = self.train_epoch(train_loader)
             
@@ -247,7 +251,7 @@ class SPOTrainer:
         """
         Returns the list of valid method names for training.
         """
-        return ["spo+", "ptb", "pfy", "imle", "aimle", "nce", "cmap",
+        return ["spo+", "hybrid", "ptb", "pfy", "imle", "aimle", "nce", "cmap",
                 "dbb", "nid", "pg", "ltr"]
 
     @staticmethod
@@ -285,12 +289,31 @@ class SPOTrainer:
 
         if method_name == "spo+":
             return loss_criterion(costs_pred, costs, sols, objs)
+        if method_name == "hybrid":
+            return loss_criterion(costs_pred, costs, sols, objs)
         elif method_name in ["ptb", "pfy", "imle", "aimle", "nce", "cmap"]:
             return loss_criterion(costs_pred, sols)
         elif method_name in ["dbb", "nid"]:
             return loss_criterion(costs_pred, costs, objs)
         elif method_name in ["pg", "ltr"]:
             return loss_criterion(costs_pred, costs)
+    
+    @staticmethod
+    def lambda_schedule(epoch):
+        # Example: warm start with strong anchor, then linear decay
+        if epoch < 30:
+            return 1.0             # train without SPO for first 30 epochs
+        else:
+            return 0.05
+        # if epoch < 33:
+        #     return 0.7             # strong anchor for 3 epochs
+        # elif epoch < 45:
+        #     # decay to 0.1 by epoch 45
+        #     t = (epoch - 33) / (45 - 33)
+        #     return (1 - t) * 0.7 + t * 0.1
+        # else:
+        #     return 0.05            # long tail
+
 
     @staticmethod
     def vis_learning_curve(trainer: "SPOTrainer",
@@ -351,6 +374,7 @@ class SPOTrainer:
             )
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss')
+        ax2.set_yscale('log')
         ax2.set_title('Loss Learning Curve')
         ax2.legend()
 

@@ -29,10 +29,12 @@ class HybridSPOLoss(nn.Module):
     def __init__(self,
                  opt_model,
                  lam: float = 0.1,
-                 anchor: str = "mse") -> None:
+                 anchor: str = "mse",
+                 spo_cutoff = 1e-5) -> None:
         super().__init__()
         self.lam = lam
         self.anchor = anchor
+        self.spo_cutoff = spo_cutoff
         self.spo_plus = SPOPlus(opt_model, processes=1)
 
     def set_lambda(self, new_val: float) -> None:
@@ -45,11 +47,14 @@ class HybridSPOLoss(nn.Module):
                 sols: torch.Tensor,
                 objs: torch.Tensor) -> torch.Tensor:
         """Compute hybrid loss."""
-        L_spo = self.spo_plus(c_pred, c_true, sols, objs)
+        if 1 - self.lam > self.spo_cutoff:
+            L_spo = self.spo_plus(c_pred, c_true, sols, objs)
+            
         if self.anchor == "mse":
             L_anchor = mse_anchor(c_pred, c_true)
         elif self.anchor == "meanstd":
             L_anchor = meanstd_anchor(c_pred, c_true)
         else:
             raise(f"Anchor {self.anchor} unknown.")
-        return (1 - self.lam) * L_spo + self.lam * L_anchor
+        
+        return (1 - self.lam) * L_spo + self.lam * L_anchor if 1 - self.lam >= self.spo_cutoff else L_anchor

@@ -274,6 +274,7 @@ class POTrainer:
             )
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss')
+        ax2.set_yscale('log')
         ax2.set_title('Loss Learning Curve')
         ax2.legend()
 

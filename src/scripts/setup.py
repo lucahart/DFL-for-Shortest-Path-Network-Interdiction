@@ -240,7 +240,7 @@ def setup_hybrid_spo_model(
     spo_model_calibrated = CalibratedPredictor(spo_model)
 
     # Init SPO+ loss
-    spo_loss = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
+    hybrid_loss = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
 
     # assuming model has .log_s and .b
     calib_params = [spo_model_calibrated.log_s]
@@ -260,7 +260,8 @@ def setup_hybrid_spo_model(
         pred_model=spo_model_calibrated, 
         opt_model=opt_model, 
         optimizer=optimizer, 
-        loss_fn=spo_loss
+        loss_fn=hybrid_loss,
+        method_name="hybrid"
     )
 
     # Train the model
