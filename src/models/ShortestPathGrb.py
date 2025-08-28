@@ -76,7 +76,7 @@ class shortestPathGrb(optGrbModel):
 
     def solve(self,
               c: ndarray | Tensor | None = None,
-              versatile: bool = False,
+              visualize: bool = False,
               **kwargs
               ) -> Tuple[ndarray, float]:
         """
@@ -87,7 +87,7 @@ class shortestPathGrb(optGrbModel):
         cost : ndarray | Tensor | None, Optional
             Cost vector for the edges. If provided, it updates the model's objective
             during the solve process. The original cost is restored after solving.
-        versatile : bool, Optional
+        visualize : bool, Optional
             If True, the solution is visualized in a graph. Default is False.
 
         Returns:
@@ -99,8 +99,8 @@ class shortestPathGrb(optGrbModel):
         # Run solver to find solution
         sol, obj = super().solve()
 
-        # Show solution in graph if versatile is True
-        if versatile:
+        # Show solution in graph if visualize is True
+        if visualize:
             self._graph.visualize(colored_edges=sol, **kwargs)
 
         # Return solution

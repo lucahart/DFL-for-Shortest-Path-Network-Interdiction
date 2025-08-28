@@ -1,4 +1,5 @@
-from typing import Tuple
+from typing import Optional, Tuple
+from matplotlib.axes import Axes
 from numpy import ndarray
 from numpy import arange
 import pyepo.metric
@@ -75,6 +76,7 @@ class SPOTrainer:
             divided by the number of samples in the dataset.
         """
 
+        self.pred_model.train()
         running_loss = 0.0
         for feats, costs, sols, objs  in loader:
 
@@ -178,15 +180,39 @@ class SPOTrainer:
         if n_epochs < 0:
             self.n_epochs = max(1, epochs // 10)
 
-        # Initialize loss and regret vectors
-        train_loss_vector = []
-        train_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)]
+        # Initialize train loss and regret vectors
+        train_loss, train_regret = self.evaluate(train_loader)
+        train_loss_vector = [train_loss]
+        train_regret_vector = [train_regret]
+
+        # If test_loader is provided, initialize test loss and regret vectors
         if test_loader is not None:
-            test_loss_vector = []
-            test_regret_vector = [pyepo.metric.regret(self.pred_model, self.opt_model, test_loader)]
+            test_loss, test_regret = self.evaluate(test_loader)
+            test_loss_vector = [test_loss]
+            test_regret_vector = [test_regret]
+
+        # Print the initial evaluation before starting training
+        if test_loader is not None:
+            print(
+                f"Epoch {0:02d} "
+                f"| Train Loss: {train_loss:.4f} "
+                f"| Train Regret: {train_regret:.4f} "
+                f"| Test Loss: {test_loss:.4f} "
+                f"| Test Regret: {test_regret:.4f}"
+            )
+        else:
+            print(
+                f"Epoch {0:02d} "
+                f"| Train Loss: {train_loss:.4f} "
+                f"| Train Regret: {train_regret:.4f}"
+            )
         
         # Training loop
         for epoch in range(epochs):
+            # Set lambda for hybrid method
+            if self.method_name == "hybrid":
+                self.loss_criterion.lam = SPOTrainer.lambda_schedule(epoch)
+
             # Train the model for one epoch
             train_loss = self.train_epoch(train_loader)
             
@@ -203,14 +229,14 @@ class SPOTrainer:
                     test_loss, test_regret = self.evaluate(test_loader)
                     test_loss_vector.append(test_loss)
                     test_regret_vector.append(test_regret)
-                    print(f"Epoch {epoch:02d} "
+                    print(f"Epoch {epoch+1:02d} "
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f} "
                           f"| Test Loss: {test_loss:.4f} "
                           f"| Test Regret: {test_regret:.4f}"
                     )
                 else:
-                    print(f"Epoch {epoch:02d} "
+                    print(f"Epoch {epoch+1:02d} "
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f}"
                     )
@@ -225,7 +251,7 @@ class SPOTrainer:
         """
         Returns the list of valid method names for training.
         """
-        return ["spo+", "ptb", "pfy", "imle", "aimle", "nce", "cmap",
+        return ["spo+", "hybrid", "ptb", "pfy", "imle", "aimle", "nce", "cmap",
                 "dbb", "nid", "pg", "ltr"]
 
     @staticmethod
@@ -263,19 +289,39 @@ class SPOTrainer:
 
         if method_name == "spo+":
             return loss_criterion(costs_pred, costs, sols, objs)
+        if method_name == "hybrid":
+            return loss_criterion(costs_pred, costs, sols, objs)
         elif method_name in ["ptb", "pfy", "imle", "aimle", "nce", "cmap"]:
             return loss_criterion(costs_pred, sols)
         elif method_name in ["dbb", "nid"]:
             return loss_criterion(costs_pred, costs, objs)
         elif method_name in ["pg", "ltr"]:
             return loss_criterion(costs_pred, costs)
+    
+    @staticmethod
+    def lambda_schedule(epoch):
+        # Example: warm start with strong anchor, then linear decay
+        if epoch < 30:
+            return 1.0             # train without SPO for first 30 epochs
+        else:
+            return 0.05
+        # if epoch < 33:
+        #     return 0.7             # strong anchor for 3 epochs
+        # elif epoch < 45:
+        #     # decay to 0.1 by epoch 45
+        #     t = (epoch - 33) / (45 - 33)
+        #     return (1 - t) * 0.7 + t * 0.1
+        # else:
+        #     return 0.05            # long tail
+
 
     @staticmethod
-    def vis_learning_curve(trainer: "OptNetTrainer",
+    def vis_learning_curve(trainer: "SPOTrainer",
                         train_loss_log: ndarray[float],
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,
-                        test_regret_log: ndarray[float] = None) -> None:
+                        test_regret_log: ndarray[float] = None,
+                        ax: Optional[Axes] = None) -> None:
         """
         Visualizes the learning curve of the model during training.
 
@@ -296,7 +342,10 @@ class SPOTrainer:
         """
 
         # Create figure and subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16,4))
+        if ax is None:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16,4))
+        else:
+            ax1, ax2 = ax
 
         # Plot regret learning curve with training and testing data
         ax1.plot(train_regret_log, marker='.', label='Training Regret')
@@ -325,6 +374,7 @@ class SPOTrainer:
             )
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss')
+        ax2.set_yscale('log')
         ax2.set_title('Loss Learning Curve')
         ax2.legend()
 

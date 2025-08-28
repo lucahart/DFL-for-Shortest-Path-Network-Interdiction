@@ -11,23 +11,28 @@ class HP:
     epochs: int = 20
 
     # -------- General simulation parameters --------
-    random_seed: int = 42
+    random_seed: int = 31
 
     # -------- Bailey & Bayrak (2008) simulation parameters --------
     c_min: float = 1.0
     c_max: float = 10.0
     d_min: float = 1.0
     d_max: float = 10.0
-    Q = .6
+    Q = 0.6
+    B = 5
+    network = (6, 8)
+
+    # -------- ML hyperparameters --------
+    num_features: int = 5
+    num_data_samples: int = 100
+    test_size: float = 0.2
+    data_loader_batch_size: int = 32
+    epochs: int = 10
+    deg: int = 3
+    noise_width: float = 0.05
 
     # -------- PO & SPO comparison --------
-    # Parameters for dataset generation and model configuration
-    test_data_samples: Optional[int] = None
-    deg: Optional[int] = None
-    noise_width: Optional[float] = None
-    seed: Optional[int] = None
-    num_features: Optional[int] = None
-    grid_size: Optional[Tuple[int, int]] = None
+    sim_data_samples: int = 1000 # number of training data
 
 
     # -------- Postprocessing parameters --------
