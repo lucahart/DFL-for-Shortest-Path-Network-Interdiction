@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+from data.config import HP
 from matplotlib.axes import Axes
 from numpy import ndarray
 from numpy import arange
@@ -24,7 +25,8 @@ class SPOTrainer:
                  opt_model: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
                  loss_fn: torch.nn.Module,
-                 method_name: str = "spo+"
+                 method_name: str = "spo+",
+                 cfg: HP = None
                  ) -> None:
         """
         Initializes the Trainer class.
@@ -55,6 +57,9 @@ class SPOTrainer:
         else:
             raise ValueError(f"Unknown method name: {method_name}\n"
                              f"Valid methods are: {type(self).VALID_METHODS}")
+        self.cfg = cfg
+        if cfg is None and method_name == "hybrid":
+            raise ValueError("Configuration must be provided for hybrid method.")
 
     def train_epoch(self,
                     loader: DataLoader
@@ -211,7 +216,7 @@ class SPOTrainer:
         for epoch in range(epochs):
             # Set lambda for hybrid method
             if self.method_name == "hybrid":
-                self.loss_criterion.lam = SPOTrainer.lambda_schedule(epoch)
+                self.loss_criterion.lam = SPOTrainer.lambda_schedule(self.cfg, epoch)
 
             # Train the model for one epoch
             train_loss = self.train_epoch(train_loader)
@@ -299,12 +304,12 @@ class SPOTrainer:
             return loss_criterion(costs_pred, costs)
     
     @staticmethod
-    def lambda_schedule(epoch):
+    def lambda_schedule(cfg, epoch):
         # Example: warm start with strong anchor, then linear decay
-        if epoch < 30:
-            return 1.0             # train without SPO for first 30 epochs
+        if epoch < cfg.get("spo_po_epochs"):
+            return 1.0             # train without SPO for first epochs
         else:
-            return 0.05
+            return cfg.get("lam")  # use constant lambda afterwards
         # if epoch < 33:
         #     return 0.7             # strong anchor for 3 epochs
         # elif epoch < 45:

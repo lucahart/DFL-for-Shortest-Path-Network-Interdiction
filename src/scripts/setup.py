@@ -261,7 +261,8 @@ def setup_hybrid_spo_model(
         opt_model=opt_model, 
         optimizer=optimizer, 
         loss_fn=hybrid_loss,
-        method_name="hybrid"
+        method_name="hybrid",
+        cfg=cfg
     )
 
     # Train the model
