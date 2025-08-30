@@ -247,7 +247,7 @@ def setup_hybrid_spo_model(
     backbone_params = [p for n,p in spo_model_calibrated.named_parameters() if n not in {'log_s','b'}]
 
     optimizer = torch.optim.Adam([
-        {'params': backbone_params, 'lr': cfg.get("spo_lr"), 'weight_decay': 1e-4},
+        {'params': backbone_params, 'lr': cfg.get("spo_lr"), 'weight_decay': 0.0},
         {'params': calib_params,   'lr': cfg.get("spo_lr")*10, 'weight_decay': 0.0},  # 10× faster
     ])
 

@@ -172,8 +172,8 @@ class POTrainer:
                 f"Epoch {0:02d} "
                 f"| Train Loss: {train_loss:.4f} "
                 f"| Train Regret: {train_regret:.4f} "
-                f"| Test Loss: {test_loss:.4f} "
-                f"| Test Regret: {test_regret:.4f}"
+                f"| Validation Loss: {test_loss:.4f} "
+                f"| Validation Regret: {test_regret:.4f}"
             )
         else:
             print(
@@ -196,7 +196,7 @@ class POTrainer:
             train_regret_vector.append(train_regret)
             
             # Print loss every n_epochs
-            if epoch % self.n_epochs == 0:
+            if (epoch + 1) % self.n_epochs == 0:
                 if test_loader is not None:
                     test_loss, test_regret = self.evaluate(test_loader)
                     test_loss_vector.append(test_loss)
@@ -204,8 +204,8 @@ class POTrainer:
                     print(f"Epoch {epoch+1:02d} "
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f} "
-                          f"| Test Loss: {test_loss:.4f} "
-                          f"| Test Regret: {test_regret:.4f}"
+                          f"| Validation Loss: {test_loss:.4f} "
+                          f"| Validation Regret: {test_regret:.4f}"
                     )
                 else:
                     print(f"Epoch {epoch+1:02d} "
