@@ -3,7 +3,7 @@ import gurobipy as gp
 from gurobipy import GRB
 from copy import deepcopy
 
-from src.models.ShortestPathGrb import shortestPathGrb
+from models.ShortestPathGrb import shortestPathGrb
 
 
 class BendersDecomposition:
@@ -21,6 +21,7 @@ class BendersDecomposition:
                  opt_model: 'shortestPathGrb',
                  k: int = 5,
                  interdiction_cost: np.ndarray | None = None,
+                 *,
                  max_cnt: int = 10,
                  eps: float = 1,
                  output_flag: bool = False
@@ -151,10 +152,11 @@ class BendersDecomposition:
         
         Parameters
         ----------
-        grid : ShortestPathGrid
-            The grid object containing the graph and costs.
         interdiction_cost : ndarray
             The cost of interdicting each edge.
+        versatile : bool
+            If True, enables versatile Benders decomposition.
+            Defaults to True.
 
         Returns
         -------

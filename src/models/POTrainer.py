@@ -1,10 +1,14 @@
+from data.AdvLoader import AdvLoader
+import pyepo.metric
+import torch
+import numpy as np
+
 from typing import Tuple
 from numpy import ndarray
 from numpy import arange
-import pyepo.metric
-import torch
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+
+from torch.utils.data import DataLoader
 
 class POTrainer:
     """
@@ -70,7 +74,7 @@ class POTrainer:
 
         self.pred_model.train()
         running_loss = 0.0
-        for feats, costs, sols, objs  in loader:
+        for feats, costs, _, _ in loader:
 
             # Move to GPU if specified
             feats = feats.to(self.device)
@@ -111,7 +115,8 @@ class POTrainer:
         self.pred_model.eval()
         total_loss = 0.0
         with torch.no_grad():
-            for feats, costs, sols, objs in loader:
+            for feats, costs, _, _ in loader:
+
                 # Move to GPU if specified
                 feats = feats.to(self.device)
                 costs = costs.to(self.device)
@@ -127,8 +132,8 @@ class POTrainer:
         return total_loss / len(loader.dataset), regret
 
     def fit(self,
-            train_loader: DataLoader,
-            test_loader: DataLoader = None,
+            train_loader: AdvLoader,
+            val_loader: AdvLoader = None,
             epochs: int = 10,
             n_epochs: int = -1
             ) -> ndarray[float]:
@@ -138,10 +143,10 @@ class POTrainer:
         ------------
         Parameters
         ------------
-        train_loader : DataLoader
-            The DataLoader providing the training data.
-        val_loader : DataLoader, optional
-            The DataLoader providing the test data. 
+        train_loader : AdvLoader
+            The AdvLoader providing the training data.
+        val_loader : AdvLoader, optional
+            The AdvLoader providing the test data. 
             If not provided, no testing is performed.
         epochs : int, optional
             The number of epochs to train the model (default is 10).
@@ -151,7 +156,13 @@ class POTrainer:
             If set to a positive integer, it will print the loss every n_epochs epochs.
         """
 
-        # Set n_epochs so that the loss is printed no more than 10 times if not provided
+        # Set data loaders to normal mode
+        train_loader.normal_mode()
+        if val_loader is not None:
+            val_loader.normal_mode()
+
+        # Set n_epochs so that the loss is printed 
+        # No more than 10 times if not provided
         if n_epochs < 0:
             self.n_epochs = max(1, epochs // 10)
 
@@ -160,14 +171,14 @@ class POTrainer:
         train_loss_vector = [train_loss]
         train_regret_vector = [train_regret]
 
-        # If test_loader is provided, initialize test loss and regret vectors
-        if test_loader is not None:
-            test_loss, test_regret = self.evaluate(test_loader)
+        # If val_loader is provided, initialize val loss and regret vectors
+        if val_loader is not None:
+            test_loss, test_regret = self.evaluate(val_loader)
             test_loss_vector = [test_loss]
             test_regret_vector = [test_regret]
             
         # Print the initial evaluation before starting training
-        if test_loader is not None:
+        if val_loader is not None:
             print(
                 f"Epoch {0:02d} "
                 f"| Train Loss: {train_loss:.4f} "
@@ -197,8 +208,8 @@ class POTrainer:
             
             # Print loss every n_epochs
             if (epoch + 1) % self.n_epochs == 0:
-                if test_loader is not None:
-                    test_loss, test_regret = self.evaluate(test_loader)
+                if val_loader is not None:
+                    test_loss, test_regret = self.evaluate(val_loader)
                     test_loss_vector.append(test_loss)
                     test_regret_vector.append(test_regret)
                     print(f"Epoch {epoch+1:02d} "
@@ -215,8 +226,8 @@ class POTrainer:
 
         return (train_loss_vector, 
             train_regret_vector, 
-            (test_loss_vector if test_loader else None), 
-            (test_regret_vector if test_loader else None))
+            (test_loss_vector if val_loader else None), 
+            (test_regret_vector if val_loader else None))
 
 
     @staticmethod

@@ -83,16 +83,17 @@ class SPOTrainer:
 
         self.pred_model.train()
         running_loss = 0.0
-        for feats, costs, sols, objs  in loader:
+        for feats, costs, sols, objs, intds in loader:
 
             # Move to GPU if specified
             feats = feats.to(self.device)
             costs = costs.to(self.device)
             sols = sols.to(self.device)
             objs = objs.to(self.device)
+            intds = intds.to(self.device)
 
             # Forward pass
-            costs_pred = self.pred_model(feats)
+            costs_pred = self.pred_model(feats) + intds
             loss = type(self).compute_loss(
                 self.loss_criterion, 
                 costs_pred, 
@@ -133,15 +134,16 @@ class SPOTrainer:
         self.pred_model.eval()
         total_loss = 0.0
         with torch.no_grad():
-            for feats, costs, sols, objs in loader:
+            for feats, costs, sols, objs, intds in loader:
                 # Move to GPU if specified
                 feats = feats.to(self.device)
                 costs = costs.to(self.device)
                 sols = sols.to(self.device)
                 objs = objs.to(self.device)
+                intds = intds.to(self.device)
 
                 # Forward pass
-                costs_pred = self.pred_model(feats)
+                costs_pred = self.pred_model(feats) + intds
 
                 # Compute loss
                 total_loss += type(self).compute_loss(self.loss_criterion,
@@ -152,13 +154,15 @@ class SPOTrainer:
                                                       self.method_name
                                                     ).item() * feats.size(0)
         # Compute regret
+        loader.normal_mode() # evaluate regret only on original samples
         regret = pyepo.metric.regret(self.pred_model, self.opt_model, loader)
+        loader.adverse_mode() # reset to adverse mode
 
         return total_loss / len(loader.dataset), regret
 
     def fit(self,
             train_loader: DataLoader,
-            test_loader: DataLoader = None,
+            val_loader: DataLoader = None,
             epochs: int = 10,
             n_epochs: int = -1
             ) -> ndarray[float]:
@@ -181,6 +185,11 @@ class SPOTrainer:
             If set to a positive integer, it will print the loss every n_epochs epochs.
         """
 
+        # Set data loaders to adverse mode
+        train_loader.adverse_mode()
+        if val_loader is not None:
+            val_loader.adverse_mode()
+
         # Set n_epochs so that the loss is printed no more than 10 times if not provided
         if n_epochs < 0:
             self.n_epochs = max(1, epochs // 10)
@@ -191,13 +200,13 @@ class SPOTrainer:
         train_regret_vector = [train_regret]
 
         # If test_loader is provided, initialize test loss and regret vectors
-        if test_loader is not None:
-            test_loss, test_regret = self.evaluate(test_loader)
+        if val_loader is not None:
+            test_loss, test_regret = self.evaluate(val_loader)
             test_loss_vector = [test_loss]
             test_regret_vector = [test_regret]
 
         # Print the initial evaluation before starting training
-        if test_loader is not None:
+        if val_loader is not None:
             print(
                 f"Epoch {0:02d} "
                 f"| Train Loss: {train_loss:.4f} "
@@ -222,7 +231,11 @@ class SPOTrainer:
             train_loss = self.train_epoch(train_loader)
             
             # Evaluate training regret
-            train_regret = pyepo.metric.regret(self.pred_model, self.opt_model, train_loader)
+            train_loader.normal_mode()  # evaluate regret only on original samples
+            train_regret = pyepo.metric.regret(self.pred_model, 
+                                               self.opt_model, 
+                                               train_loader)
+            train_loader.adverse_mode()  # reset to adverse mode
 
             # Append loss and regret to vectors
             train_loss_vector.append(train_loss)
@@ -230,8 +243,8 @@ class SPOTrainer:
             
             # Print loss every n_epochs
             if (epoch + 1) % self.n_epochs == 0:
-                if test_loader:
-                    test_loss, test_regret = self.evaluate(test_loader)
+                if val_loader:
+                    test_loss, test_regret = self.evaluate(val_loader)
                     test_loss_vector.append(test_loss)
                     test_regret_vector.append(test_regret)
                     print(f"Epoch {epoch+1:02d} "
@@ -248,8 +261,8 @@ class SPOTrainer:
 
         return (train_loss_vector, 
             train_regret_vector, 
-            (test_loss_vector if test_loader else None), 
-            (test_regret_vector if test_loader else None))
+            (test_loss_vector if val_loader else None), 
+            (test_regret_vector if val_loader else None))
     
     @staticmethod
     def VALID_METHODS():

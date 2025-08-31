@@ -11,6 +11,9 @@ from models.POTrainer import POTrainer
 from models.SPOTrainer import SPOTrainer
 from models.HybridSPOLoss import HybridSPOLoss
 from data.config import HP
+from data.AdvDataset import AdvDataset
+from data.AdverseDataGenerator import AdverseDataGenerator
+from data.AdvLoader import AdvLoader
 
 def gen_train_data(
         cfg: HP,
@@ -35,19 +38,56 @@ def gen_train_data(
     costs = costs / normalization_constant
 
     # Split the data into training and testing sets
-    X_train, X_test, c_train, c_test = train_test_split(features, costs, test_size=cfg.get("num_test_samples"), random_state=cfg.get("random_seed"))
-
+    X_train, X_test, c_train, c_test = train_test_split(
+        features, 
+        costs, 
+        test_size=cfg.get("num_test_samples"), 
+        random_state=cfg.get("random_seed")
+    )
+    
     # Split the training data into training and validation data
-    X_train, X_val, c_train, c_val = train_test_split(X_train, c_train, test_size=cfg.get("validation_size"), random_state=cfg.get("random_seed"))
+    X_train, X_val, c_train, c_val = train_test_split(
+        X_train, 
+        c_train, 
+        test_size=cfg.get("validation_size"), 
+        random_state=cfg.get("random_seed")
+    )
+
+    # Generate adversarial examples for the validation set
+    adversarial_generator = AdverseDataGenerator(
+        cfg, 
+        opt_model, 
+        budget=cfg.get("budget"), 
+        normalization_constant=normalization_constant
+    )
+    X_train, c_train, i_train = adversarial_generator.generate(
+        X_train, 
+        c_train
+    )
+    X_val, c_val, i_val = adversarial_generator.generate(
+        X_val, 
+        c_val
+    )
 
     # Create data sets
-    train_dataset = pyepo.data.dataset.optDataset(opt_model, X_train, c_train)
-    val_dataset = pyepo.data.dataset.optDataset(opt_model, X_val, c_val)
+    train_dataset = AdvDataset(opt_model, X_train, c_train, i_train)
+    val_dataset = AdvDataset(opt_model, X_val, c_val, i_val)
 
     # Create data loaders for training and validation
-    g = torch.Generator().manual_seed(cfg.get("random_seed"))
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.get("data_loader_batch_size"), shuffle=True, generator=g)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.get("data_loader_batch_size"), shuffle=False, generator=g)
+    train_loader = AdvLoader(
+        train_dataset,
+        n_org_samples = X_train.shape[0],
+        batch_size = cfg.get("data_loader_batch_size"),
+        seed = cfg.get("data_loader_seed"),
+        shuffle = True
+    )
+    val_loader = AdvLoader(
+        val_dataset,
+        n_org_samples = X_val.shape[0],
+        batch_size = cfg.get("data_loader_batch_size"),
+        seed = cfg.get("data_loader_seed"),
+        shuffle = False
+    )
 
     # Return the train and validation data loaders and the test data
     return {
@@ -60,8 +100,8 @@ def gen_train_data(
 
 
 def gen_data(cfg: HP,
-                  normalization_constant,
-                  seed: int = 31) -> dict:
+            normalization_constant,
+            seed: int = 31) -> dict:
 
     # Generate true network data for simulation
     features, costs = pyepo.data.shortestpath.genData(
