@@ -54,8 +54,9 @@ class AdverseDataGenerator:
 
         # Generate interdictions
         self.interdictions = AdverseDataGenerator.gen_interdictions(
-            normalization_constant,
             cfg,
+            normalization_constant,
+            n_interdictions = n_additional_samples,
             **kwargs
         )
 
@@ -103,9 +104,9 @@ class AdverseDataGenerator:
         )
 
         # Determine sizes
-        n_samples = feats.shape[0]
-        m = costs.shape[1]
-        num_scenarios = self.interdictions.shape[0] + 1
+        n_samples = feats.shape[0] # number of original samples
+        m = costs.shape[1] # length of cost vector
+        num_scenarios = self.interdictions.shape[0] + 1 # new number of samples
 
         # Allocate grouped arrays. Scenario 0 corresponds to the
         # original (unin­terdicted) cost. Remaining scenarios store the
@@ -121,13 +122,8 @@ class AdverseDataGenerator:
             # Unpack costs for each sample
             cost = costs[idx]
 
-            # Select random interdictions
-            selected_intds = np.random.choice(self.interdictions.shape[0], 
-                                              self.n_additional_samples, 
-                                              replace=False)
-
             # Iterate over each interdiction
-            for idx_intd, intd in enumerate(self.interdictions[selected_intds]):
+            for idx_intd, intd in enumerate(self.interdictions):
                 # Solve the adversarial interdiction problem
                 self.sym_interdictor.opt_model.setObj(cost)
                 sym_intd, _, _ = self.sym_interdictor.benders_decomposition(
@@ -151,11 +147,12 @@ class AdverseDataGenerator:
 
 
     @staticmethod
-    def gen_interdictions(normalization_constant,
-                  cfg: HP,
-                  *,
-                  intd_seed: int = 157,
-                  n_interdictions: int = 100) -> np.ndarray:
+    def gen_interdictions(
+        cfg: HP,
+        normalization_constant,
+        *,
+        intd_seed: int = 157,
+        n_interdictions: int = 10) -> np.ndarray:
         """
         Generate adversarial interdictions for data generation. 
         If no configuration is provided, defaults will be used.
