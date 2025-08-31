@@ -74,6 +74,8 @@ class POTrainer:
 
         self.pred_model.train()
         running_loss = 0.0
+        # Dataset is expected to be in normal mode, which omits interdictions
+        # so each batch contains only features, costs, solutions and objectives.
         for feats, costs, _, _ in loader:
 
             # Move to GPU if specified
@@ -115,6 +117,8 @@ class POTrainer:
         self.pred_model.eval()
         total_loss = 0.0
         with torch.no_grad():
+            # Dataset is expected to be in normal mode, which omits interdictions
+            # so each batch contains only features, costs, solutions and objectives.
             for feats, costs, _, _ in loader:
 
                 # Move to GPU if specified

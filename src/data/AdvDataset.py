@@ -4,85 +4,85 @@ import numpy as np
 from pyepo.data.dataset import optDataset
 import torch
 
+
 class AdvDataset(optDataset):
+    """Dataset for adverse network training under interdictions.
+
+    Parameters
+    ----------
+    opt_model : :class:`shortestPathGrb`
+        The optimization model used to solve each scenario.
+    feats : ``np.ndarray``
+        Feature matrix with shape ``(n_samples, n_feat)``.
+    costs_grouped : ``np.ndarray``
+        Cost tensors grouped by scenario with shape
+        ``(n_samples, num_scenarios, m)``.
+    intds_grouped : ``np.ndarray``
+        Interdiction tensors grouped by scenario with the same shape as
+        ``costs_grouped``.
+    mode : str, optional
+        ``"normal"`` or ``"adverse"``.  In normal mode only the first
+        (uninterdicted) scenario is returned.
     """
-    Dataset for adverse network training under interdictions.
 
-    Attributes:
-    -----------
-    intds : np.ndarray
-        Interdictions for each instance.
-    """
+    _return_intds: bool  # whether to return interdictions
 
-    intds : np.ndarray
-    _return_intds: bool # whether to return interdictions
+    def __init__(self,
+                 opt_model: shortestPathGrb,
+                 feats: np.ndarray,
+                 costs_grouped: np.ndarray,
+                 intds_grouped: np.ndarray,
+                 mode: str = "normal"):
+        # store dimensions
+        self.n_samples = feats.shape[0]
+        self.num_scenarios = costs_grouped.shape[1]
 
-    def __init__(self, 
-                 opt_model: shortestPathGrb, 
-                 feats: np.ndarray, 
-                 costs: np.ndarray, 
-                 intds: np.ndarray,
-                 mode: str = 'normal'
-                 ):
-        """
-        Initializes the adversarial dataset.
+        # Flatten scenarios so that ``optDataset`` can solve them
+        # feats are repeated for each scenario
+        feats_flat = np.repeat(feats, self.num_scenarios, axis=0)
+        costs_flat = costs_grouped.reshape(self.n_samples * self.num_scenarios, -1)
 
-        Parameters:
-        -----------
-        opt_model : shortestPathGrb
-            The optimization model.
-        feats : np.ndarray
-            Dataset features.
-        costs : np.ndarray
-            Dataset costs.
-        intds : np.ndarray
-            Interdictions at instance.
-        mode : str, optional
-            Mode of the dataset ('normal' or 'adverse'). Defaults to 'normal'.
+        # call parent constructor to compute solutions/objs
+        super().__init__(opt_model, feats_flat, costs_flat)
 
-        Raises:
-        -------
-        ValueError
-            If the mode is not 'normal' or 'adverse'.
-        """
+        # reshape solutions and objective values back to grouped form
+        self.sols = self.sols.reshape(self.n_samples, self.num_scenarios, -1)
+        self.objs = self.objs.reshape(self.n_samples, self.num_scenarios)
 
-        # Call the parent constructor to create optDataset
-        super().__init__(opt_model, feats, costs)
-
-        # Store the interdictions
-        self.intds = intds
+        # store original arrays for retrieval
+        self.feats = feats
+        self.costs = costs_grouped
+        self.intds = intds_grouped
 
         # Set the interdiction mode
-        if mode == 'normal':
+        if mode == "normal":
             self._return_intds = False
-        elif mode == 'adverse':
+        elif mode == "adverse":
             self._return_intds = True
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-    def __getitem__(self, index):
-        """
-        A method to retrieve data
+    def __len__(self) -> int:  # type: ignore[override]
+        """Number of original (non-scenario) samples."""
+        return self.n_samples
 
-        Args:
-            index (int): data index
+    def __getitem__(self, index):  # type: ignore[override]
+        """Retrieve data for a single instance.
 
-        Returns:
-            tuple: data features (torch.tensor), costs (torch.tensor), 
-            optimal solutions (torch.tensor) and objective values (torch.tensor)
+        In normal mode only the first scenario is returned.  In adverse
+        mode all scenarios together with their interdictions are returned.
         """
-        return (
-            torch.FloatTensor(self.feats[index]),
-            torch.FloatTensor(self.costs[index]),
-            torch.FloatTensor(self.sols[index]),
-            torch.FloatTensor(self.objs[index]),
-            torch.FloatTensor(self.intds[index])
-        ) if self._return_intds else (
-            torch.FloatTensor(self.feats[index]),
-            torch.FloatTensor(self.costs[index]),
-            torch.FloatTensor(self.sols[index]),
-            torch.FloatTensor(self.objs[index])
-        )
+
+        feat = torch.FloatTensor(self.feats[index])
+        costs = torch.FloatTensor(self.costs[index])
+        sols = torch.FloatTensor(self.sols[index])
+        objs = torch.FloatTensor(self.objs[index])
+        intds = torch.FloatTensor(self.intds[index])
+
+        if self._return_intds:
+            return feat, costs, sols, objs, intds
+        else:
+            return feat, costs[0], sols[0], objs[0]
 
     def normal_mode(self) -> None:
         """

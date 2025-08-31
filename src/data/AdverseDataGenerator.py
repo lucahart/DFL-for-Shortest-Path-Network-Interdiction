@@ -1,4 +1,3 @@
-import torch
 import pyepo
 import numpy as np
 from copy import deepcopy
@@ -68,52 +67,58 @@ class AdverseDataGenerator:
         )
 
 
-    def generate(self, 
-                 feats: np.ndarray,
-                 costs: np.ndarray, 
-                 versatile: bool = False,
-                 seed: int = None
-                 ) -> None:
+    def generate(
+        self,
+        feats: np.ndarray,
+        costs: np.ndarray,
+        versatile: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generate adversarial examples for the given dataset. 
-        Adds new examples in place.
+        Generate adversarial examples for the given dataset.
 
         Parameters:
         -----------
-        dataset : pyepo.data.Dataset
-            The dataset for which to generate adversarial examples.
+        feats : np.ndarray
+            Feature matrix of shape ``(n_samples, p)``.
+        costs : np.ndarray
+            Cost matrix of shape ``(n_samples, m)``.
+        versatile : bool, optional
+            Whether to print a progress bar during generation.
 
         Returns:
         --------
-        pyepo.data.Dataset
-            A new dataset containing the adversarial examples.
+        tuple
+            ``(feats, costs_grouped, interdictions_grouped)`` where ``feats``
+            has shape ``(n_samples, p)`` and ``costs_grouped`` as well as
+            ``interdictions_grouped`` have shape ``(n_samples, num_scenarios, m)``.
+            Scenario index ``0`` corresponds to the original (unin­terdicted)
+            costs; subsequent indices contain the results for each
+            interdiction.
         """
 
         # Print that generation started
-        print(f"Generating adversarial examples with " + 
-              f"{self.interdictions.shape[0]} interdictions...")
+        print(
+            f"Generating adversarial examples with "
+            f"{self.interdictions.shape[0]} interdictions..."
+        )
 
-        # Set random seed if specified
-        if seed is not None:
-            np.random.seed(seed)
-
-        # Create an array to hold the features for the adversarial examples
+        # Determine sizes
         n_samples = feats.shape[0]
-        n_samples_new = n_samples * self.interdictions.shape[0]
-        feats_result = np.concatenate([
-                feats, 
-                np.zeros((n_samples_new, feats.shape[1]))
-            ])
-        costs_result = np.concatenate([
-                costs, 
-                np.zeros((n_samples_new, costs.shape[1]))
-            ])
-        intds_result = np.zeros((n_samples_new + n_samples, costs.shape[1]))
+        m = costs.shape[1]
+        num_scenarios = self.interdictions.shape[0] + 1
+
+        # Allocate grouped arrays. Scenario 0 corresponds to the
+        # original (unin­terdicted) cost. Remaining scenarios store the
+        # result for each interdiction.
+        costs_grouped = np.zeros((n_samples, num_scenarios, m))
+        interdictions_grouped = np.zeros_like(costs_grouped)
+
+        # Fill scenario 0 with the original costs
+        costs_grouped[:, 0, :] = costs
 
         # Iterate over each example in the dataset
         for idx in range(n_samples):
-            # Unpack features and costs for each sample
-            feat = feats[idx]
+            # Unpack costs for each sample
             cost = costs[idx]
 
             # Select random interdictions
@@ -127,22 +132,22 @@ class AdverseDataGenerator:
                 self.sym_interdictor.opt_model.setObj(cost)
                 sym_intd, _, _ = self.sym_interdictor.benders_decomposition(
                     interdiction_cost=intd,
-                    versatile=versatile
+                    versatile=versatile,
                 )
 
                 # Create new cost vector by adding the interdiction costs
                 new_cost = cost + sym_intd * intd
 
-                # Store the new costs
-                store_idx = idx + n_samples * (idx_intd + 1)
-                feats_result[store_idx,:] = feat
-                costs_result[store_idx,:] = new_cost
-                intds_result[store_idx,:] = sym_intd * intd
+                # Store the new costs and applied interdiction
+                costs_grouped[idx, idx_intd + 1, :] = new_cost
+                interdictions_grouped[idx, idx_intd + 1, :] = (
+                    sym_intd * intd
+                )
 
             # Print progress if versatile
             print_progress(idx, n_samples)
 
-        return feats_result, costs_result, intds_result
+        return feats, costs_grouped, interdictions_grouped
 
 
     @staticmethod

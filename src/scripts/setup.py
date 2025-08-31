@@ -76,17 +76,15 @@ def gen_train_data(
     # Create data loaders for training and validation
     train_loader = AdvLoader(
         train_dataset,
-        n_org_samples = X_train.shape[0],
-        batch_size = cfg.get("data_loader_batch_size"),
-        seed = cfg.get("data_loader_seed"),
-        shuffle = True
+        batch_size=cfg.get("data_loader_batch_size"),
+        seed=cfg.get("data_loader_seed"),
+        shuffle=True,
     )
     val_loader = AdvLoader(
         val_dataset,
-        n_org_samples = X_val.shape[0],
-        batch_size = cfg.get("data_loader_batch_size"),
-        seed = cfg.get("data_loader_seed"),
-        shuffle = False
+        batch_size=cfg.get("data_loader_batch_size"),
+        seed=cfg.get("data_loader_seed"),
+        shuffle=False,
     )
 
     # Return the train and validation data loaders and the test data
