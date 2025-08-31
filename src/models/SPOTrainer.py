@@ -26,7 +26,9 @@ class SPOTrainer:
                  optimizer: torch.optim.Optimizer,
                  loss_fn: torch.nn.Module,
                  method_name: str = "spo+",
-                 cfg: HP = None
+                 cfg: HP = None,
+                 aggregate: str = "mean",
+                 cvar_alpha: float = 0.9,
                  ) -> None:
         """
         Initializes the Trainer class.
@@ -42,6 +44,12 @@ class SPOTrainer:
             The optimizer to be used for training the model.
         loss_fn : torch.nn.Module
             The loss function to be used for training the model.
+        aggregate : str, optional
+            How to aggregate scenario losses for each base instance. Options
+            are ``"mean"`` (default), ``"worst"`` or ``"cvar"``.
+        cvar_alpha : float, optional
+            Confidence level used when ``aggregate='cvar'``. The trainer
+            averages the worst ``(1 - alpha)`` fraction of scenario losses.
         device : torch.device, optional
             The device on which the model will be trained (default is 'cuda' if available,
             otherwise 'cpu').
@@ -61,6 +69,9 @@ class SPOTrainer:
         if cfg is None and method_name == "hybrid":
             raise ValueError("Configuration must be provided for hybrid method.")
 
+        self.aggregate = aggregate
+        self.cvar_alpha = cvar_alpha
+
     def train_epoch(self,
                     loader: DataLoader
                     ) -> float:
@@ -71,7 +82,10 @@ class SPOTrainer:
         Parameters
         ------------
         loader : DataLoader
-            The DataLoader providing the training data.
+            The DataLoader providing the training data. Each batch should
+            return ``feats`` with shape ``(B, p)`` and ``costs``, ``sols``,
+            ``objs`` and ``intds`` with shape ``(B, K, ...)`` where ``K`` is
+            the number of scenarios per base instance.
 
         ------------
         Returns
@@ -85,31 +99,44 @@ class SPOTrainer:
         running_loss = 0.0
         for feats, costs, sols, objs, intds in loader:
 
-            # Move to GPU if specified
             feats = feats.to(self.device)
             costs = costs.to(self.device)
             sols = sols.to(self.device)
             objs = objs.to(self.device)
             intds = intds.to(self.device)
 
-            # Forward pass
-            costs_pred = self.pred_model(feats) + intds
-            loss = type(self).compute_loss(
-                self.loss_criterion, 
-                costs_pred, 
-                costs, 
-                sols, 
-                objs, 
-                method_name=self.method_name
+            pred = self.pred_model(feats).unsqueeze(1) + intds
+            B, K = costs.shape[:2]
+
+            loss_flat = type(self).compute_loss(
+                self.loss_criterion,
+                pred.view(B * K, *pred.shape[2:]),
+                costs.view(B * K, *costs.shape[2:]),
+                sols.view(B * K, *sols.shape[2:]),
+                objs.view(B * K, *objs.shape[2:]),
+                method_name=self.method_name,
             )
 
-            # Backward pass
+            if loss_flat.dim() == 0:
+                loss_per_scen = loss_flat.repeat(B, K)
+            else:
+                loss_per_scen = loss_flat.view(B, K, -1).mean(-1)
+            if self.aggregate == "mean":
+                loss = loss_per_scen.mean(dim=1).mean()
+            elif self.aggregate == "worst":
+                loss = loss_per_scen.max(dim=1).values.mean()
+            elif self.aggregate == "cvar":
+                k_tail = max(1, min(K, int((1 - self.cvar_alpha) * K)))
+                topk = loss_per_scen.topk(k_tail, dim=1).values
+                loss = topk.mean(dim=1).mean()
+            else:
+                raise ValueError(f"Unknown aggregate: {self.aggregate}")
+
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            # Update running loss
-            running_loss += loss.item() * feats.size(0)
+            running_loss += loss.item() * B
 
         return running_loss / len(loader.dataset)
 
@@ -121,7 +148,8 @@ class SPOTrainer:
         Parameters
         ------------
         loader : DataLoader
-            The DataLoader providing the validation or test data.
+            The DataLoader providing the validation or test data. Batches have
+            the same shape convention as in :func:`train_epoch`.
         
         ------------
         Returns
@@ -135,24 +163,40 @@ class SPOTrainer:
         total_loss = 0.0
         with torch.no_grad():
             for feats, costs, sols, objs, intds in loader:
-                # Move to GPU if specified
                 feats = feats.to(self.device)
                 costs = costs.to(self.device)
                 sols = sols.to(self.device)
                 objs = objs.to(self.device)
                 intds = intds.to(self.device)
 
-                # Forward pass
-                costs_pred = self.pred_model(feats) + intds
+                pred = self.pred_model(feats).unsqueeze(1) + intds
+                B, K = costs.shape[:2]
 
-                # Compute loss
-                total_loss += type(self).compute_loss(self.loss_criterion,
-                                                      costs_pred, 
-                                                      costs, 
-                                                      sols, 
-                                                      objs,
-                                                      self.method_name
-                                                    ).item() * feats.size(0)
+                loss_flat = type(self).compute_loss(
+                    self.loss_criterion,
+                    pred.view(B * K, *pred.shape[2:]),
+                    costs.view(B * K, *costs.shape[2:]),
+                    sols.view(B * K, *sols.shape[2:]),
+                    objs.view(B * K, *objs.shape[2:]),
+                    self.method_name,
+                )
+
+                if loss_flat.dim() == 0:
+                    loss_per_scen = loss_flat.repeat(B, K)
+                else:
+                    loss_per_scen = loss_flat.view(B, K, -1).mean(-1)
+                if self.aggregate == "mean":
+                    loss = loss_per_scen.mean(dim=1).mean()
+                elif self.aggregate == "worst":
+                    loss = loss_per_scen.max(dim=1).values.mean()
+                elif self.aggregate == "cvar":
+                    k_tail = max(1, min(K, int((1 - self.cvar_alpha) * K)))
+                    topk = loss_per_scen.topk(k_tail, dim=1).values
+                    loss = topk.mean(dim=1).mean()
+                else:
+                    raise ValueError(f"Unknown aggregate: {self.aggregate}")
+
+                total_loss += loss.item() * B
         # Compute regret
         loader.normal_mode() # evaluate regret only on original samples
         regret = pyepo.metric.regret(self.pred_model, self.opt_model, loader)
@@ -306,15 +350,30 @@ class SPOTrainer:
         """
 
         if method_name == "spo+":
-            return loss_criterion(costs_pred, costs, sols, objs)
+            try:
+                return loss_criterion(costs_pred, costs, sols, objs, reduction="none")
+            except TypeError:
+                return loss_criterion(costs_pred, costs, sols, objs)
         if method_name == "hybrid":
-            return loss_criterion(costs_pred, costs, sols, objs)
+            try:
+                return loss_criterion(costs_pred, costs, sols, objs, reduction="none")
+            except TypeError:
+                return loss_criterion(costs_pred, costs, sols, objs)
         elif method_name in ["ptb", "pfy", "imle", "aimle", "nce", "cmap"]:
-            return loss_criterion(costs_pred, sols)
+            try:
+                return loss_criterion(costs_pred, sols, reduction="none")
+            except TypeError:
+                return loss_criterion(costs_pred, sols)
         elif method_name in ["dbb", "nid"]:
-            return loss_criterion(costs_pred, costs, objs)
+            try:
+                return loss_criterion(costs_pred, costs, objs, reduction="none")
+            except TypeError:
+                return loss_criterion(costs_pred, costs, objs)
         elif method_name in ["pg", "ltr"]:
-            return loss_criterion(costs_pred, costs)
+            try:
+                return loss_criterion(costs_pred, costs, reduction="none")
+            except TypeError:
+                return loss_criterion(costs_pred, costs)
     
     @staticmethod
     def lambda_schedule(cfg, epoch):
