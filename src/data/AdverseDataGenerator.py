@@ -23,6 +23,7 @@ class AdverseDataGenerator:
                  opt_model: shortestPathGrb,
                  budget: int, 
                  normalization_constant: float,
+                 n_additional_samples: int = 10,
                  **kwargs):
         """
         Initialize the AdverseDataGenerator.
@@ -50,6 +51,7 @@ class AdverseDataGenerator:
 
         # Copy optimization model instance
         self.opt_model = deepcopy(opt_model)
+        self.n_additional_samples = n_additional_samples
 
         # Generate interdictions
         self.interdictions = AdverseDataGenerator.gen_interdictions(
@@ -69,7 +71,8 @@ class AdverseDataGenerator:
     def generate(self, 
                  feats: np.ndarray,
                  costs: np.ndarray, 
-                 versatile: bool = False
+                 versatile: bool = False,
+                 seed: int = None
                  ) -> None:
         """
         Generate adversarial examples for the given dataset. 
@@ -90,6 +93,10 @@ class AdverseDataGenerator:
         print(f"Generating adversarial examples with " + 
               f"{self.interdictions.shape[0]} interdictions...")
 
+        # Set random seed if specified
+        if seed is not None:
+            np.random.seed(seed)
+
         # Create an array to hold the features for the adversarial examples
         n_samples = feats.shape[0]
         n_samples_new = n_samples * self.interdictions.shape[0]
@@ -109,23 +116,28 @@ class AdverseDataGenerator:
             feat = feats[idx]
             cost = costs[idx]
 
+            # Select random interdictions
+            selected_intds = np.random.choice(self.interdictions.shape[0], 
+                                              self.n_additional_samples, 
+                                              replace=False)
+
             # Iterate over each interdiction
-            for idx_intd, interdiction in enumerate(self.interdictions):
+            for idx_intd, intd in enumerate(self.interdictions[selected_intds]):
                 # Solve the adversarial interdiction problem
                 self.sym_interdictor.opt_model.setObj(cost)
                 sym_intd, _, _ = self.sym_interdictor.benders_decomposition(
-                    interdiction_cost=interdiction,
+                    interdiction_cost=intd,
                     versatile=versatile
                 )
 
                 # Create new cost vector by adding the interdiction costs
-                new_cost = cost + sym_intd * interdiction
+                new_cost = cost + sym_intd * intd
 
                 # Store the new costs
                 store_idx = idx + n_samples * (idx_intd + 1)
                 feats_result[store_idx,:] = feat
                 costs_result[store_idx,:] = new_cost
-                intds_result[store_idx,:] = sym_intd * interdiction
+                intds_result[store_idx,:] = sym_intd * intd
 
             # Print progress if versatile
             print_progress(idx, n_samples)
@@ -138,7 +150,7 @@ class AdverseDataGenerator:
                   cfg: HP,
                   *,
                   intd_seed: int = 157,
-                  gen_additional_data_samples: int = 10) -> np.ndarray:
+                  n_interdictions: int = 100) -> np.ndarray:
         """
         Generate adversarial interdictions for data generation. 
         If no configuration is provided, defaults will be used.
@@ -159,10 +171,10 @@ class AdverseDataGenerator:
             The constant used to normalize the costs.
         intd_seed : int, Optional
             The seed for random number generation.
-        gen_additional_data_samples : int, Optional
-            The number of samples to generate for the simulation. 
-            Defaults to 10.
-    
+        n_interdictions : int, Optional
+            The number of interdictions to generate.
+            Defaults to 100.
+
         Returns:
         --------
         np.ndarray
@@ -171,7 +183,7 @@ class AdverseDataGenerator:
 
         # Generate true network data for simulation
         _, costs = pyepo.data.shortestpath.genData(
-            gen_additional_data_samples,
+            n_interdictions,
             cfg.get("num_features"),
             cfg.get("grid_size"),
             deg=cfg.get("deg"),
