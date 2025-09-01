@@ -58,7 +58,8 @@ def gen_train_data(
         cfg, 
         opt_model, 
         budget=cfg.get("budget"), 
-        normalization_constant=normalization_constant
+        normalization_constant=normalization_constant,
+        num_scenarios=cfg.get("num_scenarios")
     )
     X_train, c_train, i_train = adversarial_generator.generate(
         X_train, 
@@ -103,7 +104,7 @@ def gen_data(cfg: HP,
 
     # Generate true network data for simulation
     features, costs = pyepo.data.shortestpath.genData(
-        cfg.get("sim_data_samples"),
+        cfg.get("num_test_samples"),
         cfg.get("num_features"),
         cfg.get("grid_size"),
         deg=cfg.get("deg"),
