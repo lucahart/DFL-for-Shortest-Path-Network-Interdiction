@@ -25,7 +25,7 @@ def gen_train_data(
 
     # Generate synthetic data for training and testing
     features, costs = pyepo.data.shortestpath.genData(
-        cfg.get("num_train_samples") + cfg.get("num_test_samples"), 
+        cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"), 
         cfg.get("num_features"), 
         cfg.get("grid_size"), 
         deg=cfg.get("deg"), 
@@ -49,7 +49,7 @@ def gen_train_data(
     X_train, X_val, c_train, c_val = train_test_split(
         X_train, 
         c_train, 
-        test_size=cfg.get("validation_size"), 
+        test_size=cfg.get("num_val_samples"), 
         random_state=cfg.get("random_seed")
     )
 
@@ -77,14 +77,14 @@ def gen_train_data(
     # Create data loaders for training and validation
     train_loader = AdvLoader(
         train_dataset,
-        batch_size=cfg.get("data_loader_batch_size"),
-        seed=cfg.get("data_loader_seed"),
+        batch_size=cfg.get("batch_size"),
+        seed=cfg.get("loader_seed"),
         shuffle=True,
     )
     val_loader = AdvLoader(
         val_dataset,
-        batch_size=cfg.get("data_loader_batch_size"),
-        seed=cfg.get("data_loader_seed"),
+        batch_size=cfg.get("batch_size"),
+        seed=cfg.get("loader_seed"),
         shuffle=False,
     )
 

@@ -10,19 +10,19 @@ class HP:
     grid_size = (6, 8)
     random_seed = 31
     intd_seed = 53
-    data_loader_seed = 17
+    loader_seed = 17
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 600
-    validation_size = 100
-    num_test_samples = 200
-    data_loader_batch_size = 32
-    po_epochs = 60
-    spo_epochs = 20
+    num_train_samples = 100
+    num_val_samples = 50
+    num_test_samples = 100
+    batch_size = 32
+    po_epochs = 150
+    spo_epochs = 50
     po_lr = 1e-2
     spo_lr = 1e-3
-    lam = .15
+    lam = 0
     deg = 7
     anchor = "mse"
     spo_po_epochs = 0
