@@ -5,3 +5,4 @@ pyepo
 torch
 scikit-learn
 tabulate
+gurobipy
