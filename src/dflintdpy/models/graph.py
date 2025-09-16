@@ -5,7 +5,7 @@ import numpy as np
 import networkx as nx
 from copy import deepcopy
 
-class ShortestPath(optModel):
+class Graph(optModel):
     """
     This class can solve shortest path problems for generic graphs.
     """
@@ -69,7 +69,7 @@ class ShortestPath(optModel):
         super().__init__()
         pass
 
-    def __deepcopy__(self, memo) -> 'ShortestPath':
+    def __deepcopy__(self, memo) -> 'Graph':
         """
         Creates a deepcopy of the current ShortestPath instance.
         
@@ -80,11 +80,11 @@ class ShortestPath(optModel):
 
         Returns
         -------
-        ShortestPath
-            A new instance of ShortestPath with the same attributes.
+        Graph
+            A new instance of Graph with the same attributes.
         """
 
-        new_instance = ShortestPath(
+        new_instance = Graph(
             arcs=deepcopy(self.arcs, memo),
             vertices=deepcopy(self.vertices, memo),
             cost=deepcopy(self.cost, memo)
@@ -265,7 +265,7 @@ class ShortestPath(optModel):
         """
 
         # Create list of arcs form shortest path nodes
-        shortest_path = [ShortestPath.__sort(shortest_path_nodes[i],
+        shortest_path = [Graph.__sort(shortest_path_nodes[i],
                                               shortest_path_nodes[i + 1]
                                               )
                          for i in range(len(shortest_path_nodes) - 1)]
@@ -350,7 +350,7 @@ class ShortestPath(optModel):
         pass
 
     @staticmethod
-    def one_hot_to_arcs(model: 'ShortestPath',
+    def one_hot_to_arcs(model: 'Graph',
                          one_hot_vector: np.ndarray[float]
                          ) -> list[tuple[int, int]]:
         """

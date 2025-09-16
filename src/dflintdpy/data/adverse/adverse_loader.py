@@ -1,8 +1,8 @@
 
 from torch.utils.data import DataLoader
 
-from .AdvDataset import AdvDataset
-from .AdvRandomSampler import AdvRandomSampler
+from dflintdpy.data.adverse.adverse_dataset import AdvDataset
+from dflintdpy.data.adverse.adverse_sampler import AdvSampler
 
 
 class AdvLoader:
@@ -23,7 +23,7 @@ class AdvLoader:
 
         # Store adverse dataset and create sampler
         self.dataset = dataset
-        self.sampler = AdvRandomSampler(
+        self.sampler = AdvSampler(
             self.dataset,
             seed=seed,
             shuffle=shuffle,

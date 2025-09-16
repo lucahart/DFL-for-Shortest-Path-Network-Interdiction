@@ -1,5 +1,4 @@
 from typing import Optional, Tuple
-from data.config import HP
 from matplotlib.axes import Axes
 from numpy import ndarray
 from numpy import arange
@@ -8,7 +7,9 @@ import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-class SPOTrainer:
+from dflintdpy.data.config import HP
+
+class DFLTrainer:
     """
     A class to handle the training and evaluation of a PyTorch model.
     """
@@ -269,7 +270,7 @@ class SPOTrainer:
         for epoch in range(epochs):
             # Set lambda for hybrid method
             if self.method_name == "hybrid":
-                self.loss_criterion.lam = SPOTrainer.lambda_schedule(self.cfg, epoch)
+                self.loss_criterion.lam = DFLTrainer.lambda_schedule(self.cfg, epoch)
 
             # Train the model for one epoch
             train_loss = self.train_epoch(train_loader)
@@ -393,7 +394,7 @@ class SPOTrainer:
 
 
     @staticmethod
-    def vis_learning_curve(trainer: "SPOTrainer",
+    def vis_learning_curve(trainer: "DFLTrainer",
                         train_loss_log: ndarray[float],
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,

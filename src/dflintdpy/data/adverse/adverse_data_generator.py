@@ -2,19 +2,19 @@ import pyepo
 import numpy as np
 from copy import deepcopy
 
-from data.config import HP
-from models.ShortestPathGrb import shortestPathGrb
-from solvers.BendersDecomposition import BendersDecomposition
-from utils.versatile_utils import print_progress
+from dflintdpy.data.config import HP
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
+from dflintdpy.solvers.BendersDecomposition import BendersDecomposition
+from dflintdpy.utils.versatile_utils import print_progress
 
-class AdverseDataGenerator:
+class AdvDataGenerator:
     """
     Class to augment existing datasets for SPO learning 
     with adversarial examples.
 
     Attributes:
     -----------
-    opt_model : shortestPathGrb
+    opt_model : ShortestPathGrb
         A shortest path optimization model with correct network structure.
     select_intds : int
         Number of interdictions to select for each sample.
@@ -22,14 +22,14 @@ class AdverseDataGenerator:
         Array of generated interdictions.
     """
 
-    opt_model: shortestPathGrb
+    opt_model: ShortestPathGrb
     num_scenarios: int
     interdictions: np.ndarray
     _sym_interdictor: BendersDecomposition
 
     def __init__(self, 
                  cfg: HP,
-                 opt_model: shortestPathGrb,
+                 opt_model: ShortestPathGrb,
                  budget: int, 
                  normalization_constant: float,
                  *,
@@ -96,7 +96,7 @@ class AdverseDataGenerator:
             self.num_scenarios = num_scenarios
 
         # Generate interdictions
-        self.interdictions = AdverseDataGenerator.gen_interdictions(
+        self.interdictions = AdvDataGenerator.gen_interdictions(
             cfg,
             normalization_constant,
             **kwargs

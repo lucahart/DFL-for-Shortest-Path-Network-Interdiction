@@ -1,16 +1,16 @@
-from models.ShortestPathGrb import shortestPathGrb
-import numpy as np
 
-from pyepo.data.dataset import optDataset
 import torch
+import numpy as np
+from pyepo.data.dataset import optDataset
 
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 class AdvDataset(optDataset):
     """Dataset for adverse network training under interdictions.
 
     Parameters
     ----------
-    opt_model : :class:`shortestPathGrb`
+    opt_model : :class:`ShortestPathGrb`
         The optimization model used to solve each scenario.
     feats : ``np.ndarray``
         Feature matrix with shape ``(n_samples, n_feat)``.
@@ -28,7 +28,7 @@ class AdvDataset(optDataset):
     _return_intds: bool  # whether to return interdictions
 
     def __init__(self,
-                 opt_model: shortestPathGrb,
+                 opt_model: ShortestPathGrb,
                  feats: np.ndarray,
                  costs_grouped: np.ndarray,
                  intds_grouped: np.ndarray,
@@ -110,3 +110,41 @@ class AdvDataset(optDataset):
             The current mode ('normal' or 'adverse').
         """
         return 'adverse' if self._return_intds else 'normal'
+    
+        
+
+def generate_opt_dataset(
+    opt_model: ShortestPathGrb,
+    feats: np.ndarray,
+    costs: np.ndarray
+) -> 'AdvDataset':
+    """
+    Generate a pyepo.data.optDataset and wrap it into an AdvDataset.
+    The interdiction costs are set to zero.
+    
+    Parameters
+    ----------
+    opt_model : ShortestPathGrb
+        The optimization model used to solve each scenario.
+    feats : np.ndarray
+        Feature matrix with shape (n_samples, n_feat).
+    costs_grouped : np.ndarray
+        Cost tensors with shape (n_samples, m).
+
+    Returns
+    -------
+    AdvDataset
+        The generated AdvDataset.
+    """
+
+    # Add scenario dimension
+    costs_grouped = costs[:, np.newaxis, :] 
+
+    # Return adverse dataset with zero interdiction costs
+    return AdvDataset(
+        opt_model,
+        feats,
+        costs_grouped,
+        np.zeros_like(costs_grouped),
+        mode="normal"
+    )

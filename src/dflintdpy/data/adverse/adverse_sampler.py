@@ -1,10 +1,10 @@
 from typing import Iterable
-from .AdvDataset import AdvDataset
+from dflintdpy.data.adverse.adverse_dataset import AdvDataset
 import torch
 from torch.utils.data import Sampler
 
 
-class AdvRandomSampler(Sampler[int]):
+class AdvSampler(Sampler[int]):
     """Sampler with epoch-based seeding for adversarial datasets."""
 
     def __init__(

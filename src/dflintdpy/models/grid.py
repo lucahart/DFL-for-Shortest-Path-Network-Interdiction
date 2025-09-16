@@ -2,10 +2,11 @@ from typing import Tuple
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-from src.models.ShortestPath import ShortestPath
 from copy import deepcopy
 
-class ShortestPathGrid(ShortestPath):
+from dflintdpy.models.graph import Graph
+
+class Grid(Graph):
     """
     Generic shortest path for grids.
     """
@@ -56,17 +57,17 @@ class ShortestPathGrid(ShortestPath):
         super().__init__(arcs, vertices=np.arange(m*n), cost=cost)
         pass
 
-    def __deepcopy__(self, memo) -> 'ShortestPathGrid':
+    def __deepcopy__(self, memo) -> 'Grid':
         """
         Create a deepcopy of the current grid object.
 
         Returns
         -------
-        ShortestPathGrid
-            A new instance of ShortestPathGrid with the same properties.
+        Grid
+            A new instance of Grid with the same properties.
         """
-        
-        return ShortestPathGrid(self.m, self.n, deepcopy(self.cost, memo) if self.cost is not None else None)
+
+        return Grid(self.m, self.n, deepcopy(self.cost, memo) if self.cost is not None else None)
 
     def _arcs_one_hot(self, 
                     shortest_path_nodes: list[int]
@@ -207,13 +208,13 @@ class ShortestPathGrid(ShortestPath):
         # Highlight color edges
         if colored_edges is not None:
             for patch, e in zip(edge_artists, self.graph.edges()):
-                new_color = "red" if e in ShortestPath.one_hot_to_arcs(self, colored_edges) else "black"
+                new_color = "red" if e in Graph.one_hot_to_arcs(self, colored_edges) else "black"
                 patch.set_color(new_color)
 
         # Highlight dashed edges
         if dashed_edges is not None:
             for patch, e in zip(edge_artists, self.graph.edges()):
-                new_line_style = "dashed" if e in ShortestPath.one_hot_to_arcs(self, dashed_edges) else "solid"
+                new_line_style = "dashed" if e in Graph.one_hot_to_arcs(self, dashed_edges) else "solid"
                 patch.set_linestyle(new_line_style)
 
         if title is not None:

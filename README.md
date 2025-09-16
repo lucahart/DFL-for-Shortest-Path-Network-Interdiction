@@ -49,6 +49,11 @@ General Information:
 
 ## Usage
 
+### Reproduction of Paper Simulations
+
+
+### General Code Usage
+
 <!-- ### Running the Bayrak & Bailey sweep prototype
 ```bash
 shortest-path --lr 1e-3 --batch 64 --epochs 25
@@ -125,7 +130,7 @@ Leverage `src/scripts/compare_po_spo.py` for end-to-end comparisons between PO a
 └── tests/                      # Pytest suites for calibration and grids
 ``` -->
 
-## Testing & Validation
+<!-- ## Testing & Validation
 
 1. Install optional test dependencies (`pytest`, `torch`, `pyepo`, `gurobipy`).
 2. Run the test suite from the project root:
@@ -134,7 +139,7 @@ Leverage `src/scripts/compare_po_spo.py` for end-to-end comparisons between PO a
    ```
    Individual tests can be targeted, e.g. `pytest tests/test_arcs_one_hot.py`. Some tests automatically skip when optional dependencies are unavailable.
 
-For manual experiments, visualise grid paths via `ShortestPathGrid.visualize()` or `shortestPathGrb.visualize()`.
+For manual experiments, visualise grid paths via `ShortestPathGrid.visualize()` or `shortestPathGrb.visualize()`. -->
 
 <!-- 
 ## Contributing
@@ -143,10 +148,6 @@ For manual experiments, visualise grid paths via `ShortestPathGrid.visualize()` 
 2. Ensure tests pass (`pytest`) and follow Python type hints/docstring style already present in `src/models/`.
 3. Use informative commit messages and submit a pull request describing the motivation, approach, and verification steps.
 4. For large contributions (new solvers, dataset pipelines), open an issue to discuss design choices before implementation. -->
-
-## License
-
-No license has been specified yet. Until one is added, treat the repository as "all rights reserved" and contact the maintainers before reusing code.
 
 ## Citations & References
 **Cite us when using this code base:**
@@ -160,6 +161,10 @@ Luca M. Hartmann, Parinaz Naghizadeh, "Decision-Focused Learning meets Network I
 - Elmachtoub, A. N., & Grigas, P. (2022). "Smart 'Predict, then Optimize'." *Management Science*, 68(7): 5152–5171. (Methodological background for SPO training).
 - PyEPO: [https://github.com/khalil-research/PyEPO](https://github.com/khalil-research/PyEPO).
 - Gurobi Optimizer: [https://www.gurobi.com/](https://www.gurobi.com/).
+
+## License
+
+No license has been specified yet. Until one is added, treat the repository as "all rights reserved" and contact the maintainers before reusing code.
 
 ## Acknowledgements / Credits
 

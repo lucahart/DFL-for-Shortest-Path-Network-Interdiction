@@ -7,15 +7,16 @@ from numpy import ndarray
 from torch import Tensor
 from copy import deepcopy
 from tabulate import tabulate
-from src.models.ShortestPath import ShortestPath
-from src.models.ShortestPathGrid import ShortestPathGrid
 
-class shortestPathGrb(optGrbModel):
+from dflintdpy.models.graph import Graph
+from dflintdpy.models.grid import Grid
 
-    _graph: 'ShortestPath'
+class ShortestPathGrb(optGrbModel):
+
+    _graph: Graph
 
     def __init__(self,
-                 graph: 'ShortestPath' = None):
+                 graph: Graph = None):
         
         # Store graph instance
         self._graph = deepcopy(graph)
@@ -29,10 +30,10 @@ class shortestPathGrb(optGrbModel):
     @classmethod
     def empty_grid(cls,
                  m: int,
-                 n: int) -> 'shortestPathGrb': 
+                 n: int) -> 'ShortestPathGrb': 
         
-        # Create an instance of ShortestPathGrid
-        graph = ShortestPathGrid(m, n)
+        # Create an instance of Grid
+        graph = Grid(m, n)
         # Run parent class constructors
         return cls(graph)
     
@@ -58,12 +59,12 @@ class shortestPathGrb(optGrbModel):
 
         Returns:
         --------
-        shortestPathGrb
-            A new instance of shortestPathGrb with the same attributes.
+        ShortestPathGrb
+            A new instance of ShortestPathGrb with the same attributes.
         """
         
         # Create a new instance and copy the graph
-        new_instance = shortestPathGrb(deepcopy(self._graph, memo))
+        new_instance = ShortestPathGrb(deepcopy(self._graph, memo))
         return new_instance
 
     @property

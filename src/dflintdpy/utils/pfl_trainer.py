@@ -1,16 +1,15 @@
-from data.AdvLoader import AdvLoader
 import pyepo.metric
 import torch
-import numpy as np
 
 from typing import Tuple
 from numpy import ndarray
 from numpy import arange
 import matplotlib.pyplot as plt
-
 from torch.utils.data import DataLoader
 
-class POTrainer:
+from dflintdpy.data.adverse.adverse_loader import AdvLoader
+
+class PFLTrainer:
     """
     A class to handle the training and evaluation of a PyTorch model.
     """
@@ -235,7 +234,7 @@ class POTrainer:
 
 
     @staticmethod
-    def vis_learning_curve(trainer: "OptNetTrainer",
+    def vis_learning_curve(trainer: "PFLTrainer",
                         train_loss_log: ndarray[float],
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,

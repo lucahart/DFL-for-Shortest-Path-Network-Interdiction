@@ -3,7 +3,8 @@
 # Ignore virtual environment and cache files
 .venv/
 __pycache__/
-src/shortest_path_indiction.egg-info/
+# src/shortest_path_indiction.egg-info/
+*.egg-info/
 
 # MacOS specific files
 .DS_Store
