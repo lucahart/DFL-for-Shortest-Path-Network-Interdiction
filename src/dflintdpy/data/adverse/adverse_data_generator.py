@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from dflintdpy.data.config import HP
 from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
-from dflintdpy.solvers.BendersDecomposition import BendersDecomposition
+from dflintdpy.solvers.symmetric_interdictor import SymmetricInterdictor
 from dflintdpy.utils.versatile_utils import print_progress
 
 class AdvDataGenerator:
@@ -25,7 +25,8 @@ class AdvDataGenerator:
     opt_model: ShortestPathGrb
     num_scenarios: int
     interdictions: np.ndarray
-    _sym_interdictor: BendersDecomposition
+    _sym_interdictor: SymmetricInterdictor
+    
 
     def __init__(self, 
                  cfg: HP,
@@ -103,8 +104,8 @@ class AdvDataGenerator:
         )
 
         # Create Benders decomposition instances for each interdiction
-        self._sym_interdictor = BendersDecomposition(
-            self.opt_model,
+        self._sym_interdictor = SymmetricInterdictor(
+            self.opt_model._graph,
             k = budget,
             **kwargs
         )

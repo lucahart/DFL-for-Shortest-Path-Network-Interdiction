@@ -3,22 +3,22 @@ import gurobipy as gp
 from gurobipy import GRB
 from copy import deepcopy
 
-from models.ShortestPathGrb import shortestPathGrb
+from dflintdpy.models.graph import Graph
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 
-class BendersDecomposition:
+class SymmetricInterdictor:
 
     # Attributes
-    opt_model: 'shortestPathGrb'  # Reference to the ShortestPath object
+    opt_model: 'ShortestPathGrb'  # Reference to the ShortestPath object
     _model: gp.Model  # Gurobi model
     k: int  # Budget for the max-min knapsack problem
     max_cnt: int  # Maximum number of iterations for Bender's algorithm
     eps: float  # Epsilon for convergence criterion
     interdiction_cost: np.ndarray  # Cost of interdicting each edge in the graph
-    # n: int  # Number of arcs (edges) in the grid (also number of decision variables in the max-min knapsack problem)
 
     def __init__(self,
-                 opt_model: 'shortestPathGrb',
+                 graph: 'Graph',
                  k: int = 5,
                  interdiction_cost: np.ndarray | None = None,
                  *,
@@ -28,7 +28,7 @@ class BendersDecomposition:
                  ):
 
         # Copy the provided instance of a graph
-        self.opt_model = deepcopy(opt_model)
+        self.opt_model = ShortestPathGrb(graph)
 
         # Initialize the Gurobi model
         # If output_flag is False, suppress Gurobi log output
@@ -68,7 +68,7 @@ class BendersDecomposition:
         """
         
         # Create a new instance and copy the graph and other attributes
-        new_instance = BendersDecomposition(deepcopy(self.opt_model), 
+        new_instance = SymmetricInterdictor(deepcopy(self.opt_model),
                                             self.k, 
                                             self.interdiction_cost.copy() if self.interdiction_cost is not None else None,
                                             self.max_cnt, 

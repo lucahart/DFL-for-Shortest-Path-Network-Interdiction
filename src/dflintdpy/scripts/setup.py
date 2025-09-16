@@ -1,23 +1,22 @@
-from models.CalibratedPredictor import CalibratedPredictor
 import pyepo
 import torch
 from torch import nn
 from copy import deepcopy
-
 from sklearn.model_selection import train_test_split
-from models.ShortestPathGrid import ShortestPathGrid
-from models.ShortestPathGrb import shortestPathGrb
-from models.POTrainer import POTrainer
-from models.SPOTrainer import SPOTrainer
-from models.HybridSPOLoss import HybridSPOLoss
-from data.config import HP
-from data.AdvDataset import AdvDataset
-from data.AdverseDataGenerator import AdverseDataGenerator
-from data.AdvLoader import AdvLoader
+
+from dflintdpy.data.config import HP
+from dflintdpy.models.grid import Grid
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
+from dflintdpy.predictors.hybrid_spop_loss import HybridSPOPLoss
+from dflintdpy.utils.pfl_trainer import PFLTrainer
+from dflintdpy.utils.dfl_trainer import DFLTrainer
+from dflintdpy.data.adverse.adverse_data_generator import AdvDataGenerator
+from dflintdpy.data.adverse.adverse_dataset import AdvDataset
+from dflintdpy.data.adverse.adverse_loader import AdvLoader
 
 def gen_train_data(
         cfg: HP,
-        opt_model: 'shortestPathGrb'
+        opt_model: 'ShortestPathGrb'
                 ) -> dict:
     """
     Sets up the graph and data loaders for the shortest path problem.
@@ -54,7 +53,7 @@ def gen_train_data(
     )
 
     # Generate adversarial examples for the validation set
-    adversarial_generator = AdverseDataGenerator(
+    adversarial_generator = AdvDataGenerator(
         cfg, 
         opt_model, 
         budget=cfg.get("budget"), 
@@ -121,7 +120,6 @@ def gen_data(cfg: HP,
     }
 
 
-@staticmethod
 def get_nn(input_size, output_size):
 
     hidden_size_1 =  64   # number of neurons in the hidden layer
@@ -133,10 +131,10 @@ def get_nn(input_size, output_size):
     )
 
 
-def setup_po_model(
+def setup_pfl_predictor(
         cfg: HP,
-        graph: ShortestPathGrid,
-        opt_model: 'shortestPathGrb',
+        graph: Grid,
+        opt_model: 'ShortestPathGrb',
         training_data: dict,
         versatile: bool = False,
         train_type: str = "po",
@@ -165,7 +163,7 @@ def setup_po_model(
     po_criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(po_model.parameters(), lr=lr)
 
-    po_trainer = POTrainer(
+    po_trainer = PFLTrainer(
         pred_model=po_model,
         opt_model=opt_model,
         optimizer=optimizer,
@@ -181,7 +179,7 @@ def setup_po_model(
 
     if versatile:
         # Plot the learning curve
-        POTrainer.vis_learning_curve(
+        PFLTrainer.vis_learning_curve(
             po_trainer,
             train_loss_log,
             train_regret_log,
@@ -193,10 +191,11 @@ def setup_po_model(
 
     return po_model
 
-def setup_spo_model(
+
+def setup_dfl_predictor(
         cfg: HP,
-        graph: ShortestPathGrid,
-        opt_model: 'shortestPathGrb',
+        graph: Grid,
+        opt_model: 'ShortestPathGrb',
         training_data: dict,
         versatile: bool = False,
         transfer_model: nn.Sequential = None,
@@ -216,18 +215,22 @@ def setup_spo_model(
     else:
         spo_model = deepcopy(transfer_model)
 
-    # Init SPO+ loss
-    spop = pyepo.func.SPOPlus(opt_model, processes=1)
+    # Init SPO+ or hybrid SPO+ loss
+    lam = cfg.get("lam")
+    if lam == 0:
+        loss_fn = pyepo.func.SPOPlus(opt_model, processes=1)
+    else:
+        loss_fn = HybridSPOPLoss(opt_model, lam=lam, anchor=cfg.get("anchor"))
 
     # Init optimizer
     optimizer = torch.optim.Adam(spo_model.parameters(), lr=cfg.get("spo_lr"))
 
     # Create a trainer instance
-    spo_trainer = SPOTrainer(
+    spo_trainer = DFLTrainer(
         pred_model=spo_model, 
         opt_model=opt_model, 
         optimizer=optimizer, 
-        loss_fn=spop
+        loss_fn=loss_fn,
     )
 
     # Train the model
@@ -239,7 +242,7 @@ def setup_spo_model(
 
     if versatile:
         # Plot the learning curve
-        SPOTrainer.vis_learning_curve(
+        DFLTrainer.vis_learning_curve(
             spo_trainer,
             train_loss_log,
             train_regret_log,
@@ -252,76 +255,76 @@ def setup_spo_model(
     return spo_model
 
 
-def setup_hybrid_spo_model(
-        cfg: HP,
-        graph: ShortestPathGrid,
-        opt_model: 'shortestPathGrb',
-        training_data: dict,
-        versatile: bool = False,
-        transfer_model: nn.Sequential = None,
-        **kwargs
-        ):
-    """
-    Train a SPO model for the shortest path problem.
-    """
+# def setup_hybrid_spo_model(
+#         cfg: HP,
+#         graph: Grid,
+#         opt_model: 'ShortestPathGrb',
+#         training_data: dict,
+#         versatile: bool = False,
+#         transfer_model: nn.Sequential = None,
+#         **kwargs
+#         ):
+#     """
+#     Train a SPO model for the shortest path problem.
+#     """
 
-    # Define your network dimensions
-    input_size  =  cfg.get("num_features")   # e.g. number of features in your cost‐vector
-    output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
+#     # Define your network dimensions
+#     input_size  =  cfg.get("num_features")   # e.g. number of features in your cost‐vector
+#     output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
 
-    # Build the model with nn.Sequential
-    if transfer_model is None:
-        spo_model = get_nn(input_size, output_size)
-    else:
-        spo_model = deepcopy(transfer_model)
+#     # Build the model with nn.Sequential
+#     if transfer_model is None:
+#         spo_model = get_nn(input_size, output_size)
+#     else:
+#         spo_model = deepcopy(transfer_model)
 
-    # Add a calibration layer
-    spo_model_calibrated = CalibratedPredictor(spo_model)
+#     # Add a calibration layer
+#     spo_model_calibrated = CalibratedPredictor(spo_model)
 
-    # Init SPO+ loss
-    hybrid_loss = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
+#     # Init SPO+ loss
+#     hybrid_loss = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
 
-    # assuming model has .log_s and .b
-    calib_params = [spo_model_calibrated.log_s]
-    backbone_params = [p for n,p in spo_model_calibrated.named_parameters() if n not in {'log_s','b'}]
+#     # assuming model has .log_s and .b
+#     calib_params = [spo_model_calibrated.log_s]
+#     backbone_params = [p for n,p in spo_model_calibrated.named_parameters() if n not in {'log_s','b'}]
 
-    optimizer = torch.optim.Adam([
-        {'params': backbone_params, 'lr': cfg.get("spo_lr"), 'weight_decay': 0.0},
-        {'params': calib_params,   'lr': cfg.get("spo_lr")*10, 'weight_decay': 0.0},  # 10× faster
-    ])
+#     optimizer = torch.optim.Adam([
+#         {'params': backbone_params, 'lr': cfg.get("spo_lr"), 'weight_decay': 0.0},
+#         {'params': calib_params,   'lr': cfg.get("spo_lr")*10, 'weight_decay': 0.0},  # 10× faster
+#     ])
 
 
-    # # Init optimizer
-    # optimizer = torch.optim.Adam(spo_model_calibrated.parameters(), lr=cfg.get("spo_lr"))
+#     # # Init optimizer
+#     # optimizer = torch.optim.Adam(spo_model_calibrated.parameters(), lr=cfg.get("spo_lr"))
 
-    # Create a trainer instance
-    spo_trainer = SPOTrainer(
-        pred_model=spo_model_calibrated, 
-        opt_model=opt_model, 
-        optimizer=optimizer, 
-        loss_fn=hybrid_loss,
-        method_name="hybrid",
-        cfg=cfg
-    )
+#     # Create a trainer instance
+#     spo_trainer = SPOTrainer(
+#         pred_model=spo_model_calibrated, 
+#         opt_model=opt_model, 
+#         optimizer=optimizer, 
+#         loss_fn=hybrid_loss,
+#         method_name="hybrid",
+#         cfg=cfg
+#     )
 
-    # Train the model
-    train_loss_log, train_regret_log, val_loss_log, val_regret_log = spo_trainer.fit(
-        training_data["train_loader"], 
-        training_data["val_loader"], 
-        epochs=cfg.get("spo_epochs")
-    )
+#     # Train the model
+#     train_loss_log, train_regret_log, val_loss_log, val_regret_log = spo_trainer.fit(
+#         training_data["train_loader"], 
+#         training_data["val_loader"], 
+#         epochs=cfg.get("spo_epochs")
+#     )
 
-    if versatile:
-        # Plot the learning curve
-        SPOTrainer.vis_learning_curve(
-            spo_trainer,
-            train_loss_log,
-            train_regret_log,
-            val_loss_log,
-            val_regret_log
-        )
+#     if versatile:
+#         # Plot the learning curve
+#         SPOTrainer.vis_learning_curve(
+#             spo_trainer,
+#             train_loss_log,
+#             train_regret_log,
+#             val_loss_log,
+#             val_regret_log
+#         )
 
-        print("Final regret on validation set: ", val_regret_log[-1])
+#         print("Final regret on validation set: ", val_regret_log[-1])
 
-    return spo_model_calibrated
+#     return spo_model_calibrated
 

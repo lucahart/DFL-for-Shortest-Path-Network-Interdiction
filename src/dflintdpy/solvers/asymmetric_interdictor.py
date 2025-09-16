@@ -6,11 +6,11 @@ from typing import List
 from numpy import ndarray
 from copy import deepcopy
 
-from src.models.ShortestPath import ShortestPath
-from src.models.ShortestPathGrb import shortestPathGrb
+from dflintdpy.models.graph import Graph
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 
-class AsymmetricSPNI:
+class AsymmetricInterdictor:
     """
     Asymmetric Shortest Path Network Interdiction (SPNI) model.
     This class implements the asymmetric SPNI model, which is a two-stage stochastic programming model
@@ -20,7 +20,7 @@ class AsymmetricSPNI:
     ----------
     """
 
-    graph: 'ShortestPath' # The directed graph representing the network
+    graph: 'Graph' # The directed graph representing the network
     budget: int  # The budget for the max-min knapsack problem
     true_costs: dict  # True costs of the edges in the graph
     true_delays: dict  # True delays of the edges in the graph
@@ -29,7 +29,7 @@ class AsymmetricSPNI:
     theta: float # The maximum of the estimated delays
 
     def __init__(self, 
-                 graph : 'ShortestPath', 
+                 graph : 'Graph', 
                  budget : int, 
                  true_costs: List[float] | ndarray[float], 
                  true_delays, 
@@ -77,7 +77,7 @@ class AsymmetricSPNI:
         self.est_delays = {e: est_delays[i] for i,e in enumerate(self.graph.arcs)}
 
         # Compute theta as the maximum of the estimated delays
-        longest_path = shortestPathGrb(self.graph)
+        longest_path = ShortestPathGrb(self.graph)
         longest_path.setObj(-(true_costs + true_delays))
         self.theta = -longest_path.solve()[1]/lsd
 

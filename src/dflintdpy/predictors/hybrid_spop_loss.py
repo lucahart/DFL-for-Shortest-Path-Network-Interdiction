@@ -19,7 +19,7 @@ def meanstd_anchor(ctilde: torch.Tensor,
     return ((mu_hat - mu) ** 2 + (sd_hat - sd) ** 2).mean()
 
 
-class HybridSPOLoss(nn.Module):
+class HybridSPOPLoss(nn.Module):
     """Combine SPO+ loss with an anchoring term."""
 
     spo_plus: SPOPlus

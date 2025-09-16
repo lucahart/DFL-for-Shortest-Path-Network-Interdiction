@@ -3,15 +3,15 @@ import pyepo
 import torch
 import numpy as np
 
-from src.models.ShortestPathGrid import ShortestPathGrid
-from src.models.ShortestPathGrb import shortestPathGrb
-from src.utils.versatile_utils import print_progress
-from src.solvers.spnia_asym import AsymmetricSPNI
-from src.solvers.BendersDecomposition import BendersDecomposition
+from dflintdpy.models.grid import Grid
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
+from dflintdpy.solvers.asymmetric_interdictor import AsymmetricInterdictor
+from dflintdpy.solvers.symmetric_interdictor import SymmetricInterdictor
+from dflintdpy.utils.versatile_utils import print_progress
 
 
-def compare_po_spo(cfg,
-                   opt_model: 'shortestPathGrb',
+def compare_shortest_paths(cfg,
+                   opt_model: 'ShortestPathGrb',
                    po_model: torch.nn.Module,
                    spo_model: torch.nn.Module,
                    test_data: dict,
@@ -45,21 +45,21 @@ def compare_po_spo(cfg,
 
         # Predict the shortest path with predict-then-optimize framework
         predicted_costs = po_model(torch.tensor(feature, dtype=torch.float32)).detach().numpy()
-        po_graph = ShortestPathGrid(m, n, cost=predicted_costs)
-        po_shortest_path = shortestPathGrb(po_graph)
+        po_graph = Grid(m, n, cost=predicted_costs)
+        po_shortest_path = ShortestPathGrb(po_graph)
         po_path, _ = po_shortest_path.solve()
 
         # Predict shortest path with smart predict-then-optimize framework
         predicted_costs = spo_model(torch.tensor(feature, dtype=torch.float32)).detach().numpy()
-        spo_graph = ShortestPathGrid(m, n, cost=predicted_costs)
-        spo_shortest_path = shortestPathGrb(spo_graph)
+        spo_graph = Grid(m, n, cost=predicted_costs)
+        spo_shortest_path = ShortestPathGrb(spo_graph)
         spo_path, _ = spo_shortest_path.solve()
 
         if spo_adv_model is not None:
             # Predict shortest path with adverse SPO framework
             predicted_costs = spo_adv_model(torch.tensor(feature, dtype=torch.float32)).detach().numpy()
-            adv_spo_graph = ShortestPathGrid(m, n, cost=predicted_costs)
-            adv_spo_shortest_path = shortestPathGrb(adv_spo_graph)
+            adv_spo_graph = Grid(m, n, cost=predicted_costs)
+            adv_spo_shortest_path = ShortestPathGrb(adv_spo_graph)
             adv_spo_path, _ = adv_spo_shortest_path.solve()
 
         # Evaluate the estimated paths
@@ -103,8 +103,8 @@ def compare_sym_intd(cfg, po_model, spo_model, test_data, interdictions, normali
         m, n = cfg.get("grid_size")
         
         # Update opt_model
-        true_graph = ShortestPathGrid(m, n, cost=cost)
-        opt_model = shortestPathGrb(true_graph)
+        true_graph = Grid(m, n, cost=cost)
+        opt_model = ShortestPathGrb(true_graph)
 
         # Update the estimated costs
         po_cost = po_model(torch.tensor(feature, dtype=torch.float32)).detach().numpy() * normalization_constant
@@ -113,7 +113,7 @@ def compare_sym_intd(cfg, po_model, spo_model, test_data, interdictions, normali
             adv_spo_cost = adv_spo_model(torch.tensor(feature, dtype=torch.float32)).detach().numpy() * normalization_constant
 
         # Solutions without information asymmetry
-        interdictor_I = BendersDecomposition(opt_model, 
+        interdictor_I = SymmetricInterdictor(true_graph, 
                                              k=cfg.get("budget"), 
                                              interdiction_cost=interdiction, 
                                              max_cnt=cfg.get("benders_max_count"), 
@@ -190,12 +190,12 @@ def compare_asym_intd(cfg, test_data, interdictions, normalization_constant, pre
             pred_cost = cost
         
         # Create graph with true costs and opt_model for estimated shortest path
-        true_graph = ShortestPathGrid(m, n, cost=cost)
-        est_opt_model = shortestPathGrb(true_graph)
+        true_graph = Grid(m, n, cost=cost)
+        est_opt_model = ShortestPathGrb(true_graph)
         est_opt_model.setObj(pred_cost)
 
         # Solutions with information asymmetry
-        asym_interdictor = AsymmetricSPNI(
+        asym_interdictor = AsymmetricInterdictor(
             true_graph, 
             budget=cfg.get("budget"), 
             true_costs=cost, 
@@ -257,12 +257,13 @@ def compare_wrong_asym_intd(cfg, test_data, interdictions, normalization_constan
         false_pred_cost = false_model(torch.tensor(feature, dtype=torch.float32)).detach().numpy() * normalization_constant
 
         # Create graph with true costs and opt_model for estimated shortest path
-        true_graph = ShortestPathGrid(m, n, cost=cost)
-        est_opt_model = shortestPathGrb(true_graph)
+        true_graph = Grid(m, n, cost=cost)
+        est_opt_model = ShortestPathGrb(true_graph)
 
         # Solutions with information asymmetry
-        asym_interdictor = AsymmetricSPNI(
-            true_graph, 
+        asym_interdictor = AsymmetricInterdictor(
+            true_graph,
+            
             budget=cfg.get("budget"), 
             true_costs=cost, 
             true_delays=interdiction, 
