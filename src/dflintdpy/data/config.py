@@ -1,7 +1,6 @@
-# config.py
+
 from dataclasses import dataclass
-from random import random
-from typing import Any, Optional, Tuple
+from typing import Any
 
 @dataclass
 class HP:
@@ -11,11 +10,12 @@ class HP:
     random_seed = 31
     intd_seed = 53
     loader_seed = 17
+    num_seeds = 1
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 100
-    num_val_samples = 50
+    num_train_samples = 50
+    num_val_samples = 25
     num_test_samples = 100
     batch_size = 32
     po_epochs = 150

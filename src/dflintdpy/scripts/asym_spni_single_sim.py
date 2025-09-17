@@ -2,30 +2,26 @@
 ###### Imports ######
 #####################
 
-# Add the parent directory to the path
-import sys, os
-sys.path.insert(0, os.path.abspath("../.."))
-sys.path.insert(0, os.path.abspath("/Users/lucahartmann/Documents/Professional/Research/Prof_Parinaz_Naghizadeh/Code/Shortest_Path_Interdiction/"))
-
-# Import necessary libraries
 import numpy as np
-import matplotlib.pyplot as plt
 
 import torch
 import random
-import pyepo
 from tabulate import tabulate
 
-from src.data.config import HP
+from dflintdpy.models.grid import Grid
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
-from src.models.ShortestPathGrb import shortestPathGrb
-from src.models.ShortestPathGrid import ShortestPathGrid
+from dflintdpy.scripts.compare import (compare_shortest_paths,
+                                       compare_sym_intd, 
+                                       compare_asym_intd,
+                                       compare_wrong_asym_intd)
+from dflintdpy.scripts.setup import (gen_data, 
+                                     gen_train_data, 
+                                     setup_pfl_predictor,
+                                     setup_dfl_predictor)
 
-from scripts.compare_po_spo import compare_asym_intd, compare_po_spo, compare_sym_intd, compare_wrong_asym_intd
-from scripts.setup import gen_data, gen_train_data, setup_po_model, setup_hybrid_spo_model
 
-
-def Asym_SPNI(cfg, visualize=False):
+def single_sim(cfg, visualize=False):
     ############################
     ###### Set Parameters ######
     ############################
@@ -45,8 +41,8 @@ def Asym_SPNI(cfg, visualize=False):
     # Define a graph with appropriate dimensions and an opt_model 
     # for solving the shortest path problem on the graph
     m,n = cfg.get("grid_size")
-    graph = ShortestPathGrid(m,n)
-    opt_model = shortestPathGrb(graph)
+    graph = Grid(m,n)
+    opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
     training_data, testing_data, normalization_constant = gen_train_data(cfg, opt_model)
@@ -54,7 +50,7 @@ def Asym_SPNI(cfg, visualize=False):
     cfg.set("po_epochs", 150)
     cfg.set("spo_epochs", 50)
 
-    po_model = setup_po_model(
+    po_model = setup_pfl_predictor(
         cfg,
         graph,
         opt_model,
@@ -62,7 +58,7 @@ def Asym_SPNI(cfg, visualize=False):
         versatile=visualize
     )
 
-    spo_model = setup_hybrid_spo_model(
+    spo_model = setup_dfl_predictor(
         cfg,
         graph,
         opt_model,
@@ -75,7 +71,7 @@ def Asym_SPNI(cfg, visualize=False):
     # Generate normalized training and testing data
     training_data_non_adverse, testing_data_non_adverse, normalization_constant = gen_train_data(cfg, opt_model)
 
-    spo_model_non_adverse = setup_hybrid_spo_model(
+    spo_model_non_adverse = setup_dfl_predictor(
         cfg,
         graph,
         opt_model,
@@ -113,7 +109,7 @@ def Asym_SPNI(cfg, visualize=False):
     ##### Compare Shortest Paths of PO and SPO #####
     ################################################
 
-    true_objs, po_objs, spo_objs, adv_spo_objs = compare_po_spo(cfg, opt_model, po_model, spo_model_non_adverse, testing_data, spo_model)
+    true_objs, po_objs, spo_objs, adv_spo_objs = compare_shortest_paths(cfg, opt_model, po_model, spo_model_non_adverse, testing_data, spo_model)
 
 
     ###################################

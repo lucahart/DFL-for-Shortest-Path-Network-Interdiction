@@ -1,36 +1,22 @@
 
-import os
-import sys
-
-from tabulate import tabulate
-sys.path.insert(0, os.path.abspath("/Users/lucahartmann/Documents/Professional/Research/Prof_Parinaz_Naghizadeh/Code/Shortest_Path_Interdiction/"))
-
-from data.config import HP
 import numpy as np
-from src.scripts.Asym_SPNI import Asym_SPNI
+from tabulate import tabulate
 
-# Number of random seeds to run
-n = 10
-num_train_samples = 50
-num_val_samples = 25
-num_test_samples = 100
+from dflintdpy.data.config import HP
+from dflintdpy.scripts.asym_spni_single_sim import single_sim
 
 # Initialize the configuration class
 cfg = HP()
-
-# Change number of samples here
-cfg.set("num_train_samples", num_train_samples)
-cfg.set("num_val_samples", num_val_samples)
-cfg.set("num_test_samples", num_test_samples)
+num_seeds = cfg.get("num_seeds")
 
 # List to store results
 results = []
 
 # Loop over different random seeds
-for seed in range(n):
+for seed in range(num_seeds):
     # Keep track of simulation progress
     print("##########################################" +
-          f"###### STARTING SIMULATION {seed+1} / {n} ######" +
+          f"###### STARTING SIMULATION {seed+1} / {num_seeds} ######" +
           "##########################################")
 
     # Generate random seeds
@@ -43,7 +29,7 @@ for seed in range(n):
     cfg.set("data_loader_seed", seed3)
 
     # Run the Asym_SPNI function
-    prediction_mean_std, metrics, table_1, table_2 = Asym_SPNI(cfg)
+    prediction_mean_std, metrics, table_1, table_2 = single_sim(cfg)
 
     # Store values in list
     results.append({
