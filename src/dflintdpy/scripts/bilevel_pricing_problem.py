@@ -14,6 +14,8 @@ from dflintdpy.solvers.portfolio_optimization import PortfolioOptimization
 from dflintdpy.solvers.bilevel_pricing import BilevelPricingProblem
 from dflintdpy.data.adverse.adverse_dataset import generate_opt_dataset
 from dflintdpy.predictors.linear_regression import LinearRegression
+from dflintdpy.solvers.fast_solvers.fast_pricing_solver import FastBilevelPricingSolver
+from dflintdpy.scripts.read_synthetic_data import read_synthetic_data
 from dflintdpy.scripts.setup import gen_train_data
 
 # Try to import optional dependencies
@@ -32,55 +34,12 @@ except ImportError:
     HAS_GUROBI = False
     warnings.warn("Gurobi not available. MIQCP method will not work.")
 
-def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
+def simple_dfp_example(N = 1000, noise=1, deg=16, batch_size=32):
     """Simple example of solving a bilevel pricing problem with dfl data."""
 
     ################## DataReading
-    path_dir = Path(__file__).parent / "SyntheticPortfolioData"
-    Train_dfx= pd.read_csv(
-        path_dir / 
-        "TraindataX_N_{}_noise_{}_deg_{}.csv"
-        .format(N,noise,deg),header=None
-    )
-    Train_dfy= pd.read_csv(
-        path_dir /
-        "Traindatay_N_{}_noise_{}_deg_{}.csv"
-        .format(N,noise,deg),header=None
-    )
-    x_train =  Train_dfx.T.values.astype(np.float32)
-    y_train = Train_dfy.T.values.astype(np.float32)
-
-    Validation_dfx= pd.read_csv(
-        path_dir / 
-        "ValidationdataX_N_{}_noise_{}_deg_{}.csv"
-        .format(N,noise,deg),header=None
-    )
-    Validation_dfy= pd.read_csv(
-        path_dir /
-        "Validationdatay_N_{}_noise_{}_deg_{}.csv"
-        .format(N,noise,deg),header=None
-    )
-    x_valid =  Validation_dfx.T.values.astype(np.float32)
-    y_valid = Validation_dfy.T.values.astype(np.float32)
-
-    Test_dfx= pd.read_csv(
-        path_dir /
-        "TestdataX_N_{}_noise_{}_deg_{}.csv"
-        .format(N,noise,deg),header=None
-    )
-    Test_dfy= pd.read_csv(
-        path_dir /
-        "Testdatay_N_{}_noise_{}_deg_{}.csv"
-        .format(N,noise,deg),header=None
-    )
-    x_test =  Test_dfx.T.values.astype(np.float32)
-    y_test = Test_dfy.T.values.astype(np.float32)
-    data =  np.load(
-        path_dir /
-        "GammaSigma_N_{}_noise_{}_deg_{}.npz".format(N,noise,deg)
-    )
-    cov = data['sigma']
-    gamma = data['gamma']
+    x_train, y_train, x_valid, y_valid, x_test, y_test, cov, gamma = \
+        read_synthetic_data(N, noise, deg)
 
     ################## ModelCreation
     opt_model = PortfolioOptimization(y_train[0,:], Sigma=cov, gamma=gamma)
@@ -159,6 +118,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     )
 
     # Print final regrets
+
     print("DFL: Final regret on validation set: ", valid_regret_log[-1])
     print("PFL: Final regret on validation set: ", val_regret_log[-1])
 
@@ -170,6 +130,60 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     test_loss_pfl, test_regret_pfl = pfl_trainer.evaluate(loader_test)
     print("PFL: Final regret on test set: ", test_regret_pfl)
 
+
+    # Bilevel pricing
+    idx = 1
+    c = y_test[idx,:]
+    x = x_test[idx,:]
+    dfl_pred = pred_model(torch.tensor(x)).detach().numpy()
+    pfl_pred = pred_model_pfl(torch.tensor(x)).detach().numpy()
+    print("\n" + "=" * 80)
+    print("BILEVEL PRICING OPTIMIZATION ON TEST SAMPLE")
+    print("=" * 80)
+    opt_model.setObj(dfl_pred)
+    sol_dfl, _ = opt_model.solve()
+    opt_model.setObj(pfl_pred)
+    sol_pfl, _ = opt_model.solve()
+    print("\nProblem Parameters:")
+    print(f"Cost vector c: {c}")
+    # print(f"Buyer's solution: {sol_dfl}")
+    print(f"DFL: Buyer's objective value: {sol_dfl @ c:.4f}")
+    print(f"PFL: Buyer's objective value: {sol_pfl @ c:.4f}")
+    print(f"Risk tolerance γ: {gamma}")
+    print(f"Problem size: n = {c.shape[0]}")
+    print(f"Budget: {c.sum()*0.3}")
+
+    # Create problem
+    problem = BilevelPricingProblem(c, cov, gamma, budget=c.sum()*0.3)        
+    result_gurobi = problem.solve_with_gurobi_miqcp(M=100, time_limit=60)
+    p = result_gurobi['p_opt']
+    opt_model.setObj(dfl_pred-p)
+    sol_pp_dfl, _ = opt_model.solve()
+    opt_model.setObj(pfl_pred-p)
+    sol_pp_pfl, _ = opt_model.solve()
+    if result_gurobi is not None and result_gurobi['success']:
+        print("\n" + "=" * 80)
+        print("PLAYER PAYOFFS AFTER PRICING")
+        print("=" * 80)
+        print(f"\nOptimal prices p: {result_gurobi['p_opt']}")
+        print(f"Buyer response y: {result_gurobi['y_opt']}")
+        print(f"Seller's revenue: {result_gurobi['revenue']:.4f}")
+        print(f"DFL: Buyer's objective value: {sol_pp_dfl @ (c-p):.4f}")
+        print(f"PFL: Buyer's objective value: {sol_pp_pfl @ (c-p):.4f}")
+        print(f"Verification gap: {result_gurobi['verification_gap']:.2e}")
+        print(f"MIP gap: {result_gurobi['mip_gap']:.2e}")
+        print(f"Solve time: {result_gurobi['solve_time']:.2f}s")
+    
+    # # Test at a specific price point
+    # print("\n" + "=" * 80)
+    # print("TEST: Buyer response at mid-point prices")
+    # print("=" * 80)
+    # p_test = (p_min + p_max) / 2
+    # revenue_test, y_test = problem.evaluate_revenue(p_test)
+    # print(f"Test prices p: {p_test}")
+    # print(f"Buyer response y: {y_test}")
+    # print(f"Revenue p^T y: {revenue_test:.4f}")
+    
     pass
 
 

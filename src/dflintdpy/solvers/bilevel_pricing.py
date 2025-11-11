@@ -39,8 +39,13 @@ class BilevelPricingProblem:
     Solver for bilevel pricing optimization problems.
     """
     
-    def __init__(self, c: np.ndarray, Sigma: np.ndarray, gamma: float,
-                 p_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None):
+    def __init__(
+            self, 
+            c: np.ndarray, 
+            Sigma: np.ndarray, 
+            gamma: float,
+            budget: float = 1.0,
+            p_bounds: Optional[Tuple[np.ndarray, np.ndarray]] = None):
         """
         Args:
             c: Cost/return vector (length n)
@@ -52,7 +57,8 @@ class BilevelPricingProblem:
         self.Sigma = np.array(Sigma)
         self.gamma = gamma
         self.n = len(c)
-        
+        self.budget = budget
+
         # Default price bounds: 0 ≤ p ≤ c (prices can't exceed costs)
         if p_bounds is None:
             self.p_min = np.zeros(self.n)
@@ -166,6 +172,9 @@ class BilevelPricingProblem:
         
         # Outer objective: max p^T y
         model.setObjective(py.sum(), GRB.MAXIMIZE)
+
+        # Budget limit on p
+        model.addConstr(p.sum() <= self.budget, name="price_budget")
         
         # Inner problem primal feasibility
         model.addConstr(y @ self.Sigma @ y <= self.gamma, name="risk")
