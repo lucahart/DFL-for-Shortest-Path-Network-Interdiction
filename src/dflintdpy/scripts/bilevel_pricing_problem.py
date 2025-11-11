@@ -1,8 +1,20 @@
+from dflintdpy.data.adverse.adverse_loader import AdvLoader
+from dflintdpy.utils.dfl_trainer import DFLTrainer
+from dflintdpy.utils.pfl_trainer import PFLTrainer
 import numpy as np
+import pandas as pd
+import pyepo
+import torch
+import torch.optim as optim
+from pathlib import Path
 from typing import Tuple, Optional, Dict
 import warnings
 
-from dflintdpy.solvers.solve_bilevel_markowitz import BilevelPricingProblem
+from dflintdpy.solvers.portfolio_optimization import PortfolioOptimization
+from dflintdpy.solvers.bilevel_pricing import BilevelPricingProblem
+from dflintdpy.data.adverse.adverse_dataset import generate_opt_dataset
+from dflintdpy.predictors.linear_regression import LinearRegression
+from dflintdpy.scripts.setup import gen_train_data
 
 # Try to import optional dependencies
 try:
@@ -19,6 +31,147 @@ try:
 except ImportError:
     HAS_GUROBI = False
     warnings.warn("Gurobi not available. MIQCP method will not work.")
+
+def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
+    """Simple example of solving a bilevel pricing problem with dfl data."""
+
+    ################## DataReading
+    path_dir = Path(__file__).parent / "SyntheticPortfolioData"
+    Train_dfx= pd.read_csv(
+        path_dir / 
+        "TraindataX_N_{}_noise_{}_deg_{}.csv"
+        .format(N,noise,deg),header=None
+    )
+    Train_dfy= pd.read_csv(
+        path_dir /
+        "Traindatay_N_{}_noise_{}_deg_{}.csv"
+        .format(N,noise,deg),header=None
+    )
+    x_train =  Train_dfx.T.values.astype(np.float32)
+    y_train = Train_dfy.T.values.astype(np.float32)
+
+    Validation_dfx= pd.read_csv(
+        path_dir / 
+        "ValidationdataX_N_{}_noise_{}_deg_{}.csv"
+        .format(N,noise,deg),header=None
+    )
+    Validation_dfy= pd.read_csv(
+        path_dir /
+        "Validationdatay_N_{}_noise_{}_deg_{}.csv"
+        .format(N,noise,deg),header=None
+    )
+    x_valid =  Validation_dfx.T.values.astype(np.float32)
+    y_valid = Validation_dfy.T.values.astype(np.float32)
+
+    Test_dfx= pd.read_csv(
+        path_dir /
+        "TestdataX_N_{}_noise_{}_deg_{}.csv"
+        .format(N,noise,deg),header=None
+    )
+    Test_dfy= pd.read_csv(
+        path_dir /
+        "Testdatay_N_{}_noise_{}_deg_{}.csv"
+        .format(N,noise,deg),header=None
+    )
+    x_test =  Test_dfx.T.values.astype(np.float32)
+    y_test = Test_dfy.T.values.astype(np.float32)
+    data =  np.load(
+        path_dir /
+        "GammaSigma_N_{}_noise_{}_deg_{}.npz".format(N,noise,deg)
+    )
+    cov = data['sigma']
+    gamma = data['gamma']
+
+    ################## ModelCreation
+    opt_model = PortfolioOptimization(y_train[0,:], Sigma=cov, gamma=gamma)
+
+    ################## DataLoader
+    dataset_train = generate_opt_dataset(opt_model, x_train, y_train)
+    dataset_valid = generate_opt_dataset(opt_model, x_valid, y_valid)
+    dataset_test = generate_opt_dataset(opt_model, x_test, y_test)
+
+    loader_train = AdvLoader(dataset_train, batch_size=batch_size, shuffle=True)
+    loader_valid = AdvLoader(dataset_valid, batch_size=batch_size, shuffle=False)
+    loader_test = AdvLoader(dataset_test, batch_size=batch_size, shuffle=False)
+
+    ################## Train simple model
+    # Instantiate linear regression model
+    pred_model = LinearRegression(
+        num_feat=x_train.shape[1], 
+        num_edges=opt_model.num_cost
+    )
+    pred_model_pfl = LinearRegression(
+        num_feat=x_train.shape[1], 
+        num_edges=opt_model.num_cost
+    )
+
+    # Init SPO+ loss
+    spop = pyepo.func.SPOPlus(opt_model, processes=1)
+    pfl_loss = torch.nn.MSELoss()
+
+    # Init optimizer
+    optimizer = optim.Adam(pred_model.parameters(), lr=1e-2)
+    optimizer_pfl = optim.Adam(pred_model_pfl.parameters(), lr=1e-2)
+
+    # Set the number of epochs for training
+    epochs = 5
+
+    # Create a trainer instance
+    trainer = DFLTrainer(
+        pred_model=pred_model, 
+        opt_model=opt_model,
+        optimizer=optimizer, 
+        loss_fn=spop
+    )
+    pfl_trainer = PFLTrainer(
+        pred_model=pred_model_pfl,
+        opt_model=opt_model,
+        optimizer=optimizer_pfl,
+        loss_fn=pfl_loss
+    )
+
+    # Train the model
+    train_loss_log, train_regret_log, valid_loss_log, valid_regret_log = \
+        trainer.fit(loader_train, loader_valid, epochs=epochs)
+
+    # Train the model
+    train_loss_log, train_regret_log, val_loss_log, val_regret_log = \
+        pfl_trainer.fit(loader_train, loader_valid, epochs=epochs)
+    
+    # Visualize learning curves
+    DFLTrainer.vis_learning_curve(
+        trainer,
+        train_loss_log,
+        train_regret_log,
+        valid_loss_log,
+        valid_regret_log,
+        file_name="figures/dfl_learning_curve"
+    )
+
+    # Plot the learning curve
+    PFLTrainer.vis_learning_curve(
+        pfl_trainer,
+        train_loss_log,
+        train_regret_log,
+        val_loss_log,
+        val_regret_log,
+        file_name="figures/pfl_learning_curve"
+    )
+
+    # Print final regrets
+    print("DFL: Final regret on validation set: ", valid_regret_log[-1])
+    print("PFL: Final regret on validation set: ", val_regret_log[-1])
+
+    # Evaluate on test set
+    loader_test.adverse_mode()
+    test_loss, test_regret = trainer.evaluate(loader_test)
+    print("DFL: Final regret on test set: ", test_regret)
+    loader_test.normal_mode()
+    test_loss_pfl, test_regret_pfl = pfl_trainer.evaluate(loader_test)
+    print("PFL: Final regret on test set: ", test_regret_pfl)
+
+    pass
+
 
 
 def example_usage():
@@ -63,15 +216,15 @@ def example_usage():
     print(f"Buyer response y: {y_test}")
     print(f"Revenue p^T y: {revenue_test:.4f}")
     
-    # Grid search
-    print("\n" + "=" * 80)
-    print("METHOD 1: GRID SEARCH")
-    print("=" * 80)
-    result_grid = problem.solve_with_grid_search(n_points=3)
-    if result_grid['success']:
-        print(f"\nOptimal prices p: {result_grid['p_opt']}")
-        print(f"Buyer response y: {result_grid['y_opt']}")
-        print(f"Revenue: {result_grid['revenue']:.4f}")
+    # # Grid search
+    # print("\n" + "=" * 80)
+    # print("METHOD 1: GRID SEARCH")
+    # print("=" * 80)
+    # result_grid = problem.solve_with_grid_search(n_points=3)
+    # if result_grid['success']:
+    #     print(f"\nOptimal prices p: {result_grid['p_opt']}")
+    #     print(f"Buyer response y: {result_grid['y_opt']}")
+    #     print(f"Revenue: {result_grid['revenue']:.4f}")
     
     # Gurobi MIQCP
     if HAS_GUROBI:
@@ -88,15 +241,16 @@ def example_usage():
             print(f"MIP gap: {result_gurobi['mip_gap']:.2e}")
             print(f"Solve time: {result_gurobi['solve_time']:.2f}s")
             
-            # Compare with grid search
-            if result_grid['success']:
-                print(f"\nComparison:")
-                print(f"Grid search revenue: {result_grid['revenue']:.4f}")
-                print(f"Gurobi revenue:      {result_gurobi['revenue']:.4f}")
-                print(f"Difference:          {abs(result_grid['revenue'] - result_gurobi['revenue']):.4f}")
+            # # Compare with grid search
+            # if result_grid['success']:
+            #     print(f"\nComparison:")
+            #     print(f"Grid search revenue: {result_grid['revenue']:.4f}")
+            #     print(f"Gurobi revenue:      {result_gurobi['revenue']:.4f}")
+            #     print(f"Difference:          {abs(result_grid['revenue'] - result_gurobi['revenue']):.4f}")
     
     print("\n" + "=" * 80)
 
 
 if __name__ == "__main__":
-    example_usage()
+    simple_dfp_example()
+    # example_usage()

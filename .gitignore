@@ -11,3 +11,11 @@ __pycache__/
 
 # Gurobi logs
 gurobi.log
+
+# Synthetic Data
+*/SyntheticPortfolioData/*
+*.csv
+*.npz
+
+# Generated Figures
+figures/*

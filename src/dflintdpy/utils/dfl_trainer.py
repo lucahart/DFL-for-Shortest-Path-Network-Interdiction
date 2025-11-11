@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+from unicodedata import name
 from matplotlib.axes import Axes
 from numpy import ndarray
 from numpy import arange
@@ -399,7 +400,8 @@ class DFLTrainer:
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,
                         test_regret_log: ndarray[float] = None,
-                        ax: Optional[Axes] = None) -> None:
+                        ax: Optional[Axes] = None,
+                        file_name: Optional[str] = None) -> None:
         """
         Visualizes the learning curve of the model during training.
 
@@ -416,6 +418,10 @@ class DFLTrainer:
             The testing loss log. If not provided, no testing data is plotted.
         test_regret_log : ndarray[float], optional
             The testing regret log. If not provided, no testing data is plotted.
+        ax : Optional[Axes], optional
+            The matplotlib Axes to plot on. If not provided, a new figure is created.
+        file_name : Optional[str], optional
+            The file name to save the plot. If not provided, the plot is not saved.
         ------------
         """
 
@@ -437,6 +443,7 @@ class DFLTrainer:
             )
         ax1.set_xlabel('Epoch')
         ax1.set_ylabel('Regret')
+        ax1.set_yscale('log')
         ax1.set_title('Regret Learning Curve')
         ax1.legend()
         
@@ -458,5 +465,8 @@ class DFLTrainer:
 
         # Show the plot
         plt.tight_layout()
-        plt.show()
+        # plt.show()
+        if file_name is not None:
+            plt.savefig(file_name + ".png")
+            plt.close()
         pass
