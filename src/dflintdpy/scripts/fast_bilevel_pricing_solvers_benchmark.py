@@ -20,6 +20,8 @@ def benchmark_all_methods(c, Sigma, gamma, budget, p_max=None):
         ('Alternating', lambda: solver.solve_alternating_optimization()),
         ('Multi-Start (3)', lambda: solver.solve_multistart(n_starts=3)),
         ('Trust Region', lambda: solver.solve_trust_region()),
+        ('Compound Solver w/o Multistart', lambda: solver.solve()),
+        ('Compound Solver w/ Multistart', lambda: solver.solve(n_starts=3)),
     ]
     
     results = []
@@ -77,7 +79,7 @@ def main():
     N = 1000
     noise = 1
     deg = 16
-    n_test_samples = 200
+    n_test_samples = 5
 
     # Read synthetic data
     x_train, y_train, x_valid, y_valid, x_test, y_test, cov, gamma = \
@@ -119,10 +121,10 @@ def main():
     print("\n" + "=" * 80)
     print("COMPARISON")
     print("=" * 80)
-    print(f"\n{'Method':<25} {'Revenue':>12} {'Time (s)':>12} {'Success rate':>8}")
+    print(f"\n{'Method':<35} {'Revenue':>12} {'Time (s)':>12} {'Success rate':>8}")
     print("-" * 65)
     for method, r in aggregated_results.items():
-        print(f"{method:<25} {np.mean(r['Revenue']):>12.4f} {np.mean(r['Time (s)']):>12.2f} {r['Success'].count('✓') / len(r['Success']):>8}")
+        print(f"{method:<35} {np.mean(r['Revenue']):>12.4f} {np.mean(r['Time (s)']):>12.2f} {r['Success'].count('✓') / len(r['Success']):>8}")
 
     # Find best
     successful = [(m, r) for m, r in aggregated_results.items() if r['Success'].count('✓') > 0]

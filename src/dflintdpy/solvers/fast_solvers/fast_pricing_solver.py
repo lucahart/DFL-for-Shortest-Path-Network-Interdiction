@@ -66,6 +66,18 @@ class FastBilevelPricingSolver:
         
         # Cache for efficiency
         self._y_cache = {}
+
+    def solve(self, n_starts: int = 1) -> Dict:
+        """Combination of multiple solvers."""
+        result_1 = self.solve_sequential_quadratic()
+        if result_1['success']:
+            if n_starts > 1:
+                return self.solve_multistart(
+                    n_starts = n_starts - 1, 
+                    initial_result=result_1,
+                )
+            return result_1
+        return self.solve_alternating_optimization()
     
     def solve_inner_problem(self, p: np.ndarray, use_cache: bool = True) -> Tuple[np.ndarray, float]:
         """
@@ -376,7 +388,10 @@ class FastBilevelPricingSolver:
             'iterations': max_iter
         }
     
-    def solve_multistart(self, n_starts: int = 5, method: str = 'sqp') -> Dict:
+    def solve_multistart(self, 
+                         n_starts: int = 5, 
+                         initial_result: Dict[str, float] = None,
+                         method: str = 'sqp') -> Dict:
         """
         Method 4: Multi-Start Optimization
         
@@ -388,14 +403,22 @@ class FastBilevelPricingSolver:
         
         Args:
             n_starts: Number of random starts
+            initial_result: Initial result to compare against
             method: Base method to use ('sqp' or 'gradient')
             
         Returns:
             Dict with best solution
         """
+        if initial_result is not None and \
+           ('success' not in initial_result.keys() or \
+           'revenue' not in initial_result.keys()):
+            raise ValueError(
+                "initial_result must contain 'success' and 'revenue' keys"
+            )
+        
         print(f"Solving with Multi-Start ({n_starts} starts)...")
         
-        best_result = None
+        best_result = initial_result
         best_revenue = -np.inf
         
         for start in range(n_starts):
