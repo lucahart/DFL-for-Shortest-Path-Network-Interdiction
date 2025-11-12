@@ -2,6 +2,7 @@
 ###### Imports ######
 #####################
 
+from pathlib import Path
 import numpy as np
 
 import torch
@@ -21,7 +22,7 @@ from dflintdpy.scripts.setup import (gen_data,
                                      setup_dfl_predictor)
 
 
-def single_sim(cfg, visualize=False):
+def single_sim(cfg, visualize=False, compute_asym_intd=True):
     ############################
     ###### Set Parameters ######
     ############################
@@ -45,7 +46,11 @@ def single_sim(cfg, visualize=False):
     opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
-    training_data, testing_data, normalization_constant = gen_train_data(cfg, opt_model)
+    training_data, testing_data, normalization_constant = gen_train_data(
+        cfg, 
+        opt_model,
+        path_dir=Path(__file__).parent.parent.parent.parent / 'store_data' 
+    )
 
     cfg.set("po_epochs", 150)
     cfg.set("spo_epochs", 50)
@@ -161,64 +166,65 @@ def single_sim(cfg, visualize=False):
         spo_model
     )
 
-
     ############################################################
     ##### Asymmetric Interdiction with wrong evader models #####
     ############################################################
+    if not compute_asym_intd:
+        print("Skipping asymmetric interdiction with wrong evader models...")
+    if compute_asym_intd:
+        true_nonadv_false_po_asym_intd = compare_wrong_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            true_model=spo_model_non_adverse, 
+            false_model=po_model
+        )
 
-    true_nonadv_false_po_asym_intd = compare_wrong_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        true_model=spo_model_non_adverse, 
-        false_model=po_model
-    )
+        true_po_false_nonadv_asym_intd = compare_wrong_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            true_model=po_model, 
+            false_model=spo_model_non_adverse
+        )
 
-    true_po_false_nonadv_asym_intd = compare_wrong_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        true_model=po_model, 
-        false_model=spo_model_non_adverse
-    )
+        true_spo_false_po_asym_intd = compare_wrong_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            true_model=spo_model, 
+            false_model=po_model
+        )
 
-    true_spo_false_po_asym_intd = compare_wrong_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        true_model=spo_model, 
-        false_model=po_model
-    )
+        true_po_false_spo_asym_intd = compare_wrong_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            true_model=po_model, 
+            false_model=spo_model
+        )
 
-    true_po_false_spo_asym_intd = compare_wrong_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        true_model=po_model, 
-        false_model=spo_model
-    )
+        true_adv_false_nonadv_asym_intd = compare_wrong_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            true_model=spo_model, 
+            false_model=spo_model_non_adverse
+        )
 
-    true_adv_false_nonadv_asym_intd = compare_wrong_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        true_model=spo_model, 
-        false_model=spo_model_non_adverse
-    )
-
-    true_nonadv_false_adv_asym_intd = compare_wrong_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        true_model=spo_model_non_adverse, 
-        false_model=spo_model
-    )
+        true_nonadv_false_adv_asym_intd = compare_wrong_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            true_model=spo_model_non_adverse, 
+            false_model=spo_model
+        )
 
     ###########################################
     ##### Improvement Metrics and Results #####
@@ -232,8 +238,9 @@ def single_sim(cfg, visualize=False):
     print(f"DFL no intd. improvement = {po_mean - spo_mean:.2f}")
     print(f"Adv. DFL no intd. improvement = {po_mean - adv_spo_mean:.2f}")
     print(f"Adv. DFL sym. improvement = {all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}")
-    print(f"Adv. DFL asym. improvement = {po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean():.2f}")
-    print(f"PO Asym. + Adv. Evader > Sym Asym. = {true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}")
+    if compute_asym_intd:
+        print(f"Adv. DFL asym. improvement = {po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean():.2f}")
+        print(f"PO Asym. + Adv. Evader > Sym Asym. = {true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}")
 
     # Prepare no-interdiction results for printing
     true_mean = np.array(true_objs).mean() * normalization_constant
@@ -283,44 +290,45 @@ def single_sim(cfg, visualize=False):
 
     print("\n")
 
-    table_headers = ["Predictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
+    if compute_asym_intd:
+        table_headers = ["Predictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
 
-    rows = [
-        [
-            "Oracle", 
-            # f"{true_mean:.4f}", 
-            # f"{all_pred_sym_intd['true_objective'].mean():.4f} +/- {all_pred_sym_intd['true_objective'].std():.4f}", 
-            # f"{no_pred_asym_intd.mean():.4f} +/- {no_pred_asym_intd.std():.4f}", 
-            "N/A", 
-            "N/A",
-            "N/A"
-        ], [
-            "PO", 
-            # f"{po_mean:.4f} ",  
-            # f"{all_pred_sym_intd['po_objective'].mean():.4f} +/- {all_pred_sym_intd['po_objective'].std():.4f}", 
-            # f"{po_pred_asym_intd_I.mean():.4f} +/- {po_pred_asym_intd_I.std():.4f}", 
-            "", 
-            f"{true_po_false_nonadv_asym_intd.mean():.4f} +/- {true_po_false_nonadv_asym_intd.std():.4f}",
-            f"{true_po_false_spo_asym_intd.mean():.4f} +/- {true_po_false_spo_asym_intd.std():.4f}"
-        ], [
-            "SPO", 
-            # f"{spo_mean:.4f} ", 
-            # f"{all_pred_sym_intd['spo_objective'].mean():.4f} +/- {all_pred_sym_intd['spo_objective'].std():.4f}", 
-            # f"{spo_pred_asym_intd_I.mean():.4f} +/- {spo_pred_asym_intd_I.std():.4f}", 
-            f"{true_nonadv_false_po_asym_intd.mean():.4f} +/- {true_nonadv_false_po_asym_intd.std():.4f}",
-            "",
-            f"{true_nonadv_false_adv_asym_intd.mean():.4f} +/- {true_nonadv_false_adv_asym_intd.std():.4f}", 
-        ], [
-            "SPO adv", 
-            # f"{adv_spo_mean:.4f} ", 
-            # f"{all_pred_sym_intd['adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['adv_spo_objective'].std():.4f}", 
-            # f"{adv_spo_pred_asym_intd_I.mean():.4f} +/- {adv_spo_pred_asym_intd_I.std():.4f}", 
-            f"{true_spo_false_po_asym_intd.mean():.4f} +/- {true_spo_false_po_asym_intd.std():.4f}", 
-            f"{true_adv_false_nonadv_asym_intd.mean():.4f} +/- {true_adv_false_nonadv_asym_intd.std():.4f}",
-            ""
+        rows = [
+            [
+                "Oracle", 
+                # f"{true_mean:.4f}", 
+                # f"{all_pred_sym_intd['true_objective'].mean():.4f} +/- {all_pred_sym_intd['true_objective'].std():.4f}", 
+                # f"{no_pred_asym_intd.mean():.4f} +/- {no_pred_asym_intd.std():.4f}", 
+                "N/A", 
+                "N/A",
+                "N/A"
+            ], [
+                "PO", 
+                # f"{po_mean:.4f} ",  
+                # f"{all_pred_sym_intd['po_objective'].mean():.4f} +/- {all_pred_sym_intd['po_objective'].std():.4f}", 
+                # f"{po_pred_asym_intd_I.mean():.4f} +/- {po_pred_asym_intd_I.std():.4f}", 
+                "", 
+                f"{true_po_false_nonadv_asym_intd.mean():.4f} +/- {true_po_false_nonadv_asym_intd.std():.4f}",
+                f"{true_po_false_spo_asym_intd.mean():.4f} +/- {true_po_false_spo_asym_intd.std():.4f}"
+            ], [
+                "SPO", 
+                # f"{spo_mean:.4f} ", 
+                # f"{all_pred_sym_intd['spo_objective'].mean():.4f} +/- {all_pred_sym_intd['spo_objective'].std():.4f}", 
+                # f"{spo_pred_asym_intd_I.mean():.4f} +/- {spo_pred_asym_intd_I.std():.4f}", 
+                f"{true_nonadv_false_po_asym_intd.mean():.4f} +/- {true_nonadv_false_po_asym_intd.std():.4f}",
+                "",
+                f"{true_nonadv_false_adv_asym_intd.mean():.4f} +/- {true_nonadv_false_adv_asym_intd.std():.4f}", 
+            ], [
+                "SPO adv", 
+                # f"{adv_spo_mean:.4f} ", 
+                # f"{all_pred_sym_intd['adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['adv_spo_objective'].std():.4f}", 
+                # f"{adv_spo_pred_asym_intd_I.mean():.4f} +/- {adv_spo_pred_asym_intd_I.std():.4f}", 
+                f"{true_spo_false_po_asym_intd.mean():.4f} +/- {true_spo_false_po_asym_intd.std():.4f}", 
+                f"{true_adv_false_nonadv_asym_intd.mean():.4f} +/- {true_adv_false_nonadv_asym_intd.std():.4f}",
+                ""
+            ]
         ]
-    ]
-    print(tabulate(rows, headers=table_headers, tablefmt="github"))
+        print(tabulate(rows, headers=table_headers, tablefmt="github"))
 
 
 
@@ -348,7 +356,7 @@ def single_sim(cfg, visualize=False):
         "metric_2" : po_mean - adv_spo_mean,
         "metric_3" : all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean(),
         "metric_4" : po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean(),
-        "metric_5" : true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean()
+        "metric_5" : true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean() if compute_asym_intd else None
     }
 
     table_1 = {
@@ -392,6 +400,6 @@ def single_sim(cfg, visualize=False):
         "t2_a_p_std" : true_spo_false_po_asym_intd.std(),
         "t2_a_s_mean" : true_adv_false_nonadv_asym_intd.mean(),
         "t2_a_s_std" : true_adv_false_nonadv_asym_intd.std()
-    }
+    } if compute_asym_intd else {}
 
     return prediction_mean_std, metrics, table_1, table_2

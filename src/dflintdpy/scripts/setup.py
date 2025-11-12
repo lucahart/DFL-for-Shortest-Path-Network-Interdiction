@@ -1,5 +1,6 @@
 import pyepo
 import torch
+import numpy as np
 from torch import nn
 from copy import deepcopy
 from sklearn.model_selection import train_test_split
@@ -16,21 +17,49 @@ from dflintdpy.data.adverse.adverse_loader import AdvLoader
 
 def gen_train_data(
         cfg: HP,
-        opt_model: 'ShortestPathGrb'
-                ) -> dict:
+        opt_model: 'ShortestPathGrb',
+        path_dir: str = None
+) -> dict:
     """
     Sets up the graph and data loaders for the shortest path problem.
     """
+    file_found = False
 
-    # Generate synthetic data for training and testing
-    features, costs = pyepo.data.shortestpath.genData(
-        cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"), 
-        cfg.get("num_features"), 
-        cfg.get("grid_size"), 
-        deg=cfg.get("deg"), 
-        noise_width=cfg.get("noise_width"), 
-        seed=cfg.get("random_seed")
-    )
+    # Generate file path if directory is provided
+    if path_dir is not None:
+        file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seed_{seed}.csv".format(
+            samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
+            m=cfg.get("grid_size")[0], 
+            n=cfg.get("grid_size")[1], 
+            deg=cfg.get("deg"), 
+            noise=cfg.get("noise_width"), 
+            seed=cfg.get("random_seed")
+        )
+        path_file = path_dir / ("xy" + file_name_body)
+        
+        try:
+            # Load pre-generated data if available
+            features, costs = _load_features_costs(path_file)
+            print(f"Loaded existing cost and feature data from file.")
+            file_found = True
+        except (FileNotFoundError, OSError) as e:
+            print(f"Could not load cached data: {e}")
+            pass  # If file not found, generate new data below
+
+    if not file_found:
+        # Generate synthetic data for training and testing
+        features, costs = pyepo.data.shortestpath.genData(
+            cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"), 
+            cfg.get("num_features"), 
+            cfg.get("grid_size"), 
+            deg=cfg.get("deg"), 
+            noise_width=cfg.get("noise_width"), 
+            seed=cfg.get("random_seed")
+        )
+        
+        # Save generated data if path is provided
+        if path_dir is not None:
+            _save_features_costs(path_file, features, costs)
 
     # Normalize costs
     normalization_constant = costs.max()
@@ -62,11 +91,13 @@ def gen_train_data(
     )
     X_train, c_train, i_train = adversarial_generator.generate(
         X_train, 
-        c_train
+        c_train,
+        file_path=path_dir / ("i_train" + file_name_body) if path_dir is not None else None
     )
     X_val, c_val, i_val = adversarial_generator.generate(
         X_val, 
-        c_val
+        c_val,
+        file_path=path_dir / ("i_valid" + file_name_body) if path_dir is not None else None
     )
 
     # Create data sets
@@ -95,6 +126,46 @@ def gen_train_data(
         "feats": X_test,
         "costs": c_test
     }, normalization_constant
+
+
+def _save_features_costs(file_path, features, costs):
+    """
+    Save features and costs to CSV files.
+    
+    Args:
+        file_path: Base file path (without extension)
+        features: Feature array
+        costs: Cost array
+    """
+    features_path = str(file_path).replace("xy_", "features_")
+    costs_path = str(file_path).replace("xy_", "costs_")
+    
+    np.savetxt(features_path, features, delimiter=',')
+    np.savetxt(costs_path, costs, delimiter=',')
+    print(f"Saved features to {features_path}")
+    print(f"Saved costs to {costs_path}")
+
+
+def _load_features_costs(file_path):
+    """
+    Load features and costs from CSV files.
+    
+    Args:
+        file_path: Base file path (without extension)
+        
+    Returns:
+        tuple: (features, costs) as numpy arrays
+        
+    Raises:
+        FileNotFoundError: If either file doesn't exist
+    """
+    features_path = str(file_path).replace("xy_", "features_")
+    costs_path = str(file_path).replace("xy_", "costs_")
+    
+    features = np.loadtxt(features_path, delimiter=',', dtype=np.float32)
+    costs = np.loadtxt(costs_path, delimiter=',', dtype=np.float32)
+    
+    return features, costs
 
 
 def gen_data(cfg: HP,

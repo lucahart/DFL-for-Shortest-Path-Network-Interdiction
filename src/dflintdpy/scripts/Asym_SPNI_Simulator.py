@@ -8,6 +8,7 @@ from dflintdpy.scripts.asym_spni_single_sim import single_sim
 # Initialize the configuration class
 cfg = HP()
 num_seeds = cfg.get("num_seeds")
+compute_asym_intd = False
 
 # List to store results
 results = []
@@ -29,7 +30,7 @@ for seed in range(num_seeds):
     cfg.set("data_loader_seed", seed3)
 
     # Run the Asym_SPNI function
-    prediction_mean_std, metrics, table_1, table_2 = single_sim(cfg)
+    prediction_mean_std, metrics, table_1, table_2 = single_sim(cfg, compute_asym_intd=compute_asym_intd)
 
     # Store values in list
     results.append({
@@ -130,35 +131,36 @@ for result in results:
     t1_a_a_std.append(result['table_1']['t1_a_a_std'])
 
 # Combine table 2
-t2_p_s_mean = []
-t2_p_s_std = []
-t2_p_a_mean = []
-t2_p_a_std = []
+if compute_asym_intd:
+    t2_p_s_mean = []
+    t2_p_s_std = []
+    t2_p_a_mean = []
+    t2_p_a_std = []
 
-t2_s_p_mean = []
-t2_s_p_std = []
-t2_s_a_mean = []
-t2_s_a_std = []
+    t2_s_p_mean = []
+    t2_s_p_std = []
+    t2_s_a_mean = []
+    t2_s_a_std = []
 
-t2_a_p_mean = []
-t2_a_p_std = []
-t2_a_s_mean = []
-t2_a_s_std = []
-for result in results:
-    t2_p_s_mean.append(result['table_2']['t2_p_s_mean'])
-    t2_p_s_std.append(result['table_2']['t2_p_s_std'])
-    t2_p_a_mean.append(result['table_2']['t2_p_a_mean'])
-    t2_p_a_std.append(result['table_2']['t2_p_a_std'])
+    t2_a_p_mean = []
+    t2_a_p_std = []
+    t2_a_s_mean = []
+    t2_a_s_std = []
+    for result in results:
+        t2_p_s_mean.append(result['table_2']['t2_p_s_mean'])
+        t2_p_s_std.append(result['table_2']['t2_p_s_std'])
+        t2_p_a_mean.append(result['table_2']['t2_p_a_mean'])
+        t2_p_a_std.append(result['table_2']['t2_p_a_std'])
 
-    t2_s_p_mean.append(result['table_2']['t2_s_p_mean'])
-    t2_s_p_std.append(result['table_2']['t2_s_p_std'])
-    t2_s_a_mean.append(result['table_2']['t2_s_a_mean'])
-    t2_s_a_std.append(result['table_2']['t2_s_a_std'])
+        t2_s_p_mean.append(result['table_2']['t2_s_p_mean'])
+        t2_s_p_std.append(result['table_2']['t2_s_p_std'])
+        t2_s_a_mean.append(result['table_2']['t2_s_a_mean'])
+        t2_s_a_std.append(result['table_2']['t2_s_a_std'])
 
-    t2_a_p_mean.append(result['table_2']['t2_a_p_mean'])
-    t2_a_p_std.append(result['table_2']['t2_a_p_std'])
-    t2_a_s_mean.append(result['table_2']['t2_a_s_mean'])
-    t2_a_s_std.append(result['table_2']['t2_a_s_std'])
+        t2_a_p_mean.append(result['table_2']['t2_a_p_mean'])
+        t2_a_p_std.append(result['table_2']['t2_a_p_std'])
+        t2_a_s_mean.append(result['table_2']['t2_a_s_mean'])
+        t2_a_s_std.append(result['table_2']['t2_a_s_std'])
 
 # Mark final results
 print("##########################################" + 
@@ -187,7 +189,8 @@ print(f"DFL no intd. improvement = {np.array(metric_1).mean():.4f}")
 print(f"Adv. DFL no intd. improvement = {np.array(metric_2).mean():.4f}")
 print(f"Adv. DFL sym. improvement = {np.array(metric_3).mean():.4f}")
 print(f"Adv. DFL asym. improvement = {np.array(metric_4).mean():.4f}")
-print(f"PO Asym. + Adv. Evader > Sym Asym. = {np.array(metric_5).mean():.4f}")
+if compute_asym_intd:
+    print(f"PO Asym. + Adv. Evader > Sym Asym. = {np.array(metric_5).mean():.4f}")
 
 # Print table 1
 table_headers = ["Predictor", "No Interdictor", "Sym. Interdictor", "Asym. Interdictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
@@ -217,30 +220,31 @@ rows = [
 print(tabulate(rows, headers=table_headers, tablefmt="github"))
 
 # Print table 2
-table_headers = ["Predictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
-rows = [
-    [
-        "Oracle", 
-        "N/A", 
-        "N/A",
-        "N/A"
-    ], [
-        "PO", 
-        f"{np.array(t1_p_a_mean).mean():.4f} +/- {np.array(t1_p_a_mean).std():.4f}",
-        f"{np.array(t2_p_s_mean).mean():.4f} +/- {np.array(t2_p_s_mean).std():.4f}",
-        f"{np.array(t2_p_a_mean).mean():.4f} +/- {np.array(t2_p_a_mean).std():.4f}"
-    ], [
-        "SPO", 
-        f"{np.array(t2_s_p_mean).mean():.4f} +/- {np.array(t2_s_p_mean).std():.4f}",
-        f"{np.array(t1_s_a_mean).mean():.4f} +/- {np.array(t1_s_a_mean).std():.4f}", 
-        f"{np.array(t2_s_a_mean).mean():.4f} +/- {np.array(t2_s_a_mean).std():.4f}", 
-    ], [
-        "SPO adv", 
-        f"{np.array(t2_a_p_mean).mean():.4f} +/- {np.array(t2_a_p_mean).std():.4f}", 
-        f"{np.array(t2_a_s_mean).mean():.4f} +/- {np.array(t2_a_s_mean).std():.4f}",
-        f"{np.array(t1_a_a_mean).mean():.4f} +/- {np.array(t1_a_a_mean).std():.4f}",
+if compute_asym_intd:
+    table_headers = ["Predictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
+    rows = [
+        [
+            "Oracle", 
+            "N/A", 
+            "N/A",
+            "N/A"
+        ], [
+            "PO", 
+            f"{np.array(t1_p_a_mean).mean():.4f} +/- {np.array(t1_p_a_mean).std():.4f}",
+            f"{np.array(t2_p_s_mean).mean():.4f} +/- {np.array(t2_p_s_mean).std():.4f}",
+            f"{np.array(t2_p_a_mean).mean():.4f} +/- {np.array(t2_p_a_mean).std():.4f}"
+        ], [
+            "SPO", 
+            f"{np.array(t2_s_p_mean).mean():.4f} +/- {np.array(t2_s_p_mean).std():.4f}",
+            f"{np.array(t1_s_a_mean).mean():.4f} +/- {np.array(t1_s_a_mean).std():.4f}", 
+            f"{np.array(t2_s_a_mean).mean():.4f} +/- {np.array(t2_s_a_mean).std():.4f}", 
+        ], [
+            "SPO adv", 
+            f"{np.array(t2_a_p_mean).mean():.4f} +/- {np.array(t2_a_p_mean).std():.4f}", 
+            f"{np.array(t2_a_s_mean).mean():.4f} +/- {np.array(t2_a_s_mean).std():.4f}",
+            f"{np.array(t1_a_a_mean).mean():.4f} +/- {np.array(t1_a_a_mean).std():.4f}",
+        ]
     ]
-]
-print(tabulate(rows, headers=table_headers, tablefmt="github"))
+    print(tabulate(rows, headers=table_headers, tablefmt="github"))
 
 print("Finished Simulations.")

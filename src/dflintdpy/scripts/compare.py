@@ -92,7 +92,7 @@ def compare_sym_intd(cfg, po_model, spo_model, test_data, interdictions, normali
     adv_spo_objs = []
 
     # Print that the simulation is starting
-    print(f"Running simulation with {num_test_samples} samples...")
+    print(f"Running symmetric simulations with {num_test_samples} samples...")
 
     # Iterate through each data sample
     for i in range(num_test_samples) if idx is None else [idx]:
@@ -169,7 +169,7 @@ def compare_asym_intd(cfg, test_data, interdictions, normalization_constant, pre
     num_test_samples = cfg.get("num_test_samples")
 
     # Print that the simulation is starting
-    print(f"Running simulation with {num_test_samples} samples...")
+    print(f"Running asymmetric simulation with {num_test_samples} samples...")
 
     # Prepare lists to store results
     true_objs = []
