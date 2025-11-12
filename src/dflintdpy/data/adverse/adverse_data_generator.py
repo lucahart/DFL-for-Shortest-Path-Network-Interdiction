@@ -131,121 +131,182 @@ class AdvDataGenerator:
                 budget=opt_model.c.sum()*0.3
             )
 
-
-    def generate(
-        self,
-        feats: np.ndarray,
-        costs: np.ndarray,
-        versatile: bool = False,
-        file_path: str | None = None
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _load_interdictions_from_cache(self, file_path, costs, feats):
         """
-        Generate adversarial examples for the given dataset.
-
-        Parameters:
-        -----------
-        feats : np.ndarray
-            Feature matrix of shape ``(n_samples, p)``.
-        costs : np.ndarray
-            Cost matrix of shape ``(n_samples, m)``.
-        versatile : bool, optional
-            Whether to print a progress bar during generation.
-
+        Load cached interdiction data from CSV file.
+        
         Returns:
-        --------
-        tuple
-            ``(feats, costs_grouped, interdictions_grouped)`` where ``feats``
-            has shape ``(n_samples, p)`` and ``costs_grouped`` as well as
-            ``interdictions_grouped`` have shape ``(n_samples, num_scenarios, m)``.
-            Scenario index ``0`` corresponds to the original (unin­terdicted)
-            costs; subsequent indices contain the results for each
-            interdiction.
+            tuple: (feats, costs_grouped, interdictions_grouped) if successful, None otherwise
         """
+        try:
+            intd = pd.read_csv(file_path, header=None).values.astype(np.float32)
+            
+            n_samples = feats.shape[0]
+            m = costs.shape[1]
+            
+            costs_grouped = np.zeros((n_samples, self.num_scenarios, m))
+            interdictions_grouped = np.zeros_like(costs_grouped)
+            
+            # Fill scenario 0 with original costs
+            costs_grouped[:, 0, :] = costs
+            
+            if self.adverse_problem == "BPPO":
+                # BPPO: Single interdiction per sample
+                costs_grouped[:, 1, :] = costs - intd
+                interdictions_grouped[:, 1, :] = intd
+            elif self.adverse_problem == "SPNI":
+                # SPNI: Multiple interdictions per sample
+                # Reshape loaded data: (n_samples * (num_scenarios-1), m) -> (n_samples, num_scenarios-1, m)
+                intd_reshaped = intd.reshape(n_samples, self.num_scenarios - 1, m)
+                for scenario_idx in range(self.num_scenarios - 1):
+                    costs_grouped[:, scenario_idx + 1, :] = costs + intd_reshaped[:, scenario_idx, :]
+                    interdictions_grouped[:, scenario_idx + 1, :] = intd_reshaped[:, scenario_idx, :]
+            
+            print("Loaded existing interdiction data from file.")
+            return feats, costs_grouped, interdictions_grouped
+        except Exception as e:
+            print(f"Could not load cache (will generate new data): {e}")
+            return None
 
-        # Print that generation started
-        print(
-            f"Generating adversarial examples with "
-            f"{self.num_scenarios} scenarios..."
-        )
+    def _save_interdictions_to_cache(self, file_path, interdictions_grouped):
+        """
+        Save interdiction data to CSV file.
+        """
+        if self.adverse_problem == "BPPO":
+            # BPPO: Save only scenario 1 (single interdiction per sample)
+            np.savetxt(file_path, interdictions_grouped[:, 1, :], delimiter=',')
+        elif self.adverse_problem == "SPNI":
+            # SPNI: Save all scenarios (excluding scenario 0)
+            # Reshape from (n_samples, num_scenarios-1, m) to (n_samples * (num_scenarios-1), m)
+            n_samples = interdictions_grouped.shape[0]
+            m = interdictions_grouped.shape[2]
+            intd_flat = interdictions_grouped[:, 1:, :].reshape(-1, m)
+            np.savetxt(file_path, intd_flat, delimiter=',')
+        
+        print(f"Saved interdiction data to {file_path}")
 
-        # Determine sizes
-        n_samples = feats.shape[0] # number of original samples
-        m = costs.shape[1] # length of cost vector
-
-        # Allocate grouped arrays. Scenario 0 corresponds to the
-        # original (unin­terdicted) cost. Remaining scenarios store the
-        # result for each interdiction.
+    def _generate_bppo_interdictions(self, feats, costs, versatile=False):
+        """
+        Generate interdictions for BPPO (Bilevel Pricing Problem).
+        """
+        n_samples = feats.shape[0]
+        m = costs.shape[1]
+        
         costs_grouped = np.zeros((n_samples, self.num_scenarios, m))
         interdictions_grouped = np.zeros_like(costs_grouped)
-
-        # Fill scenario 0 with the original costs
-        costs_grouped[:, 0, :] = costs
-
-        # Check if results have already been generated
-        if file_path is not None:
-            try:
-                p_opt = pd.read_csv(file_path, header=None).values.astype(np.float32)
-                costs_grouped[:, 1, :] = costs + p_opt
-                interdictions_grouped[:, 1, :] = p_opt
-                print("Loaded existing interdiction data from file.")
-                return feats, costs_grouped, interdictions_grouped
-            except Exception:
-                pass  # If loading fails, proceed to generate data
-
-        # Iterate over each example in the dataset
-        for idx in range(n_samples):
-            # Unpack costs for each sample
-            cost = costs[idx]
-
-            if self.adverse_problem == "SPNI":
-                # Select interdictions for scenarios at random
-                selected_interdictions = self._rng.choice(
-                self.interdictions.shape[0], 
-                size=self.num_scenarios - 1, 
-                replace=False)
-
-                # Iterate over each interdiction
-                for idx_intd, intd in enumerate(self.interdictions[selected_interdictions, :]):
-                    # Solve the adversarial interdiction problem
-                    self._sym_interdictor.opt_model.setObj(cost)
-                    sym_intd, _, _ = self._sym_interdictor.benders_decomposition(
-                        interdiction_cost=intd,
-                        versatile=versatile,
-                    )
-
-                    # Create new cost vector by adding the interdiction costs
-                    new_cost = cost + sym_intd * intd
-
-                    # Store the new costs and applied interdiction
-                    costs_grouped[idx, idx_intd + 1, :] = new_cost
-                    interdictions_grouped[idx, idx_intd + 1, :] = (
-                        sym_intd * intd
-                    )
-            elif self.adverse_problem == "BPPO":
-                cost[cost < 0] = 0  # Ensure non-negative costs
-                # Solve the bilevel pricing problem
-                self._sym_interdictor = FastBilevelPricingSolver(
-                    cost, 
-                    self._sym_interdictor.Sigma, 
-                    self._sym_interdictor.gamma, 
-                    budget=self._sym_interdictor.budget
-                )
-                result_fast = self._sym_interdictor.solve(n_starts=5, 
-                                                          verbose=versatile)
-                intd = result_fast['p_opt']
-                new_cost = cost - intd
-                costs_grouped[idx, 1, :] = new_cost
-                interdictions_grouped[idx, 1, :] = intd*-1
-
-            # Print progress if versatile
-            print_progress(idx, n_samples)
         
-        # If a file path is provided, save the generated data
-        if file_path is not None:
-            np.savetxt(file_path, interdictions_grouped[:, 1, :], delimiter=',')
-
+        # Fill scenario 0 with original costs
+        costs_grouped[:, 0, :] = costs
+        
+        print(f"Generating BPPO adversarial examples for {n_samples} samples...")
+        
+        for idx in range(n_samples):
+            cost = costs[idx].copy()
+            cost[cost < 0] = 0  # Ensure non-negative costs
+            
+            # Solve the bilevel pricing problem
+            solver = FastBilevelPricingSolver(
+                cost, 
+                self._sym_interdictor.Sigma, 
+                self._sym_interdictor.gamma, 
+                budget=self._sym_interdictor.budget
+            )
+            result_fast = solver.solve(n_starts=5, verbose=versatile)
+            intd = result_fast['p_opt']
+            
+            # Store results
+            new_cost = cost - intd
+            costs_grouped[idx, 1, :] = new_cost
+            interdictions_grouped[idx, 1, :] = intd
+            
+            if versatile:
+                print_progress(idx, n_samples)
+        
         return feats, costs_grouped, interdictions_grouped
 
+    def _generate_spni_interdictions(self, feats, costs, versatile=False):
+        """
+        Generate interdictions for SPNI (Stochastic Programming Network Interdiction).
+        """
+        n_samples = feats.shape[0]
+        m = costs.shape[1]
+        
+        costs_grouped = np.zeros((n_samples, self.num_scenarios, m))
+        interdictions_grouped = np.zeros_like(costs_grouped)
+        
+        # Fill scenario 0 with original costs
+        costs_grouped[:, 0, :] = costs
+        
+        print(f"Generating SPNI adversarial examples for {n_samples} samples" + 
+              f" with {self.num_scenarios} scenarios...")
+        
+        for idx in range(n_samples):
+            cost = costs[idx]
+            
+            # Select interdictions for scenarios at random
+            selected_interdictions = self._rng.choice(
+                self.interdictions.shape[0], 
+                size=self.num_scenarios - 1, 
+                replace=False
+            )
+            
+            # Iterate over each interdiction
+            for scenario_idx, intd_idx in enumerate(selected_interdictions):
+                intd = self.interdictions[intd_idx, :]
+                
+                # Solve the adversarial interdiction problem
+                self._sym_interdictor.opt_model.setObj(cost)
+                sym_intd, _, _ = self._sym_interdictor.benders_decomposition(
+                    interdiction_cost=intd,
+                    versatile=versatile,
+                )
+                
+                # Create new cost vector by adding the interdiction costs
+                new_cost = cost + sym_intd * intd
+                
+                # Store the new costs and applied interdiction
+                costs_grouped[idx, scenario_idx + 1, :] = new_cost
+                interdictions_grouped[idx, scenario_idx + 1, :] = sym_intd * intd
+            
+            if versatile:
+                print_progress(idx, n_samples)
+        
+        return feats, costs_grouped, interdictions_grouped
+
+    def generate(self, feats, costs, file_path=None, versatile=False):
+        """
+        Main function to generate adversarial examples with caching support.
+        
+        Args:
+            feats: Feature array
+            costs: Cost array
+            file_path: Optional path to cache file
+            versatile: Verbose mode flag
+            
+        Returns:
+            tuple: (feats, costs_grouped, interdictions_grouped)
+        """
+        # Try to load from cache if file path is provided
+        if file_path is not None:
+            cached_result = self._load_interdictions_from_cache(file_path, costs, feats)
+            if cached_result is not None:
+                return cached_result
+        
+        # Generate new interdictions based on problem type
+        if self.adverse_problem == "BPPO":
+            result = self._generate_bppo_interdictions(feats, costs, versatile)
+        elif self.adverse_problem == "SPNI":
+            result = self._generate_spni_interdictions(feats, costs, versatile)
+        else:
+            raise ValueError(f"Unknown adverse_problem: {self.adverse_problem}")
+        
+        feats, costs_grouped, interdictions_grouped = result
+        
+        # Save to cache if file path is provided
+        if file_path is not None:
+            self._save_interdictions_to_cache(file_path, interdictions_grouped)
+        
+        return feats, costs_grouped, interdictions_grouped
 
     @staticmethod
     def gen_interdictions(

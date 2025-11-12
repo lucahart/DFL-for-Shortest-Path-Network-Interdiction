@@ -130,7 +130,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=16, batch_size=32):
     optimizer_adfl = optim.Adam(pred_model_adfl.parameters(), lr=1e-2)
 
     # Set the number of epochs for training
-    epochs = 20
+    epochs = 10
 
     # Create a trainer instance
     dfl_trainer = DFLTrainer(
@@ -205,7 +205,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=16, batch_size=32):
 
     # Run on 50 test samples
     all_results = evaluate_multiple_samples(
-        num_samples=50,
+        num_samples=100,
         x_test=x_test,
         y_test=y_test,
         pred_model_dfl=pred_model_dfl,
