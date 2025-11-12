@@ -46,8 +46,8 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     x_train, y_train, x_valid, y_valid, x_test, y_test, cov, gamma = \
         read_synthetic_data(N, noise, deg)
     
-    x_train = x_train[:200,:]
-    y_train = y_train[:200,:]
+    x_train = x_train[:250,:]
+    y_train = y_train[:250,:]
     # x_valid = x_valid[:100,:]
     # y_valid = y_valid[:100,:]
     # x_test = x_test[:100,:]
@@ -134,7 +134,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     optimizer_adfl = optim.Adam(pred_model_adfl.parameters(), lr=1e-2)
 
     # Set the number of epochs for training
-    epochs = 2
+    epochs = 5
 
     # Create a trainer instance
     dfl_trainer = DFLTrainer(
@@ -207,7 +207,6 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     _, adfl_test_regret = adfl_trainer.evaluate(loader_test)
     print("A-DFL: Final regret on test set: ", adfl_test_regret)
 
-
     # Run on 50 test samples
     all_results = evaluate_multiple_samples(
         num_samples=50,
@@ -225,71 +224,6 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     # Get summary statistics
     summary = summarize_results(all_results)
     print_summary(summary)
-    # idx = 0
-    # c = y_test[idx,:]
-    # x = x_test[idx,:]
-    # dfl_pred = pred_model_dfl(torch.tensor(x)).detach().numpy()
-    # pfl_pred = pred_model_pfl(torch.tensor(x)).detach().numpy()
-    # adfl_pred = pred_model_adfl(torch.tensor(x)).detach().numpy()
-    # print("\n" + "=" * 80)
-    # print("BILEVEL PRICING OPTIMIZATION ON TEST SAMPLE")
-    # print("=" * 80)
-    # opt_model.setObj(dfl_pred)
-    # sol_dfl, _ = opt_model.solve()
-    # opt_model.setObj(pfl_pred)
-    # sol_pfl, _ = opt_model.solve()
-    # opt_model.setObj(adfl_pred)
-    # sol_adfl, _ = opt_model.solve()
-    # print("\nProblem Parameters:")
-    # print(f"Cost vector c: {c}")
-    # # print(f"Buyer's solution: {sol_dfl}")
-    # print(f"DFL: Buyer's objective value:   {sol_dfl @ c:.4f}")
-    # print(f"PFL: Buyer's objective value:   {sol_pfl @ c:.4f}")
-    # print(f"A-DFL: Buyer's objective value: {sol_adfl @ c:.4f}")
-    # print(f"Risk tolerance γ: {gamma}")
-    # print(f"Problem size: n = {c.shape[0]}")
-    # print(f"Budget: {c.sum()*0.3}")
-
-    # # Create problem
-    # problem = BilevelPricingProblem(c, cov, gamma, budget=c.sum()*0.3)
-    # fast_solver = FastBilevelPricingSolver(c, cov, gamma, budget=c.sum()*0.3)
-    # result_gurobi = problem.solve_with_gurobi_miqcp(M=100, time_limit=60)
-    # result_fast = fast_solver.solve(n_starts=5)
-    # p = result_gurobi['p_opt']
-    # p_fast = result_fast['p_opt']
-    # opt_model.setObj(dfl_pred-p)
-    # sol_pp_dfl, _ = opt_model.solve()
-    # opt_model.setObj(pfl_pred-p)
-    # sol_pp_pfl, _ = opt_model.solve()
-    # opt_model.setObj(adfl_pred-p)
-    # sol_pp_adfl, _ = opt_model.solve()
-    # opt_model.setObj(dfl_pred-p_fast)
-    # sol_ppf_dfl, _ = opt_model.solve()
-    # opt_model.setObj(pfl_pred-p_fast)
-    # sol_ppf_pfl, _ = opt_model.solve()
-    # opt_model.setObj(adfl_pred-p_fast)
-    # sol_ppf_adfl, _ = opt_model.solve()
-    # if result_gurobi is not None and result_gurobi['success']:
-    #     print("\n" + "=" * 80)
-    #     print("PLAYER PAYOFFS AFTER PRICING")
-    #     print("=" * 80)
-    #     print(f"\nOptimal prices p: {result_gurobi['p_opt']}")
-    #     print(f"Buyer response y: {result_gurobi['y_opt']}")
-    #     print(f"Seller's revenue: {result_gurobi['revenue']:.4f}")
-    #     print(f"Seller's revenue (fast solver): {result_fast['revenue']:.4f}")
-    #     print(f"DFL: Buyer's objective value:   {sol_pp_dfl @ (c-p):.4f}")
-    #     print(f"PFL: Buyer's objective value:   {sol_pp_pfl @ (c-p):.4f}")
-    #     print(f"A-DFL: Buyer's objective value: {sol_pp_adfl @ (c-p):.4f}")
-    #     print(f"DFL: Buyer's objective value:   {sol_ppf_dfl @ (c-p_fast):.4f}")
-    #     print(f"PFL: Buyer's objective value:   {sol_ppf_pfl @ (c-p_fast):.4f}")
-    #     print(f"A-DFL: Buyer's objective value: {sol_ppf_adfl @ (c-p_fast):.4f}")
-    #     print(f"True values:        {c.mean():.4f}, {c.std():.4f}")
-    #     print(f"DFL: Predictions:   {dfl_pred.mean():.4f}, {dfl_pred.std():.4f}")
-    #     print(f"PFL: Predictions:   {pfl_pred.mean():.4f}, {pfl_pred.std():.4f}")
-    #     print(f"A-DFL: Predictions: {adfl_pred.mean():.4f}, {adfl_pred.std():.4f}")
-    #     print(f"Verification gap: {result_gurobi['verification_gap']:.2e}")
-    #     print(f"MIP gap: {result_gurobi['mip_gap']:.2e}")
-    #     print(f"Solve time: {result_gurobi['solve_time']:.2f}s")
     
     pass
 

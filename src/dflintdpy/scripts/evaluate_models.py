@@ -57,6 +57,14 @@ def solve_buyer_problem(opt_model,
             'objective': obj_value
         }
     
+    # Append ground truth solution
+    opt_model.setObj(c)
+    sol_gt, obj_value_gt = opt_model.solve()
+    results['true'] = {
+        'solution': sol_gt,
+        'objective': obj_value_gt
+    }
+    
     return results
 
 def solve_bilevel_pricing(c: np.ndarray, 
@@ -132,7 +140,7 @@ def solve_buyer_with_pricing(opt_model,
     # Append ground truth solution
     opt_model.setObj(c - p)
     sol_gt, obj_value_gt = opt_model.solve()
-    results['ground_truth'] = {
+    results['true'] = {
         'solution': sol_gt,
         'objective': obj_value_gt
     }
@@ -367,9 +375,11 @@ def summarize_results(all_results: List[Dict]) -> Dict:
     num_samples = len(all_results)
     
     # Initialize aggregators
-    objectives_no_pricing = {'dfl': [], 'pfl': [], 'adfl': []}
-    objectives_gurobi = {'dfl': [], 'pfl': [], 'adfl': []}
-    objectives_fast = {'dfl': [], 'pfl': [], 'adfl': []}
+    objectives_no_pricing = {'true': [], 'dfl': [], 'pfl': [], 'adfl': []}
+    predicted_costs = {'mean': {'true': [], 'dfl': [], 'pfl': [], 'adfl': []}, \
+                       'std': {'true': [], 'dfl': [], 'pfl': [], 'adfl': []}}
+    objectives_gurobi = {'true': [], 'dfl': [], 'pfl': [], 'adfl': []}
+    objectives_fast = {'true': [], 'dfl': [], 'pfl': [], 'adfl': []}
     revenues_gurobi = []
     revenues_fast = []
     solve_times = []
@@ -377,14 +387,23 @@ def summarize_results(all_results: List[Dict]) -> Dict:
     # Aggregate results
     for result in all_results:
         # No pricing objectives
-        for model in ['dfl', 'pfl', 'adfl']:
+        for model in ['true', 'dfl', 'pfl', 'adfl']:
             objectives_no_pricing[model].append(
                 result['buyer_no_pricing'][model]['objective']
             )
         
+        # Predicted costs stats
+        for model in ['true', 'dfl', 'pfl', 'adfl']:
+            predicted_costs['mean'][model].append(
+                result['prediction_stats'][model]['mean']
+            )
+            predicted_costs['std'][model].append(
+                result['prediction_stats'][model]['std']
+            )
+        
         # Gurobi pricing objectives
         if result['buyer_gurobi_pricing'] is not None:
-            for model in ['dfl', 'pfl', 'adfl']:
+            for model in ['true', 'dfl', 'pfl', 'adfl']:
                 objectives_gurobi[model].append(
                     result['buyer_gurobi_pricing'][model]['objective']
                 )
@@ -393,7 +412,7 @@ def summarize_results(all_results: List[Dict]) -> Dict:
         
         # Fast solver objectives
         if result['buyer_fast_pricing'] is not None:
-            for model in ['dfl', 'pfl', 'adfl']:
+            for model in ['true', 'dfl', 'pfl', 'adfl']:
                 objectives_fast[model].append(
                     result['buyer_fast_pricing'][model]['objective']
                 )
@@ -402,6 +421,24 @@ def summarize_results(all_results: List[Dict]) -> Dict:
     # Compute statistics
     summary = {
         'num_samples': num_samples,
+        'predictions' : {
+            'mean': {
+                model: {
+                    'mean': np.mean(c_mean),
+                    'std': np.std(c_mean),
+                    'min': np.min(c_mean),
+                    'max': np.max(c_mean)
+                } for model, c_mean in predicted_costs['mean'].items()
+            },
+            'std': {
+                model: {
+                    'mean': np.mean(c_std),
+                    'std': np.std(c_std),
+                    'min': np.min(c_std),
+                    'max': np.max(c_std)
+                } for model, c_std in predicted_costs['std'].items()
+            },
+        },
         'no_pricing': {
             model: {
                 'mean': np.mean(objs),
@@ -459,11 +496,22 @@ def print_summary(summary: Dict):
     print("=" * 80)
     
     print("\n" + "-" * 80)
+    print("PREDICTION COST STATISTICS")
+    print("-" * 80)
+    print(f"{'Model':<7s} {'Mean':<8s} {'Std':<6s} [{'Min,':<7s} {'Max':<6s}]")
+    print(f"{'-'*7} {'-'*8} {'-'*6} {'-'*7} {'-'*6}")
+    for model in ['true', 'dfl', 'pfl', 'adfl']:
+        stats = summary['predictions']['mean'][model]
+        stats_std = summary['predictions']['std'][model]
+        print(f"{model.upper():6s}: {stats['mean']:.4f} ± {stats_std['mean']:.4f} "
+              f"[{stats['min']:.4f}, {stats['max']:.4f}]")
+    
+    print("\n" + "-" * 80)
     print("BUYER OBJECTIVES WITHOUT PRICING")
     print("-" * 80)
     print(f"{'Model':<7s} {'Mean':<8s} {'Std':<6s} [{'Min,':<7s} {'Max':<6s}]")
     print(f"{'-'*7} {'-'*8} {'-'*6} {'-'*7} {'-'*6}")
-    for model in ['dfl', 'pfl', 'adfl']:
+    for model in ['true', 'dfl', 'pfl', 'adfl']:
         stats = summary['no_pricing'][model]
         print(f"{model.upper():6s}: {stats['mean']:.4f} ± {stats['std']:.4f} "
               f"[{stats['min']:.4f}, {stats['max']:.4f}]")
@@ -474,7 +522,7 @@ def print_summary(summary: Dict):
         print("-" * 80)
         print(f"{'Model':<7s} {'Mean':<8s} {'Std':<6s} [{'Min,':<7s} {'Max':<6s}]")
         print(f"{'-'*7} {'-'*8} {'-'*6} {'-'*7} {'-'*6}")
-        for model in ['dfl', 'pfl', 'adfl']:
+        for model in ['true', 'dfl', 'pfl', 'adfl']:
             if model in summary['gurobi_pricing']['buyer_objectives']:
                 stats = summary['gurobi_pricing']['buyer_objectives'][model]
                 print(f"{model.upper():6s}: {stats['mean']:.4f} ± {stats['std']:.4f} "
@@ -498,7 +546,7 @@ def print_summary(summary: Dict):
         print("-" * 80)
         print(f"{'Model':<7s} {'Mean':<8s} {'Std':<6s} [{'Min,':<7s} {'Max':<6s}]")
         print(f"{'-'*7} {'-'*8} {'-'*6} {'-'*7} {'-'*6}")
-        for model in ['dfl', 'pfl', 'adfl']:
+        for model in ['true', 'dfl', 'pfl', 'adfl']:
             if model in summary['fast_pricing']['buyer_objectives']:
                 stats = summary['fast_pricing']['buyer_objectives'][model]
                 print(f"{model.upper():6s}: {stats['mean']:.4f} ± {stats['std']:.4f} "
