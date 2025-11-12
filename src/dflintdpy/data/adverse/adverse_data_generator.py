@@ -187,6 +187,7 @@ class AdvDataGenerator:
                 p_opt = pd.read_csv(file_path, header=None).values.astype(np.float32)
                 costs_grouped[:, 1, :] = costs + p_opt
                 interdictions_grouped[:, 1, :] = p_opt
+                print("Loaded existing interdiction data from file.")
                 return feats, costs_grouped, interdictions_grouped
             except Exception:
                 pass  # If loading fails, proceed to generate data

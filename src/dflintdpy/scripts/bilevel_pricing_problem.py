@@ -37,7 +37,7 @@ except ImportError:
     HAS_GUROBI = False
     warnings.warn("Gurobi not available. MIQCP method will not work.")
 
-def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
+def simple_dfp_example(N = 1000, noise=1, deg=16, batch_size=32):
     """Simple example of solving a bilevel pricing problem with dfl data."""
 
     cfg = HP()
@@ -46,18 +46,13 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     x_train, y_train, x_valid, y_valid, x_test, y_test, cov, gamma = \
         read_synthetic_data(N, noise, deg)
     
-    num_test_samples = 250
-    x_train = x_train[:num_test_samples,:]
-    y_train = y_train[:num_test_samples,:]
-    # x_valid = x_valid[:100,:]
-    # y_valid = y_valid[:100,:]
-    # x_test = x_test[:100,:]
-    # y_test = y_test[:100,:]
+    num_test_samples = N
 
     ################## ModelCreation
     opt_model = PortfolioOptimization(y_train[0,:], Sigma=cov, gamma=gamma)
 
     ################## Generate Interdiction Data
+    # Create adversarial data generator instance
     adverse_generator = AdvDataGenerator(
         cfg, 
         opt_model, 
@@ -66,28 +61,25 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
         num_scenarios=1,
         adverse_problem="BPPO",
     )
+    # Generate adversarial training and validation data
     adfl_x_train, adfl_y_train, p_train = adverse_generator.generate(
         x_train, 
         y_train,
         file_path=Path(__file__).parent.parent.parent.parent / 'store_data' /\
-            "p_samples_{num_test_samples}_N_{N}_noise_{noise}_deg_{deg}.csv" \
+            "p_train_N_{N}_noise_{noise}_deg_{deg}.csv" \
             .format(num_test_samples=num_test_samples, N=N, noise=noise, deg=deg)
     )
-    # adfl_x_val, adfl_y_val, p_val = adverse_generator.generate(
-    #     x_valid,
-    #     y_valid
-    # )
-
-    # Create data sets
-    # dataset_train_adverse = AdvDataset(
-    #     opt_model,
-    #     x_train.reshape(x_train.shape[0], 1, x_train.shape[1]),
-    #     y_train.reshape(y_train.shape[0], 1, y_train.shape[1]),
-    #     np.ones_like(y_train)
-    # )
+    adfl_x_valid, adfl_y_valid, p_valid = adverse_generator.generate(
+        x_valid, 
+        y_valid,
+        file_path=Path(__file__).parent.parent.parent.parent / 'store_data' /\
+            "p_valid_N_{N}_noise_{noise}_deg_{deg}.csv" \
+            .format(num_test_samples=num_test_samples, N=N, noise=noise, deg=deg)
+    )
+    # Create adversarial datasets for training and validation
     dataset_train_adverse = AdvDataset(opt_model, adfl_x_train, 
                                        adfl_y_train, p_train)
-    # val_dataset = AdvDataset(opt_model, adfl_x_val, adfl_y_val, p_val)
+    dataset_valid_adverse = AdvDataset(opt_model, adfl_x_valid, adfl_y_valid, p_valid)
 
     # Create data loaders for training and validation
     loader_train_adverse = AdvLoader(
@@ -96,12 +88,12 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
         seed=cfg.get("loader_seed"),
         shuffle=True,
     )
-    # loader_val_adverse = AdvLoader(
-    #     val_dataset,
-    #     batch_size=cfg.get("batch_size"),
-    #     seed=cfg.get("loader_seed"),
-    #     shuffle=False,
-    # )
+    loader_valid_adverse = AdvLoader(
+        dataset_valid_adverse,
+        batch_size=cfg.get("batch_size"),
+        seed=cfg.get("loader_seed"),
+        shuffle=False,
+    )
 
     ################## DataLoader
     dataset_train = generate_opt_dataset(opt_model, x_train, y_train)
@@ -138,7 +130,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     optimizer_adfl = optim.Adam(pred_model_adfl.parameters(), lr=1e-2)
 
     # Set the number of epochs for training
-    epochs = 30
+    epochs = 20
 
     # Create a trainer instance
     dfl_trainer = DFLTrainer(
@@ -166,7 +158,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     pfl_train_loss_log, pfl_train_regret_log, pfl_val_loss_log, pfl_val_regret_log = \
         pfl_trainer.fit(loader_train, loader_valid, epochs=epochs)
     adfl_train_loss_log, adfl_train_regret_log, adfl_val_loss_log, adfl_val_regret_log = \
-        adfl_trainer.fit(loader_train_adverse, loader_valid, epochs=epochs)
+        adfl_trainer.fit(loader_train_adverse, loader_valid_adverse, epochs=epochs)
     
     # Visualize learning curves
     DFLTrainer.vis_learning_curve(
