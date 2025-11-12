@@ -1,3 +1,4 @@
+from dflintdpy.solvers.fast_solvers.fast_pricing_solver import FastBilevelPricingSolver
 import pyepo
 import numpy as np
 from copy import deepcopy
@@ -36,6 +37,7 @@ class AdvDataGenerator:
                  *,
                  num_scenarios: int = 10,
                  seed: int = 0,
+                 adverse_problem: str = "SPNI",
                  **kwargs):
         """
         Initialize the AdverseDataGenerator.
@@ -77,38 +79,56 @@ class AdvDataGenerator:
         self._base_seed = int(seed)
         self._rng = np.random.default_rng(self._base_seed)
 
-        # Check correctness of num_scenarios
-        n_intds = kwargs.get("n_interdictions")
-        if n_intds is not None and n_intds <= num_scenarios - 1:
-            # If there are more scenarios than interdictions, 
-            # reduce num_scenarios to n_intds + 1
-            Warning(f"Warning: Number of interdictions ({n_intds}) is less" +
-                    f" than the number of scenarios ({num_scenarios - 1})." +
-                    f" Setting num_scenarios to {n_intds + 1}.")
-            self.num_scenarios = n_intds + 1
-        elif n_intds is None and num_scenarios > 100 + 1:
-             # If n_interdictions is not specified it defaults to 100,
-             # so that the num_scenarios <= 101.
-             Warning(f"Warning: Number of scenarios ({num_scenarios - 1})" + 
-                   f" is greater than the default number of" + 
-                   f" interdictions (100). Setting num_scenarios to 101.")
-             self.num_scenarios = 101
+        # Check correctness of adverse_problem
+        if adverse_problem not in ["SPNI", "BPPO"]:
+            raise ValueError(
+                f"Unknown adverse problem type: {adverse_problem}"
+            )
         else:
-            self.num_scenarios = num_scenarios
+            self.adverse_problem = adverse_problem
 
-        # Generate interdictions
-        self.interdictions = AdvDataGenerator.gen_interdictions(
-            cfg,
-            normalization_constant,
-            **kwargs
-        )
+        if self.adverse_problem == "SPNI":
+            # Check correctness of num_scenarios
+            n_intds = kwargs.get("n_interdictions")
+            if n_intds is not None and n_intds <= num_scenarios - 1:
+                # If there are more scenarios than interdictions, 
+                # reduce num_scenarios to n_intds + 1
+                Warning(f"Warning: Number of interdictions ({n_intds}) is less" +
+                        f" than the number of scenarios ({num_scenarios - 1})." +
+                        f" Setting num_scenarios to {n_intds + 1}.")
+                self.num_scenarios = n_intds + 1
+            elif n_intds is None and num_scenarios > 100 + 1:
+                # If n_interdictions is not specified it defaults to 100,
+                # so that the num_scenarios <= 101.
+                Warning(f"Warning: Number of scenarios ({num_scenarios - 1})" + 
+                    f" is greater than the default number of" + 
+                    f" interdictions (100). Setting num_scenarios to 101.")
+                self.num_scenarios = 101
+            else:
+                self.num_scenarios = num_scenarios
 
-        # Create Benders decomposition instances for each interdiction
-        self._sym_interdictor = SymmetricInterdictor(
-            self.opt_model._graph,
-            k = budget,
-            **kwargs
-        )
+            # Generate interdictions
+            self.interdictions = AdvDataGenerator.gen_interdictions(
+                cfg,
+                normalization_constant,
+                **kwargs
+            )
+
+            # Create Benders decomposition instances for each interdiction
+            self._sym_interdictor = SymmetricInterdictor(
+                self.opt_model._graph,
+                k = budget,
+                **kwargs
+            )
+
+        elif self.adverse_problem == "BPPO":
+            self.num_scenarios = 2  # Original + one interdiction
+            self._sym_interdictor = FastBilevelPricingSolver(
+                opt_model.c, 
+                opt_model.Sigma, 
+                opt_model.gamma, 
+                budget=opt_model.c.sum()*0.3
+            )
 
 
     def generate(
@@ -164,29 +184,45 @@ class AdvDataGenerator:
             # Unpack costs for each sample
             cost = costs[idx]
 
-            # Select interdictions for scenarios at random
-            selected_interdictions = self._rng.choice(
+            if self.adverse_problem == "SPNI":
+                # Select interdictions for scenarios at random
+                selected_interdictions = self._rng.choice(
                 self.interdictions.shape[0], 
                 size=self.num_scenarios - 1, 
                 replace=False)
 
-            # Iterate over each interdiction
-            for idx_intd, intd in enumerate(self.interdictions[selected_interdictions, :]):
-                # Solve the adversarial interdiction problem
-                self._sym_interdictor.opt_model.setObj(cost)
-                sym_intd, _, _ = self._sym_interdictor.benders_decomposition(
-                    interdiction_cost=intd,
-                    versatile=versatile,
-                )
+                # Iterate over each interdiction
+                for idx_intd, intd in enumerate(self.interdictions[selected_interdictions, :]):
+                    # Solve the adversarial interdiction problem
+                    self._sym_interdictor.opt_model.setObj(cost)
+                    sym_intd, _, _ = self._sym_interdictor.benders_decomposition(
+                        interdiction_cost=intd,
+                        versatile=versatile,
+                    )
 
-                # Create new cost vector by adding the interdiction costs
-                new_cost = cost + sym_intd * intd
+                    # Create new cost vector by adding the interdiction costs
+                    new_cost = cost + sym_intd * intd
 
-                # Store the new costs and applied interdiction
-                costs_grouped[idx, idx_intd + 1, :] = new_cost
-                interdictions_grouped[idx, idx_intd + 1, :] = (
-                    sym_intd * intd
+                    # Store the new costs and applied interdiction
+                    costs_grouped[idx, idx_intd + 1, :] = new_cost
+                    interdictions_grouped[idx, idx_intd + 1, :] = (
+                        sym_intd * intd
+                    )
+            elif self.adverse_problem == "BPPO":
+                cost[cost < 0] = 0  # Ensure non-negative costs
+                # Solve the bilevel pricing problem
+                self._sym_interdictor = FastBilevelPricingSolver(
+                    cost, 
+                    self._sym_interdictor.Sigma, 
+                    self._sym_interdictor.gamma, 
+                    budget=self._sym_interdictor.budget
                 )
+                result_fast = self._sym_interdictor.solve(n_starts=5, 
+                                                          verbose=versatile)
+                intd = result_fast['p_opt']
+                new_cost = cost - intd
+                costs_grouped[idx, 1, :] = new_cost
+                interdictions_grouped[idx, 1, :] = intd*-1
 
             # Print progress if versatile
             print_progress(idx, n_samples)

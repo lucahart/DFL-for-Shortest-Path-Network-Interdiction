@@ -67,17 +67,18 @@ class FastBilevelPricingSolver:
         # Cache for efficiency
         self._y_cache = {}
 
-    def solve(self, n_starts: int = 1) -> Dict:
+    def solve(self, n_starts: int = 1, verbose: bool = True) -> Dict:
         """Combination of multiple solvers."""
-        result_1 = self.solve_sequential_quadratic()
+        result_1 = self.solve_sequential_quadratic(verbose=verbose)
         if result_1['success']:
             if n_starts > 1:
                 return self.solve_multistart(
                     n_starts = n_starts - 1, 
                     initial_result=result_1,
+                    verbose=verbose
                 )
             return result_1
-        return self.solve_alternating_optimization()
+        return self.solve_alternating_optimization(verbose=verbose)
     
     def solve_inner_problem(self, p: np.ndarray, use_cache: bool = True) -> Tuple[np.ndarray, float]:
         """
@@ -156,7 +157,7 @@ class FastBilevelPricingSolver:
         return p @ y_opt
     
     def solve_sequential_quadratic(self, p_init: Optional[np.ndarray] = None,
-                                   max_iter: int = 100) -> Dict:
+                                   max_iter: int = 100, verbose: bool = True) -> Dict:
         """
         Method 1: Sequential Quadratic Programming (SQP)
         
@@ -173,7 +174,8 @@ class FastBilevelPricingSolver:
         Returns:
             Dict with solution
         """
-        print("Solving with Sequential Quadratic Programming...")
+        if verbose:
+            print("Solving with Sequential Quadratic Programming...")
         
         if p_init is None:
             # Start at uniform prices that satisfy budget
@@ -322,7 +324,7 @@ class FastBilevelPricingSolver:
         }
     
     def solve_alternating_optimization(self, p_init: Optional[np.ndarray] = None,
-                                      max_iter: int = 50) -> Dict:
+                                      max_iter: int = 50, verbose: bool = True) -> Dict:
         """
         Method 3: Alternating Optimization with Heuristic Updates
         
@@ -339,8 +341,9 @@ class FastBilevelPricingSolver:
         Returns:
             Dict with solution
         """
-        print("Solving with Alternating Optimization...")
-        
+        if verbose:
+            print("Solving with Alternating Optimization...")
+
         if p_init is None:
             p = np.ones(self.n) * (self.budget / self.n * 0.5)
             p = np.minimum(p, self.p_max)
@@ -391,7 +394,8 @@ class FastBilevelPricingSolver:
     def solve_multistart(self, 
                          n_starts: int = 5, 
                          initial_result: Dict[str, float] = None,
-                         method: str = 'sqp') -> Dict:
+                         method: str = 'sqp',
+                         verbose: bool = True) -> Dict:
         """
         Method 4: Multi-Start Optimization
         
@@ -415,8 +419,8 @@ class FastBilevelPricingSolver:
             raise ValueError(
                 "initial_result must contain 'success' and 'revenue' keys"
             )
-        
-        print(f"Solving with Multi-Start ({n_starts} starts)...")
+        if verbose:
+            print(f"Solving with Multi-Start ({n_starts} starts)...")
         
         best_result = initial_result
         best_revenue = -np.inf
@@ -428,15 +432,16 @@ class FastBilevelPricingSolver:
             
             # Solve from this start
             if method == 'sqp':
-                result = self.solve_sequential_quadratic(p_init, max_iter=50)
+                result = self.solve_sequential_quadratic(p_init, max_iter=50, verbose=verbose)
             else:
-                result = self.solve_projected_gradient(p_init, max_iter=100)
-            
+                result = self.solve_projected_gradient(p_init, max_iter=100, verbose=verbose)
+
             if result['success'] and result['revenue'] > best_revenue:
                 best_revenue = result['revenue']
                 best_result = result
             
-            print(f"  Start {start + 1}/{n_starts}: revenue = {result.get('revenue', 0):.4f}")
+            if verbose:
+                print(f"  Start {start + 1}/{n_starts}: revenue = {result.get('revenue', 0):.4f}")
         
         if best_result:
             best_result['method'] = f'Multi-Start {method.upper()}'

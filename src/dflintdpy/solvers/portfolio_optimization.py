@@ -13,6 +13,7 @@ This is a Stackelberg pricing game where:
 - Seller maximizes revenue p^T y
 """
 
+from copy import deepcopy
 from xml.parsers.expat import model
 import numpy as np
 from typing import Tuple, Optional, Dict
@@ -74,8 +75,31 @@ class PortfolioOptimization(optGrbModel):
 
         # Initialize parent class
         super().__init__()
+    
+    def __deepcopy__(self, memo):
+        """
+        Create a deep copy of the shortestPathGrb instance.
+        
+        Parameters:
+        -----------
+        memo : dict
+            A dictionary to keep track of already copied objects.
 
-    def solve(self):
+        Returns:
+        --------
+        ShortestPathGrb
+            A new instance of ShortestPathGrb with the same attributes.
+        """
+        
+        # Create a new instance and copy the graph
+        new_instance = PortfolioOptimization(
+            self.c.copy(),
+            self.Sigma.copy(),
+            self.gamma
+        )
+        return new_instance
+
+    def solve(self) -> Tuple[np.ndarray, float]:
         """
         A method to solve model
 
