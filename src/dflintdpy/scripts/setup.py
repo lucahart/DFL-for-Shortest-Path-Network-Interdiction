@@ -42,8 +42,8 @@ def gen_train_data(
             features, costs = _load_features_costs(path_file)
             print(f"Loaded existing cost and feature data from file.")
             file_found = True
-        except (FileNotFoundError, OSError) as e:
-            print(f"Could not load cached data: {e}")
+        except (FileNotFoundError, OSError):
+            # print(f"No cached cost and feature data found.")
             pass  # If file not found, generate new data below
 
     if not file_found:

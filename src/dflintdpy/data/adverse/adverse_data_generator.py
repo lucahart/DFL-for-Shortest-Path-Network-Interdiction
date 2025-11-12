@@ -219,8 +219,7 @@ class AdvDataGenerator:
             costs_grouped[idx, 1, :] = new_cost
             interdictions_grouped[idx, 1, :] = intd
             
-            if versatile:
-                print_progress(idx, n_samples)
+            print_progress(idx, n_samples)
         
         return feats, costs_grouped, interdictions_grouped
 
@@ -268,8 +267,7 @@ class AdvDataGenerator:
                 costs_grouped[idx, scenario_idx + 1, :] = new_cost
                 interdictions_grouped[idx, scenario_idx + 1, :] = sym_intd * intd
             
-            if versatile:
-                print_progress(idx, n_samples)
+            print_progress(idx, n_samples)
         
         return feats, costs_grouped, interdictions_grouped
 

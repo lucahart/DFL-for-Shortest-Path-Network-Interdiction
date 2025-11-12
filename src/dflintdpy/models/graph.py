@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import networkx as nx
 from copy import deepcopy
+import matplotlib.pyplot as plt
 
 class Graph(optModel):
     """
@@ -282,13 +283,26 @@ class Graph(optModel):
 
     def visualize(self,
                   colored_edges: np.ndarray | None = None,
-                  dashed_edges: np.ndarray | None = None
+                  dashed_edges: np.ndarray | None = None,
+                  figsize: tuple[int, int] = (6,5)
                   ) -> None:
         """
-        TODO: Implement visualization method.
+        Very simple visualization of the graph without edge annotations.
         """
+        # Create a directed graph
+        G = nx.DiGraph()
 
-        raise NotImplementedError("Visualization method is not implemented yet.")
+        # Add edges from your list of arcs
+        G.add_edges_from(self.arcs)
+
+        # Draw the graph
+        plt.figure(figsize=figsize)
+        nx.draw(G, with_labels=True, node_color='lightblue', 
+                node_size=500, font_size=12, font_weight='bold',
+                arrows=True, arrowsize=20, edge_color='gray')
+
+        plt.title("Graph from Arcs")
+        plt.show()
     
     def _getModel(self):
 

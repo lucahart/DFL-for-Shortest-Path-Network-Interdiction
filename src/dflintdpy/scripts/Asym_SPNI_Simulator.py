@@ -8,7 +8,8 @@ from dflintdpy.scripts.asym_spni_single_sim import single_sim
 # Initialize the configuration class
 cfg = HP()
 num_seeds = cfg.get("num_seeds")
-compute_asym_intd = False
+compute_asym_intd_2 = False # Matrix comparison with lack of evader knowledge (table 2)
+compute_asym_intd = True # Asym. Interdictor column in table 1
 
 # List to store results
 results = []
@@ -30,7 +31,11 @@ for seed in range(num_seeds):
     cfg.set("data_loader_seed", seed3)
 
     # Run the Asym_SPNI function
-    prediction_mean_std, metrics, table_1, table_2 = single_sim(cfg, compute_asym_intd=compute_asym_intd)
+    prediction_mean_std, metrics, table_1, table_2 = single_sim(
+         cfg, 
+         compute_asym_intd_2=compute_asym_intd_2,
+         compute_asym_intd=compute_asym_intd
+         )
 
     # Store values in list
     results.append({
@@ -131,7 +136,7 @@ for result in results:
     t1_a_a_std.append(result['table_1']['t1_a_a_std'])
 
 # Combine table 2
-if compute_asym_intd:
+if compute_asym_intd_2:
     t2_p_s_mean = []
     t2_p_s_std = []
     t2_p_a_mean = []
@@ -189,7 +194,7 @@ print(f"DFL no intd. improvement = {np.array(metric_1).mean():.4f}")
 print(f"Adv. DFL no intd. improvement = {np.array(metric_2).mean():.4f}")
 print(f"Adv. DFL sym. improvement = {np.array(metric_3).mean():.4f}")
 print(f"Adv. DFL asym. improvement = {np.array(metric_4).mean():.4f}")
-if compute_asym_intd:
+if compute_asym_intd_2:
     print(f"PO Asym. + Adv. Evader > Sym Asym. = {np.array(metric_5).mean():.4f}")
 
 # Print table 1
@@ -220,7 +225,7 @@ rows = [
 print(tabulate(rows, headers=table_headers, tablefmt="github"))
 
 # Print table 2
-if compute_asym_intd:
+if compute_asym_intd_2:
     table_headers = ["Predictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
     rows = [
         [

@@ -22,7 +22,7 @@ from dflintdpy.scripts.setup import (gen_data,
                                      setup_dfl_predictor)
 
 
-def single_sim(cfg, visualize=False, compute_asym_intd=True):
+def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd=True):
     ############################
     ###### Set Parameters ######
     ############################
@@ -134,44 +134,49 @@ def single_sim(cfg, visualize=False, compute_asym_intd=True):
     ####################################
     ##### Asymmetric Interdictions #####
     ####################################
+    if compute_asym_intd:
+        no_pred_asym_intd = compare_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant
+        )
 
-    no_pred_asym_intd = compare_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant
-    )
+        po_pred_asym_intd_I = compare_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            po_model
+        )
 
-    po_pred_asym_intd_I = compare_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        po_model
-    )
+        spo_pred_asym_intd_I = compare_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            spo_model_non_adverse
+        )
 
-    spo_pred_asym_intd_I = compare_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        spo_model_non_adverse
-    )
-
-    adv_spo_pred_asym_intd_I = compare_asym_intd(
-        cfg, 
-        testing_data, 
-        interdictions, 
-        normalization_constant, 
-        spo_model
-    )
+        adv_spo_pred_asym_intd_I = compare_asym_intd(
+            cfg, 
+            testing_data, 
+            interdictions, 
+            normalization_constant, 
+            spo_model
+        )
+    else:
+        no_pred_asym_intd = np.zeros((cfg.get("num_test_samples"),))
+        po_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        adv_spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
 
     ############################################################
     ##### Asymmetric Interdiction with wrong evader models #####
     ############################################################
-    if not compute_asym_intd:
+    if not compute_asym_intd_2:
         print("Skipping asymmetric interdiction with wrong evader models...")
-    if compute_asym_intd:
+    if compute_asym_intd_2:
         true_nonadv_false_po_asym_intd = compare_wrong_asym_intd(
             cfg, 
             testing_data, 
@@ -238,7 +243,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd=True):
     print(f"DFL no intd. improvement = {po_mean - spo_mean:.2f}")
     print(f"Adv. DFL no intd. improvement = {po_mean - adv_spo_mean:.2f}")
     print(f"Adv. DFL sym. improvement = {all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}")
-    if compute_asym_intd:
+    if compute_asym_intd_2:
         print(f"Adv. DFL asym. improvement = {po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean():.2f}")
         print(f"PO Asym. + Adv. Evader > Sym Asym. = {true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}")
 
@@ -290,7 +295,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd=True):
 
     print("\n")
 
-    if compute_asym_intd:
+    if compute_asym_intd_2:
         table_headers = ["Predictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
 
         rows = [
@@ -356,7 +361,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd=True):
         "metric_2" : po_mean - adv_spo_mean,
         "metric_3" : all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean(),
         "metric_4" : po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean(),
-        "metric_5" : true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean() if compute_asym_intd else None
+        "metric_5" : true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean() if compute_asym_intd_2 else None
     }
 
     table_1 = {
@@ -400,6 +405,6 @@ def single_sim(cfg, visualize=False, compute_asym_intd=True):
         "t2_a_p_std" : true_spo_false_po_asym_intd.std(),
         "t2_a_s_mean" : true_adv_false_nonadv_asym_intd.mean(),
         "t2_a_s_std" : true_adv_false_nonadv_asym_intd.std()
-    } if compute_asym_intd else {}
+    } if compute_asym_intd_2 else {}
 
     return prediction_mean_std, metrics, table_1, table_2
