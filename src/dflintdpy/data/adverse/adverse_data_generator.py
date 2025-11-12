@@ -1,6 +1,7 @@
 from dflintdpy.solvers.fast_solvers.fast_pricing_solver import FastBilevelPricingSolver
 import pyepo
 import numpy as np
+import pandas as pd
 from copy import deepcopy
 
 from dflintdpy.data.config import HP
@@ -136,6 +137,7 @@ class AdvDataGenerator:
         feats: np.ndarray,
         costs: np.ndarray,
         versatile: bool = False,
+        file_path: str | None = None
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Generate adversarial examples for the given dataset.
@@ -178,6 +180,16 @@ class AdvDataGenerator:
 
         # Fill scenario 0 with the original costs
         costs_grouped[:, 0, :] = costs
+
+        # Check if results have already been generated
+        if file_path is not None:
+            try:
+                p_opt = pd.read_csv(file_path, header=None).values.astype(np.float32)
+                costs_grouped[:, 1, :] = costs + p_opt
+                interdictions_grouped[:, 1, :] = p_opt
+                return feats, costs_grouped, interdictions_grouped
+            except Exception:
+                pass  # If loading fails, proceed to generate data
 
         # Iterate over each example in the dataset
         for idx in range(n_samples):
@@ -226,6 +238,10 @@ class AdvDataGenerator:
 
             # Print progress if versatile
             print_progress(idx, n_samples)
+        
+        # If a file path is provided, save the generated data
+        if file_path is not None:
+            np.savetxt(file_path, interdictions_grouped[:, 1, :], delimiter=',')
 
         return feats, costs_grouped, interdictions_grouped
 

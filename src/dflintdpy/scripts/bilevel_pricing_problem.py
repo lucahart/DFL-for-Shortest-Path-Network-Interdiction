@@ -46,8 +46,9 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     x_train, y_train, x_valid, y_valid, x_test, y_test, cov, gamma = \
         read_synthetic_data(N, noise, deg)
     
-    x_train = x_train[:250,:]
-    y_train = y_train[:250,:]
+    num_test_samples = 250
+    x_train = x_train[:num_test_samples,:]
+    y_train = y_train[:num_test_samples,:]
     # x_valid = x_valid[:100,:]
     # y_valid = y_valid[:100,:]
     # x_test = x_test[:100,:]
@@ -67,7 +68,10 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     )
     adfl_x_train, adfl_y_train, p_train = adverse_generator.generate(
         x_train, 
-        y_train
+        y_train,
+        file_path=Path(__file__).parent.parent.parent.parent / 'store_data' /\
+            "p_samples_{num_test_samples}_N_{N}_noise_{noise}_deg_{deg}.csv" \
+            .format(num_test_samples=num_test_samples, N=N, noise=noise, deg=deg)
     )
     # adfl_x_val, adfl_y_val, p_val = adverse_generator.generate(
     #     x_valid,
@@ -134,7 +138,7 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     optimizer_adfl = optim.Adam(pred_model_adfl.parameters(), lr=1e-2)
 
     # Set the number of epochs for training
-    epochs = 5
+    epochs = 30
 
     # Create a trainer instance
     dfl_trainer = DFLTrainer(
@@ -227,68 +231,5 @@ def simple_dfp_example(N = 1000, noise=1, deg=4, batch_size=32):
     
     pass
 
-
-
-def example_usage():
-    """Demonstrate usage"""
-    
-    print("=" * 80)
-    print("BILEVEL PRICING OPTIMIZATION")
-    print("=" * 80)
-    
-    # Problem setup
-    np.random.seed(42)
-    n = 4  # Keep small for demonstration
-    
-    # Parameters
-    c = np.array([5.0, 6.0, 4.5, 5.5])  # Costs/expected returns
-    
-    # Create PSD covariance matrix
-    A = np.random.randn(n, n)
-    Sigma = A.T @ A / n + np.eye(n) * 0.3
-    gamma = 0.8
-    
-    # Price bounds: prices should be below costs for buyer to participate
-    p_min = np.zeros(n)
-    p_max = c * 0.9  # Max price is 90% of cost
-    
-    print("\nProblem Parameters:")
-    print(f"Cost vector c: {c}")
-    print(f"Risk tolerance γ: {gamma}")
-    print(f"Price bounds: [{p_min[0]:.2f}, {p_max[0]:.2f}] (same for all)")
-    print(f"Problem size: n = {n}")
-    
-    # Create problem
-    problem = BilevelPricingProblem(c, Sigma, gamma, (p_min, p_max))
-    
-    # Test at a specific price point
-    print("\n" + "=" * 80)
-    print("TEST: Buyer response at mid-point prices")
-    print("=" * 80)
-    p_test = (p_min + p_max) / 2
-    revenue_test, y_test = problem.evaluate_revenue(p_test)
-    print(f"Test prices p: {p_test}")
-    print(f"Buyer response y: {y_test}")
-    print(f"Revenue p^T y: {revenue_test:.4f}")
-    
-    # Gurobi MIQCP
-    if HAS_GUROBI:
-        print("\n" + "=" * 80)
-        print("METHOD 2: GUROBI MIQCP (Most Rigorous)")
-        print("=" * 80)
-        result_gurobi = problem.solve_with_gurobi_miqcp(M=100, time_limit=60)
-        
-        if result_gurobi is not None and result_gurobi['success']:
-            print(f"\nOptimal prices p: {result_gurobi['p_opt']}")
-            print(f"Buyer response y: {result_gurobi['y_opt']}")
-            print(f"Revenue: {result_gurobi['revenue']:.4f}")
-            print(f"Verification gap: {result_gurobi['verification_gap']:.2e}")
-            print(f"MIP gap: {result_gurobi['mip_gap']:.2e}")
-            print(f"Solve time: {result_gurobi['solve_time']:.2f}s")
-    
-    print("\n" + "=" * 80)
-
-
 if __name__ == "__main__":
     simple_dfp_example()
-    # example_usage()
