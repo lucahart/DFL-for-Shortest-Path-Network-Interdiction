@@ -41,9 +41,12 @@ def reformat_to_csv(input_file, output_file, n_cols):
 
 def csv_to_graph(file_path: str):
     data = pd.read_csv(file_path)
-    arcs = [(data['From'].values[i], data['To'].values[i]) 
+    arcs = [(int(data['From'].values[i]), int(data['To'].values[i]))
             for i in range(data.shape[0])]
-    graph =  Graph(arcs)
+    graph =  Graph(
+        arcs, 
+        vertices=np.arange(1, max(max(arc) for arc in arcs)+1)
+    )
     return graph
 
 

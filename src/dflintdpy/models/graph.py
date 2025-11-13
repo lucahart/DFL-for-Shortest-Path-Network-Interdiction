@@ -22,7 +22,9 @@ class Graph(optModel):
     def __init__(self,
                 arcs: list[tuple[int, int]],
                 vertices: np.ndarray[int] | None = None,
-                cost: np.ndarray[float] | None = None
+                cost: np.ndarray[float] | None = None,
+                source: int = None,
+                target: int = None
                 ) -> None:
         """
         Constructor for shortest path class.
@@ -62,7 +64,7 @@ class Graph(optModel):
 
         # Set cost
         if cost is not None:
-            self.setObj(cost)
+            self.setObj(cost, source=source, target=target)
         else:
             self.setObj(np.ones(len(arcs), dtype=float))
 
@@ -310,7 +312,7 @@ class Graph(optModel):
 
     def setObj(self, 
                c: np.ndarray[float] | list[float] | float | None,
-               source: int = 0,
+               source: int = None,
                target: int = None
                ) -> None:
         """
@@ -329,8 +331,9 @@ class Graph(optModel):
             If not provided, defaults to the last vertex.
         ------------
         """
-        # Set source and target
-        self.source = source
+        # Set source to the first vertex if not provided
+        if source is None or source < 0 or source > max(self.vertices):
+            self.source = self.vertices[0]
 
         # Set target to the last vertex if not provided
         if target is None or target < 0 or target > max(self.vertices):

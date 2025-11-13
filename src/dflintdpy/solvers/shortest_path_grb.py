@@ -22,10 +22,8 @@ class ShortestPathGrb(optGrbModel):
         self._graph = deepcopy(graph)
         # Run parent class constructors
         super().__init__()
-        # Update the gurobi model with the edge weights of the graph if provided
-        if graph.cost is not None:
-            super().setObj(self._graph.cost)
-        pass
+        # Update the gurobi model with the edge weights of the graph
+        super().setObj(self._graph.cost)
 
     @classmethod
     def empty_grid(cls,
