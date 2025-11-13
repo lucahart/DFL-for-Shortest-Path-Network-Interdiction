@@ -111,7 +111,8 @@ class AsymmetricInterdictor:
                                 (self.true_costs[e]+self.true_delays[e])*w[e] for e in self.graph.arcs),
                     GRB.MAXIMIZE)
 
-        s, t = 0, max(self.graph.vertices)
+        s = self.graph.source
+        t = self.graph.target
         for i in self.graph.vertices:
             m.addConstr(
                 gp.quicksum((v[e]+w[e]) for e in self.out_edges(i)) -
@@ -161,7 +162,8 @@ class AsymmetricInterdictor:
         w  = m.addVars(self.graph.arcs, lb=0.0,        name="w")
         u  = m.addVars(self.graph.vertices, lb=-GRB.INFINITY, name="u")
 
-        s, t = 0, max(self.graph.vertices)
+        s = self.graph.source
+        t = self.graph.target
         m.setObjective(
             u[s] - u[t] -
             self.theta*gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]
@@ -211,7 +213,8 @@ class AsymmetricInterdictor:
             xLG[e].Start = x_star[e]
 
         # bounding cut
-        s, t = 0, max(self.graph.vertices)
+        s = self.graph.source
+        t = self.graph.target
         LG.addConstr(
             u[s] - u[t] -
             self.theta*gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]

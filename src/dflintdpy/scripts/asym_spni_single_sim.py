@@ -61,9 +61,6 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         path_dir= root_dir / 'store_data' 
     )
 
-    cfg.set("po_epochs", 150)
-    cfg.set("spo_epochs", 75)
-
     po_model = setup_pfl_predictor(
         cfg,
         graph,
@@ -132,6 +129,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
 
     all_pred_sym_intd = compare_sym_intd(
         cfg, 
+        opt_model,
         po_model, 
         spo_model_non_adverse, 
         testing_data, 
@@ -146,6 +144,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     if compute_asym_intd:
         no_pred_asym_intd = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant
@@ -153,6 +152,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
 
         po_pred_asym_intd_I = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant, 
@@ -161,6 +161,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
 
         spo_pred_asym_intd_I = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant, 
@@ -169,6 +170,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
 
         adv_spo_pred_asym_intd_I = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant, 
