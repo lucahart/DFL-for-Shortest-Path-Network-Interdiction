@@ -343,10 +343,10 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
     all_data = {
         # x_y means: x: follower, y: leader
         # a_x_y means: x: true follower model, y: follower model assumed by leader
-        'o_o': true_objs, 
-        'o_p': po_objs, 
-        'o_s': spo_objs, 
-        'o_a': adv_spo_objs, 
+        'o_o': np.array(true_objs) * normalization_constant, 
+        'o_p': np.array(po_objs) * normalization_constant, 
+        'o_s': np.array(spo_objs) * normalization_constant, 
+        'o_a': np.array(adv_spo_objs) * normalization_constant, 
         's_o': all_pred_sym_intd['true_objective'],
         's_p': all_pred_sym_intd['po_objective'],
         's_s': all_pred_sym_intd['spo_objective'],

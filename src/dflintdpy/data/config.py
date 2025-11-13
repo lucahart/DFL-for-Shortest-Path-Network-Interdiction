@@ -14,8 +14,8 @@ class HP:
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 1000
-    num_val_samples = 250
+    num_train_samples = 50
+    num_val_samples = 25
     num_test_samples = 100
     batch_size = 32
     po_epochs = 150
@@ -26,7 +26,7 @@ class HP:
     deg = 7
     anchor = "mse"
     spo_po_epochs = 0
-    noise_width = 1
+    noise_width = 0.05
 
     # Interdictor parameters
     benders_max_count = 50

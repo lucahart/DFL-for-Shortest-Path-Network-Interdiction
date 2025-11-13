@@ -31,9 +31,7 @@ def save_results_to_csv(results: List[Dict[str, Any]], output_path: str) -> None
             }
             
             # Add all_data entries
-            for key in ['o_o', 'o_p', 'o_s', 'o_a', 
-                       's_o', 's_p', 's_s', 's_a',
-                       'a_o', 'a_p', 'a_s', 'a_a']:
+            for key in all_data.keys():
                 value = all_data[key][sample_idx]
                 # Convert numpy types to native Python types
                 if isinstance(value, np.ndarray):

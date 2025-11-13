@@ -51,8 +51,10 @@ for seed in range(num_seeds):
 
 # Store final results in a csv file
 output_path = Path(__file__).parent.parent.parent.parent / 'results' /\
-    "results_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seeds_{num_seeds}.csv"\
-    .format(samples=cfg.get("num_train_samples")+cfg.get("num_val_samples")+cfg.get("num_test_samples"),
+    "results_train_{train}_valid_{valid}_test_{test}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seeds_{num_seeds}.csv"\
+    .format(train=cfg.get("num_train_samples"),
+            valid=cfg.get("num_val_samples"),
+            test=cfg.get("num_test_samples"),
             m=cfg.get("grid_size")[0],
             n=cfg.get("grid_size")[1],
             deg=cfg.get("deg"),
