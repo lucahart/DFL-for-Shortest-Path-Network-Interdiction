@@ -1,9 +1,11 @@
 
 import numpy as np
+from pathlib import Path
 from tabulate import tabulate
 
 from dflintdpy.data.config import HP
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
+from dflintdpy.utils.read_write_results import save_results_to_csv
 
 # Initialize the configuration class
 cfg = HP()
@@ -17,9 +19,9 @@ results = []
 # Loop over different random seeds
 for seed in range(num_seeds):
     # Keep track of simulation progress
-    print("##########################################" +
-          f"###### STARTING SIMULATION {seed+1} / {num_seeds} ######" +
-          "##########################################")
+    print("="*80)
+    print(f"STARTING SIMULATION {seed+1} / {num_seeds}")
+    print("="*80)
 
     # Generate random seeds
     np.random.seed(seed)
@@ -31,11 +33,11 @@ for seed in range(num_seeds):
     cfg.set("data_loader_seed", seed3)
 
     # Run the Asym_SPNI function
-    prediction_mean_std, metrics, table_1, table_2 = single_sim(
+    prediction_mean_std, metrics, table_1, table_2, all_data = single_sim(
          cfg, 
          compute_asym_intd_2=compute_asym_intd_2,
          compute_asym_intd=compute_asym_intd
-         )
+    )
 
     # Store values in list
     results.append({
@@ -43,8 +45,21 @@ for seed in range(num_seeds):
         "prediction_mean_std": prediction_mean_std,
         "metrics": metrics,
         "table_1": table_1,
-        "table_2": table_2
+        "table_2": table_2,
+        "all_data": all_data
     })
+
+# Store final results in a csv file
+output_path = Path(__file__).parent.parent.parent.parent / 'results' /\
+    "results_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seeds_{num_seeds}.csv"\
+    .format(samples=cfg.get("num_train_samples")+cfg.get("num_val_samples")+cfg.get("num_test_samples"),
+            m=cfg.get("grid_size")[0],
+            n=cfg.get("grid_size")[1],
+            deg=cfg.get("deg"),
+            noise=cfg.get("noise_width"),
+            num_seeds=num_seeds
+    )
+save_results_to_csv(results, output_path=output_path)
 
 # Combine prediction means and stds
 test_mean = []
@@ -168,9 +183,9 @@ if compute_asym_intd_2:
         t2_a_s_std.append(result['table_2']['t2_a_s_std'])
 
 # Mark final results
-print("##########################################" + 
-      "###### FINAL RESULTS OVER ALL SEEDS ######" + 
-      "##########################################")
+print("="*80)
+print("FINAL RESULTS OVER ALL SEEDS")
+print("="*80)
 
 # Print prediction means and stds
 print(f"Mean & std value comparison:")

@@ -120,7 +120,6 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
     ###################################
     ##### Symmetric Interdictions #####
     ###################################
-
     all_pred_sym_intd = compare_sym_intd(
         cfg, 
         po_model, 
@@ -341,6 +340,32 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
     ##### Return Results #####
     ##########################
 
+    all_data = {
+        # x_y means: x: follower, y: leader
+        # a_x_y means: x: true follower model, y: follower model assumed by leader
+        'o_o': true_objs, 
+        'o_p': po_objs, 
+        'o_s': spo_objs, 
+        'o_a': adv_spo_objs, 
+        's_o': all_pred_sym_intd['true_objective'],
+        's_p': all_pred_sym_intd['po_objective'],
+        's_s': all_pred_sym_intd['spo_objective'],
+        's_a': all_pred_sym_intd['adv_spo_objective'],
+        'a_o': no_pred_asym_intd,  
+        'a_p': po_pred_asym_intd_I, 
+        'a_s': spo_pred_asym_intd_I, 
+        'a_a': adv_spo_pred_asym_intd_I,
+    }
+    if compute_asym_intd_2:
+        all_data.update({
+            'a_s_p': true_nonadv_false_po_asym_intd,
+            'a_p_s': true_po_false_nonadv_asym_intd, 
+            'a_a_p': true_spo_false_po_asym_intd, 
+            'a_p_a': true_po_false_spo_asym_intd, 
+            'a_a_s': true_adv_false_nonadv_asym_intd, 
+            'a_s_a': true_nonadv_false_adv_asym_intd
+        })
+
     prediction_mean_std = {
         "test_mean" : testing_data['costs'].mean(),
         "train_mean" : training_data['train_loader'].dataset.costs.mean(),
@@ -407,4 +432,4 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
         "t2_a_s_std" : true_adv_false_nonadv_asym_intd.std()
     } if compute_asym_intd_2 else {}
 
-    return prediction_mean_std, metrics, table_1, table_2
+    return prediction_mean_std, metrics, table_1, table_2, all_data
