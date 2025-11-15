@@ -113,19 +113,19 @@ def create_boxplots(all_data, save_path=None):
     calculations = {}
     
     # No intervention (o_*)
-    calculations['no_intd_p'] = all_data['o_p'] # (all_data['o_p'] - all_data['o_o']) / all_data['o_o'] * 100
-    calculations['no_intd_s'] = all_data['o_s'] # (all_data['o_s'] - all_data['o_o']) / all_data['o_o'] * 100
-    calculations['no_intd_a'] = all_data['o_a'] # (all_data['o_a'] - all_data['o_o']) / all_data['o_o'] * 100
+    calculations['no_intd_p'] = (all_data['o_p'] - all_data['o_o']) / all_data['o_o'] * 100 # all_data['o_p'] # 
+    calculations['no_intd_s'] = (all_data['o_s'] - all_data['o_o']) / all_data['o_o'] * 100 # all_data['o_s'] #
+    calculations['no_intd_a'] = (all_data['o_a'] - all_data['o_o']) / all_data['o_o'] * 100 # all_data['o_a'] #
 
     # Symmetric intervention (s_*)
-    calculations['sym_intd_p'] = all_data['s_p'] # (all_data['s_p'] - all_data['s_o']) / all_data['s_o'] * 100
-    calculations['sym_intd_s'] = all_data['s_s'] # (all_data['s_s'] - all_data['s_o']) / all_data['s_o'] * 100
-    calculations['sym_intd_a'] = all_data['s_a'] # (all_data['s_a'] - all_data['s_o']) / all_data['s_o'] * 100
+    calculations['sym_intd_p'] = (all_data['s_p'] - all_data['s_o']) / all_data['s_o'] * 100 # all_data['s_p'] #
+    calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / all_data['s_o'] * 100 # all_data['s_s'] #
+    calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / all_data['s_o'] * 100 # all_data['s_a'] #
 
     # Asymmetric intervention (a_*)
-    calculations['asym_intd_p'] = all_data['a_p'] # (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
-    calculations['asym_intd_s'] = all_data['a_s'] # (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100
-    calculations['asym_intd_a'] = all_data['a_a'] # (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100
+    calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100 # all_data['a_p'] #
+    calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100 # all_data['a_s'] #
+    calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100 # all_data['a_a'] #
 
     # Prepare data for boxplot
     data_to_plot = [
@@ -143,7 +143,7 @@ def create_boxplots(all_data, save_path=None):
     # Create boxplots
     positions = [1, 2, 3, 5, 6, 7, 9, 10, 11]
     bp = ax.boxplot(data_to_plot, positions=positions, widths=0.6, patch_artist=True,
-                     showfliers=True, flierprops=dict(marker='o', markersize=3, alpha=0.5))
+                     showfliers=False, flierprops=dict(marker='o', markersize=3, alpha=0.5))
     
     # Color the boxes
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1'] * 3
@@ -229,8 +229,8 @@ if __name__ == "__main__":
     # loaded_data = load_data(data_directory, train_values=[100, 200], mn_values=[(5, 3), (10, 5)])
     loaded_data = load_data(
         data_directory, 
-        degrees=[7],
-        noise_values=[0.05]
+        degrees=[7, 8],
+        noise_values=[0.5]
     )
     
     if not loaded_data:
