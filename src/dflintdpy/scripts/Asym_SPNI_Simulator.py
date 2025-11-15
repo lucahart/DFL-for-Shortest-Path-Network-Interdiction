@@ -35,7 +35,7 @@ for seed in range(num_seeds):
          cfg, 
          compute_asym_intd_2=compute_asym_intd_2,
          compute_asym_intd=compute_asym_intd,
-         load_real_world_graph='county_level_arcs.csv'
+        #  load_real_world_graph='county_level_arcs.csv'
     )
 
     # Store values in list

@@ -6,7 +6,7 @@ from typing import Any
 class HP:
     # Define hyperparameters
     budget = 5
-    grid_size = (6, 8)
+    grid_size = (5, 5)
     random_seed = 31
     intd_seed = 53
     loader_seed = 17
@@ -14,8 +14,8 @@ class HP:
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 200
-    num_val_samples = 50
+    num_train_samples = 100
+    num_val_samples = 25
     num_test_samples = 100
     batch_size = 32
     po_epochs = 150
@@ -23,10 +23,10 @@ class HP:
     po_lr = 1e-2
     spo_lr = 1e-3
     lam = 0
-    deg = 7
+    deg = 8
     anchor = "mse"
     spo_po_epochs = 0
-    noise_width = 1
+    noise_width = 0.5
 
     # Interdictor parameters
     benders_max_count = 50
