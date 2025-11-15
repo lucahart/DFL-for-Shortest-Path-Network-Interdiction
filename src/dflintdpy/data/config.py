@@ -14,7 +14,7 @@ class HP:
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 100
+    num_train_samples = 50
     num_val_samples = 25
     num_test_samples = 100
     batch_size = 32

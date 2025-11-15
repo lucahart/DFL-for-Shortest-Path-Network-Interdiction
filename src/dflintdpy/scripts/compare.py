@@ -1,4 +1,5 @@
 
+from copy import deepcopy
 import pyepo
 import torch
 import numpy as np
@@ -207,10 +208,11 @@ def compare_asym_intd(
 
         # Update the opt_model with estimated costs
         opt_model.setObj(cost)
+        true_graph = deepcopy(opt_model._graph)
 
         # Solutions with information asymmetry
         asym_interdictor = AsymmetricInterdictor(
-            opt_model._graph, 
+            true_graph, 
             budget=cfg.get("budget"), 
             true_costs=cost, 
             true_delays=interdiction, 
@@ -230,7 +232,7 @@ def compare_asym_intd(
 
         # Store the results
         # true_objs.append(true_graph(y_true, interdictions=x_intd * interdiction))
-        est_objs.append(opt_model._graph(y_est, interdictions=x_intd * interdiction))
+        est_objs.append(true_graph(y_est, interdictions=x_intd * interdiction))
 
         # Print progress
         print_progress(i, num_test_samples)
