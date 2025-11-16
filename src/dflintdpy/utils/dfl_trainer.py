@@ -110,14 +110,18 @@ class DFLTrainer:
             pred = self.pred_model(feats).unsqueeze(1) + intds
             B, K = costs.shape[:2]
 
-            loss_flat = type(self).compute_loss(
-                self.loss_criterion,
-                pred.view(B * K, *pred.shape[2:]),
-                costs.view(B * K, *costs.shape[2:]),
-                sols.view(B * K, *sols.shape[2:]),
-                objs.view(B * K, *objs.shape[2:]),
-                method_name=self.method_name,
-            )
+            try:
+                loss_flat = type(self).compute_loss(
+                    self.loss_criterion,
+                    pred.view(B * K, *pred.shape[2:]),
+                    costs.view(B * K, *costs.shape[2:]),
+                    sols.view(B * K, *sols.shape[2:]),
+                    objs.view(B * K, *objs.shape[2:]),
+                    method_name=self.method_name,
+                )
+            except Exception:
+                print("Warning: Loss computation error during training. Skipping sample.")
+                continue
 
             if loss_flat.dim() == 0:
                 loss_per_scen = loss_flat.repeat(B, K)
@@ -174,14 +178,18 @@ class DFLTrainer:
                 pred = self.pred_model(feats).unsqueeze(1) + intds
                 B, K = costs.shape[:2]
 
-                loss_flat = type(self).compute_loss(
-                    self.loss_criterion,
-                    pred.view(B * K, *pred.shape[2:]),
-                    costs.view(B * K, *costs.shape[2:]),
-                    sols.view(B * K, *sols.shape[2:]),
-                    objs.view(B * K, *objs.shape[2:]),
-                    self.method_name,
-                )
+                try:
+                    loss_flat = type(self).compute_loss(
+                        self.loss_criterion,
+                        pred.view(B * K, *pred.shape[2:]),
+                        costs.view(B * K, *costs.shape[2:]),
+                        sols.view(B * K, *sols.shape[2:]),
+                        objs.view(B * K, *objs.shape[2:]),
+                        self.method_name,
+                    )
+                except Exception:
+                    print("Warning: Loss computation error during evaluation. Skipping sample.")
+                    continue
 
                 if loss_flat.dim() == 0:
                     loss_per_scen = loss_flat.repeat(B, K)

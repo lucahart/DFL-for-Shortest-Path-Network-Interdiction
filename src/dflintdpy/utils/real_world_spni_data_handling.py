@@ -38,15 +38,33 @@ def reformat_to_csv(input_file, output_file, n_cols):
     
     print(f"Successfully created {output_file} with {len(rows)} data rows")
 
+def remove_duplicated_arcs(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove duplicated arcs from the dataframe.
+    An arc is considered duplicated if there exists another arc with the same 'From' and 'To' values.
+    Keep only the first occurrence of each duplicated arc.
+    """
+    df_cleaned = df.drop_duplicates(subset=['From', 'To'], keep='first').reset_index(drop=True)
+    return df_cleaned
+
 
 def csv_to_graph(file_path: str):
+    # Load data from CSV file
     data = pd.read_csv(file_path)
+    # Add reverse arcs
+    data = pd.concat([data, pd.concat([data['To'],data['From']],axis=1)\
+                      .rename(columns={'To':'From','From':'To'})])
+    # Remove duplicated arcs
+    data = remove_duplicated_arcs(data)
+    # Create graph from data
     arcs = [(int(data['From'].values[i]), int(data['To'].values[i]))
             for i in range(data.shape[0])]
     graph =  Graph(
         arcs, 
         vertices=np.arange(1, max(max(arc) for arc in arcs)+1)
     )
+    graph.source = 299
+    graph.target = 50
     return graph
 
 

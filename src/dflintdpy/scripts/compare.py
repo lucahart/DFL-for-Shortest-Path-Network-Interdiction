@@ -221,6 +221,8 @@ def compare_asym_intd(
             lsd=cfg.get("lsd")
         )
         x_intd, _ = asym_interdictor.solve()
+        if x_intd is None:
+            continue
 
         # # True shortest path after interdiction
         # opt_model.setObj(cost + x_intd * interdiction)
