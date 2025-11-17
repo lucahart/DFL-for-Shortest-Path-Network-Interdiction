@@ -6,8 +6,9 @@ __pycache__/
 # src/shortest_path_indiction.egg-info/
 *.egg-info/
 
-# MacOS specific files
+# MacOS and IDE specific files
 .DS_Store
+.vscode/*
 
 # Gurobi logs
 gurobi.log
@@ -17,5 +18,7 @@ gurobi.log
 *.csv
 *.npz
 
-# Generated Figures
+# Folders for data storage
 figures/*
+real_world_spni_data/*
+

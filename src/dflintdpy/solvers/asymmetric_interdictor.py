@@ -77,9 +77,12 @@ class AsymmetricInterdictor:
         self.est_delays = {e: est_delays[i] for i,e in enumerate(self.graph.arcs)}
 
         # Compute theta as the maximum of the estimated delays
-        longest_path = ShortestPathGrb(self.graph)
-        longest_path.setObj(-(true_costs + true_delays))
-        self.theta = -longest_path.solve()[1]/lsd
+        try:
+            longest_path = ShortestPathGrb(self.graph)
+            longest_path.setObj(-(true_costs + true_delays))
+            self.theta = -longest_path.solve()[1]/lsd
+        except Exception:
+            self.theta = sum(true_costs + true_delays)/lsd
 
     def out_edges(self, node):
         return self._out_edges[node]
@@ -111,7 +114,8 @@ class AsymmetricInterdictor:
                                 (self.true_costs[e]+self.true_delays[e])*w[e] for e in self.graph.arcs),
                     GRB.MAXIMIZE)
 
-        s, t = 0, max(self.graph.vertices)
+        s = self.graph.source
+        t = self.graph.target
         for i in self.graph.vertices:
             m.addConstr(
                 gp.quicksum((v[e]+w[e]) for e in self.out_edges(i)) -
@@ -161,7 +165,8 @@ class AsymmetricInterdictor:
         w  = m.addVars(self.graph.arcs, lb=0.0,        name="w")
         u  = m.addVars(self.graph.vertices, lb=-GRB.INFINITY, name="u")
 
-        s, t = 0, max(self.graph.vertices)
+        s = self.graph.source
+        t = self.graph.target
         m.setObjective(
             u[s] - u[t] -
             self.theta*gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]
@@ -201,6 +206,10 @@ class AsymmetricInterdictor:
         """
         # Step 1 – optimistic
         L, xL = self.build_spnia_L()
+        L.setParam("TimeLimit", 120.0)
+        if L.Status == GRB.TIME_LIMIT:
+            print("Warning: Time limit reached during optimistic SPNIA-L solve.")
+            return None, None
         L.optimize()
         z_star = L.ObjVal
         x_star = {e: xL[e].X for e in self.graph.arcs}
@@ -211,13 +220,18 @@ class AsymmetricInterdictor:
             xLG[e].Start = x_star[e]
 
         # bounding cut
-        s, t = 0, max(self.graph.vertices)
+        s = self.graph.source
+        t = self.graph.target
         LG.addConstr(
             u[s] - u[t] -
             self.theta*gp.quicksum(self.est_costs[e]*v[e] + (self.est_costs[e]+self.est_delays[e])*w[e]
                             for e in self.graph.arcs) <= z_star, name="warm_cut")
+        LG.setParam("TimeLimit", 120.0)
 
         LG.optimize()
+        if LG.Status == GRB.TIME_LIMIT:
+            print("Warning: Time limit reached during pessimistic SPNIA-LG solve.")
+            return None, None
 
         return {e: xLG[e].X for e in self.graph.arcs}, LG.ObjVal
     

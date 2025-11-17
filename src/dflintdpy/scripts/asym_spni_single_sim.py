@@ -3,6 +3,7 @@
 #####################
 
 from pathlib import Path
+from dflintdpy.utils.real_world_spni_data_handling import csv_to_graph
 import numpy as np
 
 import torch
@@ -22,7 +23,8 @@ from dflintdpy.scripts.setup import (gen_data,
                                      setup_dfl_predictor)
 
 
-def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd=True):
+def single_sim(cfg, visualize=False, compute_asym_intd_2=True, 
+               compute_asym_intd=True, load_real_world_graph: str | None = None):
     ############################
     ###### Set Parameters ######
     ############################
@@ -38,22 +40,26 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
     ##################################
     ##### Generate Network Data ######
     ##################################
+    # Retrieve root directly
+    root_dir = Path(__file__).parent.parent.parent.parent
 
     # Define a graph with appropriate dimensions and an opt_model 
     # for solving the shortest path problem on the graph
-    m,n = cfg.get("grid_size")
-    graph = Grid(m,n)
+    if load_real_world_graph is not None:
+        file_path = root_dir / 'real_world_spni_data' / load_real_world_graph
+        graph = csv_to_graph(file_path)
+        cfg.set("grid_size", (graph.num_cost+1, 1))
+    else:
+        m, n = cfg.get("grid_size")
+        graph = Grid(m, n)
     opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
     training_data, testing_data, normalization_constant = gen_train_data(
         cfg, 
         opt_model,
-        path_dir=Path(__file__).parent.parent.parent.parent / 'store_data' 
+        path_dir= root_dir / 'store_data' 
     )
-
-    # cfg.set("po_epochs", 150)
-    # cfg.set("spo_epochs", 50)
 
     po_model = setup_pfl_predictor(
         cfg,
@@ -122,12 +128,13 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
     ###################################
     all_pred_sym_intd = compare_sym_intd(
         cfg, 
+        opt_model,
         po_model, 
         spo_model_non_adverse, 
         testing_data, 
         interdictions, 
         normalization_constant, 
-        adv_spo_model=spo_model
+        adfl_predictor=spo_model
     )
 
     ####################################
@@ -136,6 +143,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
     if compute_asym_intd:
         no_pred_asym_intd = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant
@@ -143,6 +151,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
 
         po_pred_asym_intd_I = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant, 
@@ -151,6 +160,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
 
         spo_pred_asym_intd_I = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant, 
@@ -159,6 +169,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True, compute_asym_intd
 
         adv_spo_pred_asym_intd_I = compare_asym_intd(
             cfg, 
+            opt_model,
             testing_data, 
             interdictions, 
             normalization_constant, 

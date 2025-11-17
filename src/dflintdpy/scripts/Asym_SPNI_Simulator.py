@@ -36,7 +36,8 @@ for seed in range(num_seeds):
     prediction_mean_std, metrics, table_1, table_2, all_data = single_sim(
          cfg, 
          compute_asym_intd_2=compute_asym_intd_2,
-         compute_asym_intd=compute_asym_intd
+         compute_asym_intd=compute_asym_intd,
+         load_real_world_graph='underground_routes.csv'
     )
 
     # Store values in list
