@@ -120,7 +120,21 @@ class DFLTrainer:
                     method_name=self.method_name,
                 )
             except Exception:
-                print("Warning: Loss computation error during training. Skipping sample.")
+                try:
+                    c = costs.view(B * K, *costs.shape[2:])
+                    p = pred.view(B * K, *pred.shape[2:])
+                    delta = 2*p - c
+                    c[delta<0] += delta[delta<0]
+                    loss_flat = type(self).compute_loss(
+                        self.loss_criterion,
+                        pred.view(B * K, *pred.shape[2:]),
+                        c,
+                        sols.view(B * K, *sols.shape[2:]),
+                        objs.view(B * K, *objs.shape[2:]),
+                        method_name=self.method_name,
+                    )
+                except Exception:
+                    print("Warning: Loss computation error during training. Skipping sample.")
                 continue
 
             if loss_flat.dim() == 0:
@@ -188,8 +202,22 @@ class DFLTrainer:
                         self.method_name,
                     )
                 except Exception:
-                    print("Warning: Loss computation error during evaluation. Skipping sample.")
-                    continue
+                    try:
+                        c = costs.view(B * K, *costs.shape[2:])
+                        p = pred.view(B * K, *pred.shape[2:])
+                        delta = 2*p - c
+                        c[delta<0] += delta[delta<0]
+                        loss_flat = type(self).compute_loss(
+                            self.loss_criterion,
+                            pred.view(B * K, *pred.shape[2:]),
+                            c,
+                            sols.view(B * K, *sols.shape[2:]),
+                            objs.view(B * K, *objs.shape[2:]),
+                            method_name=self.method_name,
+                        )
+                    except Exception:
+                        print("Warning: Loss computation error during evaluation. Skipping sample.")
+                        continue
 
                 if loss_flat.dim() == 0:
                     loss_per_scen = loss_flat.repeat(B, K)
@@ -360,30 +388,15 @@ class DFLTrainer:
         """
 
         if method_name == "spo+":
-            try:
-                return loss_criterion(costs_pred, costs, sols, objs, reduction="none")
-            except TypeError:
-                return loss_criterion(costs_pred, costs, sols, objs)
+            return loss_criterion(costs_pred, costs, sols, objs)
         if method_name == "hybrid":
-            try:
-                return loss_criterion(costs_pred, costs, sols, objs, reduction="none")
-            except TypeError:
-                return loss_criterion(costs_pred, costs, sols, objs)
+            return loss_criterion(costs_pred, costs, sols, objs)
         elif method_name in ["ptb", "pfy", "imle", "aimle", "nce", "cmap"]:
-            try:
-                return loss_criterion(costs_pred, sols, reduction="none")
-            except TypeError:
-                return loss_criterion(costs_pred, sols)
+            return loss_criterion(costs_pred, sols)
         elif method_name in ["dbb", "nid"]:
-            try:
-                return loss_criterion(costs_pred, costs, objs, reduction="none")
-            except TypeError:
-                return loss_criterion(costs_pred, costs, objs)
+            return loss_criterion(costs_pred, costs, objs)
         elif method_name in ["pg", "ltr"]:
-            try:
-                return loss_criterion(costs_pred, costs, reduction="none")
-            except TypeError:
-                return loss_criterion(costs_pred, costs)
+            return loss_criterion(costs_pred, costs)
     
     @staticmethod
     def lambda_schedule(cfg, epoch):
