@@ -153,10 +153,11 @@ def create_boxplots(all_data, save_path=None):
     
     # Set x-axis labels
     ax.set_xticks([2, 6, 10])
-    ax.set_xticklabels(['no intd', 'sym intd', 'asym intd'], fontsize=12)
+    ax.set_xlim(0, 12)
+    ax.set_xticklabels(['no intd', 'sym intd', 'asym intd'], fontsize=20)
 
     # Set y-axis label
-    ax.set_ylabel('Percentage cost increase (%)', fontsize=13)
+    ax.set_ylabel('Percentage cost increase vs. oracle (%)', fontsize=22)
 
     # Add grid
     ax.grid(axis='y', alpha=0.3, linestyle='--')
@@ -165,11 +166,11 @@ def create_boxplots(all_data, save_path=None):
     # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor='#FF6B6B', alpha=0.7, label='x_p vs x_o'),
-        Patch(facecolor='#4ECDC4', alpha=0.7, label='x_s vs x_o'),
-        Patch(facecolor='#45B7D1', alpha=0.7, label='x_a vs x_o')
+        Patch(facecolor='#FF6B6B', alpha=0.7, label='PFL'),
+        Patch(facecolor='#4ECDC4', alpha=0.7, label='DFL'),
+        Patch(facecolor='#45B7D1', alpha=0.7, label='A-DFL')
     ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=11)
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=20)
     
     # Add vertical line at x=0
     ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
@@ -178,7 +179,7 @@ def create_boxplots(all_data, save_path=None):
     total_samples = len(all_data)
     title = f'Cost Increase Comparison'#\n(n={total_samples} samples across '
     # title += f'{len(all_data)} combinations of train and (m,n))'
-    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.set_title(title, fontsize=24, fontweight='bold')
     
     plt.tight_layout()
     
