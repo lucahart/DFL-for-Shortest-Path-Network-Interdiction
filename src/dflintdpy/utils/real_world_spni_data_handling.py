@@ -52,8 +52,8 @@ def csv_to_graph(file_path: str):
     # Load data from CSV file
     data = pd.read_csv(file_path)
     # Add reverse arcs
-    data = pd.concat([data, pd.concat([data['To'],data['From']],axis=1)\
-                      .rename(columns={'To':'From','From':'To'})])
+    # data = pd.concat([data, pd.concat([data['To'],data['From']],axis=1)\
+    #                   .rename(columns={'To':'From','From':'To'})])
     # Remove duplicated arcs
     data = remove_duplicated_arcs(data)
     # Create graph from data
@@ -61,10 +61,10 @@ def csv_to_graph(file_path: str):
             for i in range(data.shape[0])]
     graph =  Graph(
         arcs, 
-        vertices=np.arange(1, max(max(arc) for arc in arcs)+1)
+        # vertices=np.arange(1, max(max(arc) for arc in arcs)+1)
     )
-    graph.source = 299
-    graph.target = 50
+    # graph.source = 299
+    # graph.target = 50
     return graph
 
 

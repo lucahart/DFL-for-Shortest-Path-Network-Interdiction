@@ -14,16 +14,16 @@ class HP:
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 50
+    num_train_samples = 100
     num_val_samples = 25
-    num_test_samples = 20
+    num_test_samples = 100
     batch_size = 1
     po_epochs = 150
-    spo_epochs = 100
+    spo_epochs = 200
     po_lr = 1e-2
-    spo_lr = 1e-3
+    spo_lr = 1e-4
     lam = 0
-    deg = 16
+    deg = 8
     anchor = "mse"
     spo_po_epochs = 0
     noise_width = 0.5
