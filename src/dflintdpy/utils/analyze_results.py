@@ -141,10 +141,10 @@ def create_boxplots(all_data, save_path=None):
     # Set x-axis labels
     ax.set_xticks([2, 6])
     ax.set_xlim([0, 8])
-    ax.set_xticklabels(['no pricing', 'pricing'], fontsize=12)
+    ax.set_xticklabels(['no pricing', 'pricing'], fontsize=20)
 
     # Set y-axis label
-    ax.set_ylabel('Percentage profit decrease vs. oracle [%]', fontsize=13)
+    ax.set_ylabel('Percentage profit decrease vs. oracle [%]', fontsize=20)
 
     # Add grid
     ax.grid(axis='y', alpha=0.3, linestyle='--')
@@ -153,11 +153,11 @@ def create_boxplots(all_data, save_path=None):
     # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor='#FF6B6B', alpha=0.7, label='PFL vs Oracle'),
-        Patch(facecolor='#4ECDC4', alpha=0.7, label='DFL vs Oracle'),
-        Patch(facecolor='#45B7D1', alpha=0.7, label='ADFL vs Oracle')
+        Patch(facecolor='#FF6B6B', alpha=0.7, label='PFL'),
+        Patch(facecolor='#4ECDC4', alpha=0.7, label='DFL'),
+        Patch(facecolor='#45B7D1', alpha=0.7, label='A-DFL')
     ]
-    ax.legend(handles=legend_elements, loc='lower right', fontsize=11)
+    ax.legend(handles=legend_elements, loc='lower right', fontsize=20)
     
     # Add vertical line at x=0
     ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
@@ -166,7 +166,7 @@ def create_boxplots(all_data, save_path=None):
     total_samples = len(all_data)
     title = f'Profit Decrease Comparison'#\n(n={total_samples} samples across '
     # title += f'{len(all_data)} combinations of train and (m,n))'
-    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.set_title(title, fontsize=24, fontweight='bold')
     
     plt.tight_layout()
     
