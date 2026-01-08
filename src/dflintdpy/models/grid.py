@@ -216,7 +216,10 @@ class Grid(Graph):
         if heat_map is not None:
             for patch, e in zip(edge_artists, self.graph.edges()):
                 intensity = heat_map[self.arcs.index(e)]
-                patch.set_color((1.0, 0.0, 0.0, intensity))  # Red with varying alpha
+                if intensity > 0:
+                    patch.set_color((1.0, 0.0, 0.0, intensity))  # Red with varying alpha
+                else:
+                    patch.set_color((0.0, 0.0, 1.0, -intensity))  # Blue with varying alpha
 
         # Highlight dashed edges
         if dashed_edges is not None:
