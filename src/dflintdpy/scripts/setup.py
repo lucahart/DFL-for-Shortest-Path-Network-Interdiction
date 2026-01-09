@@ -167,7 +167,7 @@ def gen_data(cfg: HP,
             seed: int = 31) -> dict:
 
     # Generate true network data for simulation
-    features, costs = gen_syn_data(cfg, seed)
+    features, costs = gen_syn_data(cfg, seed=seed)
 
     # Normalize costs
     costs = costs / normalization_constant

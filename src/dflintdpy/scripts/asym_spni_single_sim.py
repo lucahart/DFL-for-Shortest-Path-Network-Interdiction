@@ -80,13 +80,19 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     cfg.set("num_scenarios", 1)
 
     # Generate normalized training and testing data
-    training_data_non_adverse, testing_data_non_adverse, normalization_constant = gen_train_data(cfg, opt_model)
+    # nonadv_training_data, _, _ = gen_train_data(cfg, opt_model)
+    nonadv_t_data = training_data["train_loader"].get_nonadverse_loader()
+    nonadv_v_data = training_data["val_loader"].get_nonadverse_loader()
+    nonadv_training_data = {
+        "train_loader": nonadv_t_data,
+        "val_loader": nonadv_v_data
+    }
 
     spo_model_non_adverse = setup_dfl_predictor(
         cfg,
         graph,
         opt_model,
-        training_data_non_adverse,
+        nonadv_training_data,
         versatile=visualize
     )
 
