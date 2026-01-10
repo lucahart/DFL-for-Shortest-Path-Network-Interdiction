@@ -119,7 +119,9 @@ def gen_train_data(
     }, {
         "feats": X_test,
         "costs": c_test
-    }, normalization_constant
+    }, normalization_constant,{
+        "data_generator": adversarial_generator
+    }
 
 
 def _save_features_costs(file_path, features, costs):

@@ -89,7 +89,7 @@ def train_dfl_on_shortest_path(cfg):
     cfg.set("num_train_samples", 100)
     cfg.set("num_val_samples", 10)
     cfg.set("num_test_samples", n_test)
-    cfg.set("deg", 16)
+    # cfg.set("deg", 8)
 
     # Define grid network
     m, n = 5, 5
@@ -98,13 +98,46 @@ def train_dfl_on_shortest_path(cfg):
     opt_model = ShortestPathGrb(graph=dgrid)
 
     # Generate synthetic training data
-    train_loaders, test_data, norm_const = gen_train_data(cfg, opt_model)
+    train_loaders, test_data, _, extra_data = gen_train_data(cfg, opt_model)
+    data_gen = extra_data["data_generator"]
+    nonadv_t_data = train_loaders["train_loader"].get_nonadverse_loader()
+    nonadv_v_data = train_loaders["val_loader"].get_nonadverse_loader()
+    nonadv_train_loaders = {
+        "train_loader": nonadv_t_data,
+        "val_loader": nonadv_v_data
+    }
 
     # Show shortest paths on training data
     train_costs = train_loaders['train_loader'].dataset.costs[:,0,:].squeeze()
     _create_heat_map(opt_model, train_costs)
+    intd_model = SymmetricInterdictor(
+        dgrid,
+        k=15,
+        interdiction_cost=data_gen.interdictions[0],
+    )
+    _create_heat_map_intd(intd_model, train_costs, data_gen.interdictions)
 
     # Train the PFL predictor
+    po_predictor = setup_pfl_predictor(
+        cfg,
+        dgrid,
+        opt_model,
+        train_loaders,
+        versatile=False
+    )
+    _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
+
+    # Train the DFL predictor
+    po_predictor = setup_dfl_predictor(
+        cfg,
+        dgrid,
+        opt_model,
+        nonadv_train_loaders,
+        versatile=False
+    )
+    _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
+
+    # Train the A-DFL predictor
     po_predictor = setup_dfl_predictor(
         cfg,
         dgrid,
@@ -112,20 +145,32 @@ def train_dfl_on_shortest_path(cfg):
         train_loaders,
         versatile=False
     )
+    _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
+    pass
+
+def _create_predictor_heat_map(
+        cfg, 
+        opt_model,
+        pred_model, 
+        test_data
+    ):
+
+    # Retrieve data
+    n_test = cfg.get("num_test_samples")
 
     # Evaluate predictor with heat map
     cost_diff = np.zeros((n_test, opt_model.num_cost))
     for idx in range(n_test):
-        po_predictor.eval()  # important if you have dropout / batchnorm
+        pred_model.eval()  # important if you have dropout / batchnorm
         x = torch.from_numpy(test_data["feats"][idx])
         if x.dtype != torch.float32:
             x = x.float()
         if x.ndim == 1:
             x = x.unsqueeze(0)
-        device = next(po_predictor.parameters()).device
+        device = next(pred_model.parameters()).device
         x = x.to(device)
         with torch.no_grad():
-            y = po_predictor(x)
+            y = pred_model(x)
         y_np = y.detach().cpu().numpy()
         y_np = y_np * (test_data["costs"][idx].mean() / y_np.mean())  # renormalize
         cost_diff[idx] = (y_np - test_data["costs"][idx]) / abs(y_np) * 100 # percentage error
@@ -135,7 +180,6 @@ def train_dfl_on_shortest_path(cfg):
     std = cost_diff.std(axis=0)
     opt_model._graph.cost = [f"{m:.0f} ± {s:.0f}" for m, s in zip(mean, std)]
     opt_model.visualize(heat_map=mean / max(abs(mean)))
-    pass
 
 # TODO: Learn the edges with DFL and show what edges are more over or underestimated
 
@@ -144,10 +188,8 @@ def main():
     # single_shortest_path_example()
     # shortest_path_heat_map()
     # intd_shortest_path_heat_map()
-    compare_shortest_path_heat_maps()
-    # train_dfl_on_shortest_path(cfg)
-    # cfg.set("num_scenarios", 1)
-    # train_dfl_on_shortest_path(cfg)
+    # compare_shortest_path_heat_maps()
+    train_dfl_on_shortest_path(cfg)
     pass
 
 if __name__ == "__main__":
