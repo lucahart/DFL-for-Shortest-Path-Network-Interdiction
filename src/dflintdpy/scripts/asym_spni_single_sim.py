@@ -11,6 +11,7 @@ import random
 from tabulate import tabulate
 
 from dflintdpy.models.grid import Grid
+from dflintdpy.models.dgrid import DGrid
 from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 from dflintdpy.scripts.compare import (compare_shortest_paths,
@@ -49,16 +50,19 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         file_path = root_dir / 'real_world_spni_data' / load_real_world_graph
         graph = csv_to_graph(file_path)
         cfg.set("grid_size", (graph.num_cost+1, 1))
+        dir = root_dir / 'store_data'
     else:
         m, n = cfg.get("grid_size")
         graph = Grid(m, n)
+        # dir = None # only set to none for DGrid
+        dir = root_dir / 'store_data'
     opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
-    training_data, testing_data, normalization_constant = gen_train_data(
+    training_data, testing_data, normalization_constant, _ = gen_train_data(
         cfg, 
         opt_model,
-        path_dir= root_dir / 'store_data' 
+        path_dir= dir 
     )
 
     po_model = setup_pfl_predictor(
@@ -77,7 +81,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         versatile=visualize
     )
 
-    cfg.set("num_scenarios", 1)
+    # cfg.set("num_scenarios", 1)
 
     # Generate normalized training and testing data
     # nonadv_training_data, _, _ = gen_train_data(cfg, opt_model)
@@ -96,14 +100,19 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         versatile=visualize
     )
 
-    cfg.set("num_scenarios", 10)
+    # cfg.set("num_scenarios", 10)
 
 
     #########################################
     ##### Prediction Algorithm Analysis #####
     #########################################
 
-    interdictions = gen_data(cfg, seed=cfg.get("intd_seed"), normalization_constant=normalization_constant)
+    interdictions = gen_data(
+        cfg, 
+        opt_model=opt_model, 
+        seed=cfg.get("intd_seed"), 
+        normalization_constant=normalization_constant
+    )
 
     # Comparison of different means of costs to show similar 
     print(f"Mean value comparison:")

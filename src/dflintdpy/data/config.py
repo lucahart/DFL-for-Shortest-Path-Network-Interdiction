@@ -5,7 +5,7 @@ from typing import Any
 @dataclass
 class HP:
     # Define hyperparameters
-    budget = 25
+    budget = 10
     grid_size = (5, 5)
     random_seed = 31
     intd_seed = 53
@@ -21,12 +21,13 @@ class HP:
     po_epochs = 150
     spo_epochs = 200
     po_lr = 1e-2
-    spo_lr = 1e-4
+    spo_lr = 3e-4
     lam = 0
     deg = 8
     anchor = "mse"
     spo_po_epochs = 0
     noise_width = 0.5
+    pred_model = "linear"  # "nn" or "linear"
 
     # Interdictor parameters
     benders_max_count = 100

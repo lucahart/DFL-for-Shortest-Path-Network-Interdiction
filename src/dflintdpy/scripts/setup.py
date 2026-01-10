@@ -166,10 +166,11 @@ def _load_features_costs(file_path):
 
 def gen_data(cfg: HP,
             normalization_constant,
+            opt_model: 'ShortestPathGrb' = None,
             seed: int = 31) -> dict:
 
     # Generate true network data for simulation
-    features, costs = gen_syn_data(cfg, seed=seed)
+    features, costs = gen_syn_data(cfg, opt_model=opt_model, seed=seed)
 
     # Normalize costs
     costs = costs / normalization_constant
@@ -206,10 +207,10 @@ def setup_pfl_predictor(
     output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
 
     # This setup can be used for training a PO model or pre-training an SPO model
-    if train_type is "po":
+    if train_type == "po":
         lr = cfg.get("po_lr")
         epochs = cfg.get("po_epochs")
-    elif train_type is "spo":
+    elif train_type == "spo":
         lr = cfg.get("spo_po_lr")
         epochs = cfg.get("spo_po_epochs")
     else:
@@ -217,7 +218,9 @@ def setup_pfl_predictor(
 
 
     # Build the model with nn.Sequential
-    po_model = get_nn(input_size, output_size)
+    po_model = get_nn(input_size, output_size) \
+        if cfg.get("pred_model") is None or cfg.get("pred_model") == "nn" \
+        else nn.Linear(input_size, output_size)
 
     # Define the loss function and optimizer
     po_criterion = nn.MSELoss()
@@ -271,7 +274,9 @@ def setup_dfl_predictor(
 
     # Build the model with nn.Sequential
     if transfer_model is None:
-        spo_model = get_nn(input_size, output_size)
+        spo_model = get_nn(input_size, output_size) \
+            if cfg.get("pred_model") is None or cfg.get("pred_model") == "nn" \
+            else nn.Linear(input_size, output_size)
     else:
         spo_model = deepcopy(transfer_model)
 

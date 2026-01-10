@@ -89,7 +89,10 @@ def train_dfl_on_shortest_path(cfg):
     cfg.set("num_train_samples", 100)
     cfg.set("num_val_samples", 10)
     cfg.set("num_test_samples", n_test)
-    # cfg.set("deg", 8)
+    cfg.set("deg", 8)
+    cfg.set("pred_model", "linear")  # "nn" or "linear"
+    cfg.set("po_epochs", 50)
+    cfg.set("spo_epochs", 50)
 
     # Define grid network
     m, n = 5, 5
@@ -172,7 +175,8 @@ def _create_predictor_heat_map(
         with torch.no_grad():
             y = pred_model(x)
         y_np = y.detach().cpu().numpy()
-        y_np = y_np * (test_data["costs"][idx].mean() / y_np.mean())  # renormalize
+        if not cfg.get("renormalize_predictions", False):
+            y_np = y_np * (test_data["costs"][idx].mean() / y_np.mean())  # renormalize
         cost_diff[idx] = (y_np - test_data["costs"][idx]) / abs(y_np) * 100 # percentage error
 
     # Visualize PFL heat map
