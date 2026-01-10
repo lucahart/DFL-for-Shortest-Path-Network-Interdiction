@@ -15,7 +15,7 @@ class SymmetricInterdictor:
     k: int  # Budget for the max-min knapsack problem
     max_cnt: int  # Maximum number of iterations for Bender's algorithm
     eps: float  # Epsilon for convergence criterion
-    interdiction_cost: np.ndarray  # Cost of interdicting each edge in the graph
+    interdiction_cost: np.ndarray  # Interdiction cost of each edge in the graph
 
     def __init__(self,
                  graph: 'Graph',

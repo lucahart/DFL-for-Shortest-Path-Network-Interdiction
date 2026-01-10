@@ -51,37 +51,45 @@ def intd_shortest_path_heat_map():
     n_trials = 100
     costs = np.random.rand(n_trials, n_costs)
     intd_costs = np.random.rand(n_trials, n_costs)
+    dgrid = DGrid(m, n, cost=costs[0])
+    # opt_model = ShortestPathGrb(graph=dgrid)
+    intd_model = SymmetricInterdictor(
+        dgrid,
+        k=15,
+        interdiction_cost=intd_costs[0],
+    )
+    _create_heat_map_intd(intd_model, costs, intd_costs)
+    pass
+
+def _create_heat_map_intd(intd_model, costs, intd_costs):
+
+    n_trials, n_costs = costs.shape
     arc_count = np.zeros(n_costs)
     for i in range(n_trials):
-        dgrid = DGrid(m, n, cost=costs[i])
-        opt_model = ShortestPathGrb(graph=dgrid)
-        intder = SymmetricInterdictor(
-            dgrid,
-            k=15,
-            interdiction_cost=intd_costs[i],
-        )
-        intd, shortest_path, _ = intder.solve(versatile=False)
+        intd_model.opt_model.setObj(costs[i])
+        intd, shortest_path, _ = intd_model.benders_decomposition(intd_costs[i], versatile=False)
         # shortest_path, objective = opt_model.solve()
         arc_count += shortest_path
     arc_count /= n_trials
     # Visualize heat map
-    opt_model.setObj(arc_count)
-    opt_model.visualize(heat_map=arc_count, 
-                        title="Interdicted Shortest Paths Heat Map")
-    pass
+    intd_model.opt_model.setObj(arc_count)
+    intd_model.opt_model.visualize(heat_map=arc_count, 
+                        title="Interdicted Shortest Paths Heat Map"),
+                        # xlabel="Edge weights represent frequency of usage [%]")
 
 def compare_shortest_path_heat_maps():
     shortest_path_heat_map()
     intd_shortest_path_heat_map()
     pass
 
-def train_dfl_on_shortest_path():
+def train_dfl_on_shortest_path(cfg):
 
     # Setup parameters
-    cfg = HP()
-    cfg.set("num_train_samples", 1000)
+    n_test = 100
+    cfg.set("num_train_samples", 100)
     cfg.set("num_val_samples", 10)
-    cfg.set("num_test_samples", 1000)
+    cfg.set("num_test_samples", n_test)
+    cfg.set("deg", 16)
 
     # Define grid network
     m, n = 5, 5
@@ -90,7 +98,6 @@ def train_dfl_on_shortest_path():
     opt_model = ShortestPathGrb(graph=dgrid)
 
     # Generate synthetic training data
-    cfg.set("num_scenarios", 1)
     train_loaders, test_data, norm_const = gen_train_data(cfg, opt_model)
 
     # Show shortest paths on training data
@@ -107,8 +114,8 @@ def train_dfl_on_shortest_path():
     )
 
     # Evaluate predictor with heat map
-    cost_diff = np.zeros((1, opt_model.num_cost))
-    for idx in range(cfg.get("num_test_samples")):
+    cost_diff = np.zeros((n_test, opt_model.num_cost))
+    for idx in range(n_test):
         po_predictor.eval()  # important if you have dropout / batchnorm
         x = torch.from_numpy(test_data["feats"][idx])
         if x.dtype != torch.float32:
@@ -121,22 +128,26 @@ def train_dfl_on_shortest_path():
             y = po_predictor(x)
         y_np = y.detach().cpu().numpy()
         y_np = y_np * (test_data["costs"][idx].mean() / y_np.mean())  # renormalize
-        cost_diff += (y_np - test_data["costs"][idx]) / abs(y_np)
+        cost_diff[idx] = (y_np - test_data["costs"][idx]) / abs(y_np) * 100 # percentage error
 
     # Visualize PFL heat map
-    cost_diff /= cfg.get("num_test_samples") * 100 # compute mean and percentage
-    opt_model.setObj(cost_diff.flatten())
-    cost_diff /= max(abs(cost_diff.squeeze()))
-    opt_model.visualize(heat_map=cost_diff.flatten())
+    mean = cost_diff.mean(axis=0)
+    std = cost_diff.std(axis=0)
+    opt_model._graph.cost = [f"{m:.0f} ± {s:.0f}" for m, s in zip(mean, std)]
+    opt_model.visualize(heat_map=mean / max(abs(mean)))
     pass
 
 # TODO: Learn the edges with DFL and show what edges are more over or underestimated
 
 def main():
+    cfg = HP()
     # single_shortest_path_example()
     # shortest_path_heat_map()
-    # compare_shortest_path_heat_maps()
-    train_dfl_on_shortest_path()
+    # intd_shortest_path_heat_map()
+    compare_shortest_path_heat_maps()
+    # train_dfl_on_shortest_path(cfg)
+    # cfg.set("num_scenarios", 1)
+    # train_dfl_on_shortest_path(cfg)
     pass
 
 if __name__ == "__main__":

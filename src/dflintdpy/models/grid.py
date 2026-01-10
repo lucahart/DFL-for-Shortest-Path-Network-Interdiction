@@ -183,7 +183,7 @@ class Grid(Graph):
                 }
             else:
                 edge_labels = {
-                    edge: f"{self.cost[idx]:.2f}"
+                    edge: f"{self.cost[idx]:.2f}" if isinstance(self.cost[idx], float) else self.cost[idx]
                     for idx, edge in enumerate(self.arcs)
                 }
             nx.draw_networkx_edge_labels(
