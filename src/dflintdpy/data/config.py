@@ -17,11 +17,11 @@ class HP:
     num_train_samples = 100
     num_val_samples = 25
     num_test_samples = 100
-    batch_size = 1
+    batch_size = 32
     po_epochs = 150
-    spo_epochs = 200
-    po_lr = 1e-2
-    spo_lr = 3e-4
+    spo_epochs = 250
+    po_lr = 1e-4
+    spo_lr = 1e-4
     lam = 0
     deg = 8
     anchor = "mse"

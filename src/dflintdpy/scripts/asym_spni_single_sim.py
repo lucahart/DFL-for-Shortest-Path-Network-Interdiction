@@ -53,9 +53,9 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         dir = root_dir / 'store_data'
     else:
         m, n = cfg.get("grid_size")
-        graph = Grid(m, n)
-        # dir = None # only set to none for DGrid
-        dir = root_dir / 'store_data'
+        graph = DGrid(m, n)
+        dir = None # only set to none for DGrid
+        # dir = root_dir / 'store_data'
     opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
