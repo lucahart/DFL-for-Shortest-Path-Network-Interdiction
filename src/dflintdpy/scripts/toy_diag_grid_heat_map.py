@@ -3,6 +3,7 @@ from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 from dflintdpy.solvers.symmetric_interdictor import SymmetricInterdictor
 from dflintdpy.scripts.setup import gen_train_data, setup_pfl_predictor, setup_dfl_predictor
 from dflintdpy.data.config import HP
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -89,13 +90,14 @@ def train_dfl_on_shortest_path(cfg):
     cfg.set("num_train_samples", 100)
     cfg.set("num_val_samples", 10)
     cfg.set("num_test_samples", n_test)
-    cfg.set("deg", 8)
-    cfg.set("pred_model", "linear")  # "nn" or "linear"
-    cfg.set("po_epochs", 50)
-    cfg.set("spo_epochs", 50)
+    cfg.set("deg", 4)
+    cfg.set("pred_model", "nn")  # "nn" or "linear"
+    # cfg.set("po_epochs", 50)
+    # cfg.set("spo_epochs", 50)
+    cfg.set("renormalize_predictions", False)
 
     # Define grid network
-    m, n = 5, 5
+    m, n = 3, 3
     costs = np.random.rand(m * (n - 1) + (m - 1) * n + (m - 1) * (n - 1))
     dgrid = DGrid(m, n, cost=costs)
     opt_model = ShortestPathGrb(graph=dgrid)
@@ -120,36 +122,49 @@ def train_dfl_on_shortest_path(cfg):
     )
     _create_heat_map_intd(intd_model, train_costs, data_gen.interdictions)
 
-    # Train the PFL predictor
-    po_predictor = setup_pfl_predictor(
-        cfg,
-        dgrid,
-        opt_model,
-        train_loaders,
-        versatile=False
-    )
-    _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
+    # # Train the PFL predictor
+    # po_predictor = setup_pfl_predictor(
+    #     cfg,
+    #     dgrid,
+    #     opt_model,
+    #     train_loaders,
+    #     versatile=False
+    # )
+    # _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
 
     # Train the DFL predictor
-    po_predictor = setup_dfl_predictor(
+    spo_predictor = setup_dfl_predictor(
         cfg,
         dgrid,
         opt_model,
         nonadv_train_loaders,
         versatile=False
     )
-    _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
+    # _create_predictor_heat_map(cfg, opt_model, spo_predictor, test_data)
 
     # Train the A-DFL predictor
-    po_predictor = setup_dfl_predictor(
+    aspo_predictor = setup_dfl_predictor(
         cfg,
         dgrid,
         opt_model,
         train_loaders,
         versatile=False
     )
-    _create_predictor_heat_map(cfg, opt_model, po_predictor, test_data)
+    # _create_predictor_heat_map(cfg, opt_model, aspo_predictor, test_data)
+
+
+    sample_idx = 5
+    fig, ax = plt.subplots(2, 3, figsize=(12,8))
+    opt_model.setObj(test_data["costs"][sample_idx])
+    opt_model.visualize(dashed_edges=opt_model.solve()[0], ax=ax[0,0], title="True Shortest Path")
+    cfg.set("renormalize_predictions", False)
+    _create_predictor_heat_map_single_sample(cfg, opt_model, spo_predictor, test_data, sample_idx=sample_idx, ax=ax[0,1], title="SPO Predictor")
+    _create_predictor_heat_map_single_sample(cfg, opt_model, aspo_predictor, test_data, sample_idx=sample_idx, ax=ax[0,2], title="A-SPO Predictor")
+    cfg.set("renormalize_predictions", True)
+    _create_predictor_heat_map_single_sample(cfg, opt_model, spo_predictor, test_data, sample_idx=sample_idx, ax=ax[1,1])
+    _create_predictor_heat_map_single_sample(cfg, opt_model, aspo_predictor, test_data, sample_idx=sample_idx, ax=ax[1,2])
     pass
+
 
 def _create_predictor_heat_map(
         cfg, 
@@ -175,7 +190,7 @@ def _create_predictor_heat_map(
         with torch.no_grad():
             y = pred_model(x)
         y_np = y.detach().cpu().numpy()
-        if not cfg.get("renormalize_predictions", False):
+        if cfg.get("renormalize_predictions"):
             y_np = y_np * (test_data["costs"][idx].mean() / y_np.mean())  # renormalize
         cost_diff[idx] = (y_np - test_data["costs"][idx]) / abs(y_np) * 100 # percentage error
 
@@ -184,6 +199,46 @@ def _create_predictor_heat_map(
     std = cost_diff.std(axis=0)
     opt_model._graph.cost = [f"{m:.0f} ± {s:.0f}" for m, s in zip(mean, std)]
     opt_model.visualize(heat_map=mean / max(abs(mean)))
+    pass
+
+
+def _create_predictor_heat_map_single_sample(
+    cfg,
+    opt_model,
+    pred_model,
+    test_data,
+    sample_idx=0,
+    **kwargs
+):
+    true_cost = test_data["costs"][sample_idx]
+
+    # Evaluate predictor with heat map
+    pred_model.eval()  # important if you have dropout / batchnorm
+    x = torch.from_numpy(test_data["feats"][sample_idx])
+    if x.dtype != torch.float32:
+        x = x.float()
+    if x.ndim == 1:
+        x = x.unsqueeze(0)
+    device = next(pred_model.parameters()).device
+    x = x.to(device)
+    with torch.no_grad():
+        y = pred_model(x)
+    y_np = y.detach().cpu().numpy()
+    if cfg.get("renormalize_predictions"):
+        y_np = y_np * (true_cost.mean() / y_np.mean())  # renormalize
+    cost_diff = (y_np - true_cost) / abs(y_np) * 100 # percentage error
+    cost_diff = cost_diff.squeeze()
+
+    # Visualize PFL heat map
+    opt_model.setObj(y_np.squeeze())
+    shortest_path, _ = opt_model.solve()
+    opt_model.setObj(y_np.squeeze().round(2))
+    opt_model.visualize(
+        heat_map=cost_diff / max(abs(cost_diff)),
+        dashed_edges=shortest_path,
+        **kwargs
+    )
+    pass
 
 # TODO: Learn the edges with DFL and show what edges are more over or underestimated
 
