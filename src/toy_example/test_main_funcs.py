@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from toy_example.main import (
+from toy_example.main_funcs import (
     feature_cost_mapping,
     optimizer,
     interdictor,
