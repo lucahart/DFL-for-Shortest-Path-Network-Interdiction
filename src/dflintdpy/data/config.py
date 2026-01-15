@@ -5,7 +5,7 @@ from typing import Any
 @dataclass
 class HP:
     # Define hyperparameters
-    budget = 25
+    budget = 15
     grid_size = (5, 5)
     random_seed = 31
     intd_seed = 53
@@ -14,14 +14,14 @@ class HP:
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 100
-    num_val_samples = 25
-    num_test_samples = 100
+    num_train_samples = 250
+    num_val_samples = 50
+    num_test_samples = 200
     batch_size = 1
-    po_epochs = 150
-    spo_epochs = 200
-    po_lr = 1e-2
-    spo_lr = 1e-4
+    po_epochs = 300
+    spo_epochs = 300
+    po_lr = 1e-5
+    spo_lr = 1e-5
     lam = 0
     deg = 8
     anchor = "mse"

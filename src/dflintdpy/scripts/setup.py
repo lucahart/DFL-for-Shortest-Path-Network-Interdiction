@@ -192,6 +192,7 @@ def gen_data(cfg: HP,
 
 
 def get_nn(input_size, output_size):
+    return nn.Linear(input_size, output_size)
 
     hidden_size_1 =  64   # number of neurons in the hidden layer
     return nn.Sequential(
