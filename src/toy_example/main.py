@@ -12,7 +12,7 @@ from toy_example.main_funcs import (
 from toy_example.opt import ToyOptModel
 
 # Constants
-W_TRAIN = torch.tensor([-1.5, 1.0, 3.0]).unsqueeze(-1)  # training features
+W_TRAIN = torch.tensor([-5.0, -3.0, -1.5, -1.0, 1.0, 1.5, 3.0, 5.0]).unsqueeze(-1)  # training features
 W_TEST = torch.tensor([-1.5, 1.0, 3.0]).unsqueeze(-1)  # test features
 
 # Utility Functions
@@ -115,6 +115,7 @@ def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=20
 def toy_example_dfl(seed=0):
     set_seed(seed)
     predictor = new_predictor()
+    # predictor = toy_example_pfl(seed=seed)
     w_values = W_TRAIN  # training features
     w_train, c_train, y_train, z_train = build_toy_dataset_dfl(w_values)
     train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, seed=seed)
