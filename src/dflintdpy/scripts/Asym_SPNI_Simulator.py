@@ -10,7 +10,8 @@ from dflintdpy.utils.read_write_results import save_results_to_csv
 cfg = HP()
 num_seeds = cfg.get("num_seeds")
 compute_asym_intd_2 = False # Matrix comparison with lack of evader knowledge (table 2)
-compute_asym_intd = True # Asym. Interdictor column in table 1
+compute_asym_intd = False # Asym. Interdictor column in table 1
+
 
 # List to store results
 results = []

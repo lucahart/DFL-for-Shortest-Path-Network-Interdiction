@@ -14,12 +14,12 @@ class HP:
 
     # ML hyperparameters
     num_features = 5
-    num_train_samples = 250
-    num_val_samples = 50
-    num_test_samples = 200
+    num_train_samples = 1000
+    num_val_samples = 250
+    num_test_samples = 1000
     batch_size = 1
-    po_epochs = 300
-    spo_epochs = 300
+    po_epochs = 500
+    spo_epochs = 500
     po_lr = 1e-5
     spo_lr = 1e-5
     lam = 0

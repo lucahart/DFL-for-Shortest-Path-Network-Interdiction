@@ -34,10 +34,13 @@ def scan_available_data(directory='.'):
         params = parse_filename(filename)
         if params:
             key = (
-                params['train'], 
-                (params['m'], params['n']), 
+                params['train'],
+                params['valid'],
+                params['test'],
+                (params['m'], params['n']),
                 params['deg'],
-                params['noise']
+                params['noise'],
+                params['num_seeds']
             )
             combinations[key].append({
                 'filename': filename,
@@ -49,9 +52,12 @@ def scan_available_data(directory='.'):
 def load_data(
         directory='.', 
         train_values=None, 
+        valid_values=None,
+        test_values=None,
         mn_values=None, 
         degrees=None,
-        noise_values=None
+        noise_values=None,
+        num_seeds_values=None
     ):
     """
     Load data for specified combinations.
@@ -62,26 +68,46 @@ def load_data(
         Directory containing the CSV files
     train_values : list of int or None
         List of train values to load. If None, load all.
+    valid_values : list of int or None
+        List of valid values to load. If None, load all.
+    test_values : list of int or None
+        List of test values to load. If None, load all.
     mn_values : list of tuples or None
         List of (m, n) tuples to load. If None, load all.
+    degrees : list of int or None
+        List of degree values to load. If None, load all.
+    noise_values : list of float or None
+        List of noise values to load. If None, load all.
+    num_seeds_values : list of int or None
+        List of seed counts to load. If None, load all.
     
     Returns:
     --------
-    dict : Dictionary with keys (train, (m,n)) and values as DataFrame
+    dict : Dictionary with keys
+        (train, valid, test, (m,n), deg, noise, num_seeds) and values as DataFrame
     """
     available = scan_available_data(directory)
     
     loaded_data = {}
     
-    for (train, mn, deg, noise), file_info in available.items():
+    for (train, valid, test, mn, deg, noise, num_seeds), file_info in available.items():
         # Filter by train values if specified
         if train_values is not None and train not in train_values:
+            continue
+
+        if valid_values is not None and valid not in valid_values:
+            continue
+
+        if test_values is not None and test not in test_values:
             continue
 
         if degrees is not None and deg not in degrees:
             continue
 
-        if noise is not None and noise not in noise_values:
+        if noise_values is not None and noise not in noise_values:
+            continue
+
+        if num_seeds_values is not None and num_seeds not in num_seeds_values:
             continue
         
         # Filter by (m,n) values if specified
@@ -91,9 +117,22 @@ def load_data(
         # Load the first file for this combination (assuming one file per combination)
         filepath = os.path.join(directory, file_info[0]['filename'])
         df = pd.read_csv(filepath)
-        loaded_data[(train, mn)] = df
+        loaded_data[(train, valid, test, mn, deg, noise, num_seeds)] = df
         
-        print(f"Loaded: train={train}, (m,n)={mn} from {file_info[0]['filename']}")
+        print(
+            "Loaded: train={train}, valid={valid}, test={test}, (m,n)={mn}, "
+            "deg={deg}, noise={noise}, num_seeds={num_seeds} from {filename}"
+            .format(
+                train=train,
+                valid=valid,
+                test=test,
+                mn=mn,
+                deg=deg,
+                noise=noise,
+                num_seeds=num_seeds,
+                filename=file_info[0]['filename']
+            )
+        )
     
     return loaded_data
 
@@ -113,19 +152,19 @@ def create_boxplots(all_data, save_path=None):
     calculations = {}
     
     # No intervention (o_*)
-    calculations['no_intd_p'] = (all_data['o_p'] - all_data['o_o']) / all_data['o_o'] * 100 # all_data['o_p'] # 
-    calculations['no_intd_s'] = (all_data['o_s'] - all_data['o_o']) / all_data['o_o'] * 100 # all_data['o_s'] #
-    calculations['no_intd_a'] = (all_data['o_a'] - all_data['o_o']) / all_data['o_o'] * 100 # all_data['o_a'] #
+    calculations['no_intd_p'] = (all_data['o_p'] - all_data['o_o']) / (all_data['o_o']) * 100 # all_data['o_p'] # 
+    calculations['no_intd_s'] = (all_data['o_s'] - all_data['o_o']) / (all_data['o_o']) * 100 # all_data['o_s'] #
+    calculations['no_intd_a'] = (all_data['o_a'] - all_data['o_o']) / (all_data['o_o']) * 100 # all_data['o_a'] #
 
     # Symmetric intervention (s_*)
-    calculations['sym_intd_p'] = (all_data['s_p'] - all_data['s_o']) / all_data['s_o'] * 100 # all_data['s_p'] #
-    calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / all_data['s_o'] * 100 # all_data['s_s'] #
-    calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / all_data['s_o'] * 100 # all_data['s_a'] #
+    calculations['sym_intd_p'] = (all_data['s_p'] - all_data['s_o']) / (all_data['s_o']) * 100 # all_data['s_p'] #
+    calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / (all_data['s_o']) * 100 # all_data['s_s'] #
+    calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / (all_data['s_o']) * 100 # all_data['s_a'] #
 
     # Asymmetric intervention (a_*)
-    calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100 # all_data['a_p'] #
-    calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100 # all_data['a_s'] #
-    calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100 # all_data['a_a'] #
+    calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / (all_data['a_o']) * 100 # all_data['a_p'] #
+    calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / (all_data['a_o']) * 100 # all_data['a_s'] #
+    calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / (all_data['a_o']) * 100 # all_data['a_a'] #
 
     # Prepare data for boxplot
     data_to_plot = [
@@ -196,11 +235,14 @@ def print_available_combinations(directory='.'):
     combinations = scan_available_data(directory)
     
     print(f"\nFound {len(combinations)} data combinations:\n")
-    print(f"{'Train':<10} {'(m, n)':<15} {'Files'}")
-    print("-" * 40)
+    print(f"{'Train':<7} {'Valid':<7} {'Test':<7} {'(m, n)':<15} {'Deg':<5} {'Noise':<7} {'Seeds':<7} {'Files'}")
+    print("-" * 70)
 
-    for (train, mn, deg, noise), files in sorted(combinations.items()):
-        print(f"{train:<10} {str(mn):<15} {len(files)}")
+    for (train, valid, test, mn, deg, noise, num_seeds), files in sorted(combinations.items()):
+        print(
+            f"{train:<7} {valid:<7} {test:<7} {str(mn):<15} {deg:<5} {noise:<7} "
+            f"{num_seeds:<7} {len(files)}"
+        )
 
     print("\n")
     return combinations
@@ -243,10 +285,22 @@ if __name__ == "__main__":
     for keys, df in loaded_data.items():
         fig = create_boxplots(df, save_path='cost_comparison_boxplots.png')
         fig.savefig(
-            figure_directory / "boxplot_train_{train}_graph__{m}_{n}.png"\
-                .format(train=keys[0], m=keys[1][0], n=keys[1][1]),
+            figure_directory / (
+                "boxplot_train_{train}_valid_{valid}_test_{test}_m_{m}_n_{n}_deg_{deg}"
+                "_noise_{noise}_seeds_{num_seeds}.png"
+            ).format(
+                train=keys[0],
+                valid=keys[1],
+                test=keys[2],
+                m=keys[3][0],
+                n=keys[3][1],
+                deg=keys[4],
+                noise=keys[5],
+                num_seeds=keys[6]
+            ),
             dpi=300, 
             bbox_inches="tight")
+    print(f"Plots saved to: {figure_directory}")
     
     print("\nAnalysis complete!")
     print(f"Total combinations analyzed: {len(loaded_data)}")
