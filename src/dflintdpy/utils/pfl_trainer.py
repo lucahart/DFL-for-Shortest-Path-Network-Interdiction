@@ -239,6 +239,7 @@ class PFLTrainer:
                         train_regret_log: ndarray[float],
                         test_loss_log: ndarray[float] = None,
                         test_regret_log: ndarray[float] = None,
+                        *,
                         file_name: Optional[str] = None) -> None:
         """
         Visualizes the learning curve of the model during training.

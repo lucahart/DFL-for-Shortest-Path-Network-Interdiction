@@ -208,20 +208,29 @@ def setup_pfl_predictor(
         graph: Grid,
         opt_model: 'ShortestPathGrb',
         training_data: dict,
-        versatile: bool = False,
+        *,
+        verbose: bool = False,
+        file_name: str = None,
         train_type: str = "po",
         **kwargs
         ):
+    
+    # Specify a file name instead of verbose plotting without saving
+    if verbose and file_name is None:
+        print(
+            "Warning: You have enabled verbose mode " \
+             + "without specifying a file name. Plots will not be saved."
+        )
     
     # Define your network dimensions
     input_size  =  cfg.get("num_features")   # e.g. number of features in your cost‐vector
     output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
 
     # This setup can be used for training a PO model or pre-training an SPO model
-    if train_type is "po":
+    if train_type == "po":
         lr = cfg.get("po_lr")
         epochs = cfg.get("po_epochs")
-    elif train_type is "spo":
+    elif train_type == "spo":
         lr = cfg.get("spo_po_lr")
         epochs = cfg.get("spo_po_epochs")
     else:
@@ -249,14 +258,15 @@ def setup_pfl_predictor(
         epochs=epochs
     )
 
-    if versatile:
+    if verbose or file_name is not None:
         # Plot the learning curve
         PFLTrainer.vis_learning_curve(
             po_trainer,
             train_loss_log,
             train_regret_log,
             val_loss_log,
-            val_regret_log
+            val_regret_log,
+            **kwargs
         )
 
         print("Final regret on validation set: ", val_regret_log[-1])
@@ -269,13 +279,22 @@ def setup_dfl_predictor(
         graph: Grid,
         opt_model: 'ShortestPathGrb',
         training_data: dict,
-        versatile: bool = False,
+        *,
+        verbose: bool = False,
+        file_name: str = None,
         transfer_model: nn.Sequential = None,
         **kwargs
         ):
     """
     Train a SPO model for the shortest path problem.
     """
+
+    # Specify a file name instead of verbose plotting without saving
+    if verbose and file_name is None:
+        print(
+            "Warning: You have enabled verbose mode " \
+             + "without specifying a file name. Plots will not be saved."
+        )
 
     # Define your network dimensions
     input_size  =  cfg.get("num_features")   # e.g. number of features in your cost‐vector
@@ -312,91 +331,19 @@ def setup_dfl_predictor(
         epochs=cfg.get("spo_epochs")
     )
 
-    if versatile:
+    if verbose or file_name is not None:
         # Plot the learning curve
         DFLTrainer.vis_learning_curve(
             spo_trainer,
             train_loss_log,
             train_regret_log,
             val_loss_log,
-            val_regret_log
+            val_regret_log,
+            **kwargs
         )
 
         print("Final regret on validation set: ", val_regret_log[-1])
 
     return spo_model
 
-
-# def setup_hybrid_spo_model(
-#         cfg: HP,
-#         graph: Grid,
-#         opt_model: 'ShortestPathGrb',
-#         training_data: dict,
-#         versatile: bool = False,
-#         transfer_model: nn.Sequential = None,
-#         **kwargs
-#         ):
-#     """
-#     Train a SPO model for the shortest path problem.
-#     """
-
-#     # Define your network dimensions
-#     input_size  =  cfg.get("num_features")   # e.g. number of features in your cost‐vector
-#     output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
-
-#     # Build the model with nn.Sequential
-#     if transfer_model is None:
-#         spo_model = get_nn(input_size, output_size)
-#     else:
-#         spo_model = deepcopy(transfer_model)
-
-#     # Add a calibration layer
-#     spo_model_calibrated = CalibratedPredictor(spo_model)
-
-#     # Init SPO+ loss
-#     hybrid_loss = HybridSPOLoss(opt_model, lam=cfg.get("lam"), anchor=cfg.get("anchor"))
-
-#     # assuming model has .log_s and .b
-#     calib_params = [spo_model_calibrated.log_s]
-#     backbone_params = [p for n,p in spo_model_calibrated.named_parameters() if n not in {'log_s','b'}]
-
-#     optimizer = torch.optim.Adam([
-#         {'params': backbone_params, 'lr': cfg.get("spo_lr"), 'weight_decay': 0.0},
-#         {'params': calib_params,   'lr': cfg.get("spo_lr")*10, 'weight_decay': 0.0},  # 10× faster
-#     ])
-
-
-#     # # Init optimizer
-#     # optimizer = torch.optim.Adam(spo_model_calibrated.parameters(), lr=cfg.get("spo_lr"))
-
-#     # Create a trainer instance
-#     spo_trainer = SPOTrainer(
-#         pred_model=spo_model_calibrated, 
-#         opt_model=opt_model, 
-#         optimizer=optimizer, 
-#         loss_fn=hybrid_loss,
-#         method_name="hybrid",
-#         cfg=cfg
-#     )
-
-#     # Train the model
-#     train_loss_log, train_regret_log, val_loss_log, val_regret_log = spo_trainer.fit(
-#         training_data["train_loader"], 
-#         training_data["val_loader"], 
-#         epochs=cfg.get("spo_epochs")
-#     )
-
-#     if versatile:
-#         # Plot the learning curve
-#         SPOTrainer.vis_learning_curve(
-#             spo_trainer,
-#             train_loss_log,
-#             train_regret_log,
-#             val_loss_log,
-#             val_regret_log
-#         )
-
-#         print("Final regret on validation set: ", val_regret_log[-1])
-
-#     return spo_model_calibrated
 

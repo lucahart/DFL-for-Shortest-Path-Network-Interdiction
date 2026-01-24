@@ -158,7 +158,7 @@ def compute_percentage_increases_from_samples(all_data):
     calculations['sym_intd_p'] = (all_data['s_p'] - all_data['s_o']) / all_data['s_o'] * 100
     calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / all_data['s_o'] * 100
     calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / all_data['s_o'] * 100
-
+    
     calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
     calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100
     calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100
@@ -317,7 +317,8 @@ if __name__ == "__main__":
         data_directory, 
         degrees=[8],
         noise_values=[0.5],
-        num_seeds_values=[10]
+        train_values=[1000],
+        valid_values=[100]
     )
     
     if not loaded_data:

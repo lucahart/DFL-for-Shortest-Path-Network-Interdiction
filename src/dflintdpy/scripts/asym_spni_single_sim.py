@@ -66,7 +66,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         training_data,
-        versatile=visualize
+        verbose=visualize
     )
 
     spo_model = setup_dfl_predictor(
@@ -74,7 +74,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         training_data,
-        versatile=visualize
+        verbose=visualize
     )
 
     cfg.set("num_scenarios", 1)
@@ -87,7 +87,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         training_data_non_adverse,
-        versatile=visualize
+        verbose=visualize
     )
 
     cfg.set("num_scenarios", 10)
