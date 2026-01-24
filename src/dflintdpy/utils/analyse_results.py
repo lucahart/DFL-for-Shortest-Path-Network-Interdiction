@@ -1,10 +1,10 @@
 import os
 import re
-import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 from collections import defaultdict
+from dflintdpy.utils.read_write_results import load_results_from_csv
 
 def parse_filename(filename):
     """Extract parameters from filename."""
@@ -84,7 +84,8 @@ def load_data(
     Returns:
     --------
     dict : Dictionary with keys
-        (train, valid, test, (m,n), deg, noise, num_seeds) and values as DataFrame
+        (train, valid, test, (m,n), deg, noise, num_seeds) and values as
+        a list of simulations (each entry is a dict of arrays)
     """
     available = scan_available_data(directory)
     
@@ -116,8 +117,8 @@ def load_data(
         
         # Load the first file for this combination (assuming one file per combination)
         filepath = os.path.join(directory, file_info[0]['filename'])
-        df = pd.read_csv(filepath)
-        loaded_data[(train, valid, test, mn, deg, noise, num_seeds)] = df
+        simulations = load_results_from_csv(filepath)
+        loaded_data[(train, valid, test, mn, deg, noise, num_seeds)] = simulations
         
         print(
             "Loaded: train={train}, valid={valid}, test={test}, (m,n)={mn}, "
@@ -136,73 +137,99 @@ def load_data(
     
     return loaded_data
 
-def create_boxplots(all_data, save_path=None):
-    """
-    Create boxplots showing percentage cost increase.
-    
-    Parameters:
-    -----------
-    df : pd.DataFrame
-        DataFrame containing the data
-    save_path : str or None
-        Path to save the figure. If None, display instead.
-    """
-    
-    # Calculate percentage increases
+def combine_simulations(simulations):
+    """Combine per-simulation arrays into a single all-data dictionary."""
+    if not simulations:
+        return {}
+
+    combined = {}
+    for key in simulations[0].keys():
+        combined[key] = np.concatenate([sim[key] for sim in simulations])
+    return combined
+
+def compute_percentage_increases_from_samples(all_data):
+    """Compute per-sample percentage increases for boxplots."""
     calculations = {}
-    
-    # No intervention (o_*)
-    calculations['no_intd_p'] = (all_data['o_p'] - all_data['o_o']) / (all_data['o_o']) * 100 # all_data['o_p'] # 
-    calculations['no_intd_s'] = (all_data['o_s'] - all_data['o_o']) / (all_data['o_o']) * 100 # all_data['o_s'] #
-    calculations['no_intd_a'] = (all_data['o_a'] - all_data['o_o']) / (all_data['o_o']) * 100 # all_data['o_a'] #
 
-    # Symmetric intervention (s_*)
-    calculations['sym_intd_p'] = (all_data['s_p'] - all_data['s_o']) / (all_data['s_o']) * 100 # all_data['s_p'] #
-    calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / (all_data['s_o']) * 100 # all_data['s_s'] #
-    calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / (all_data['s_o']) * 100 # all_data['s_a'] #
+    calculations['no_intd_p'] = (all_data['o_p'] - all_data['o_o']) / all_data['o_o'] * 100
+    calculations['no_intd_s'] = (all_data['o_s'] - all_data['o_o']) / all_data['o_o'] * 100
+    calculations['no_intd_a'] = (all_data['o_a'] - all_data['o_o']) / all_data['o_o'] * 100
 
-    # Asymmetric intervention (a_*)
-    calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / (all_data['a_o']) * 100 # all_data['a_p'] #
-    calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / (all_data['a_o']) * 100 # all_data['a_s'] #
-    calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / (all_data['a_o']) * 100 # all_data['a_a'] #
+    calculations['sym_intd_p'] = (all_data['s_p'] - all_data['s_o']) / all_data['s_o'] * 100
+    calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / all_data['s_o'] * 100
+    calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / all_data['s_o'] * 100
 
-    # Prepare data for boxplot
+    calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
+    calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100
+    calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100
+
+    return calculations
+
+def compute_percentage_increases_from_simulations(simulations):
+    """Compute per-simulation percentage increases aggregated by sums."""
+    calculations = defaultdict(list)
+
+    for sim_data in simulations:
+        calculations['no_intd_p'].append(
+            np.sum(sim_data['o_p'] - sim_data['o_o']) / np.sum(sim_data['o_o']) * 100
+        )
+        calculations['no_intd_s'].append(
+            np.sum(sim_data['o_s'] - sim_data['o_o']) / np.sum(sim_data['o_o']) * 100
+        )
+        calculations['no_intd_a'].append(
+            np.sum(sim_data['o_a'] - sim_data['o_o']) / np.sum(sim_data['o_o']) * 100
+        )
+
+        calculations['sym_intd_p'].append(
+            np.sum(sim_data['s_p'] - sim_data['s_o']) / np.sum(sim_data['s_o']) * 100
+        )
+        calculations['sym_intd_s'].append(
+            np.sum(sim_data['s_s'] - sim_data['s_o']) / np.sum(sim_data['s_o']) * 100
+        )
+        calculations['sym_intd_a'].append(
+            np.sum(sim_data['s_a'] - sim_data['s_o']) / np.sum(sim_data['s_o']) * 100
+        )
+
+        calculations['asym_intd_p'].append(
+            np.sum(sim_data['a_p'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
+        )
+        calculations['asym_intd_s'].append(
+            np.sum(sim_data['a_s'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
+        )
+        calculations['asym_intd_a'].append(
+            np.sum(sim_data['a_a'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
+        )
+
+    return dict(calculations)
+
+def create_boxplots_from_calculations(calculations, save_path=None):
+    """Create boxplots from precomputed calculations."""
     data_to_plot = [
-        # No intervention
         calculations['no_intd_p'], calculations['no_intd_s'], calculations['no_intd_a'],
-        # Symmetric intervention
         calculations['sym_intd_p'], calculations['sym_intd_s'], calculations['sym_intd_a'],
-        # Asymmetric intervention
         calculations['asym_intd_p'], calculations['asym_intd_s'], calculations['asym_intd_a']
     ]
     
-    # Create figure
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Create boxplots
     positions = [1, 2, 3, 5, 6, 7, 9, 10, 11]
     bp = ax.boxplot(data_to_plot, positions=positions, widths=0.6, patch_artist=True,
                      showfliers=False, flierprops=dict(marker='o', markersize=3, alpha=0.5))
     
-    # Color the boxes
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1'] * 3
     for patch, color in zip(bp['boxes'], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
     
-    # Set x-axis labels
     ax.set_xticks([2, 6, 10])
     ax.set_xlim(0, 12)
     ax.set_xticklabels(['no intd', 'sym intd', 'asym intd'], fontsize=20)
 
-    # Set y-axis label
     ax.set_ylabel('Percentage cost increase vs. oracle (%)', fontsize=22)
 
-    # Add grid
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
     
-    # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor='#FF6B6B', alpha=0.7, label='PFL'),
@@ -211,13 +238,9 @@ def create_boxplots(all_data, save_path=None):
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=20)
     
-    # Add vertical line at x=0
     ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
     
-    # Set title
-    total_samples = len(all_data)
-    title = f'Cost Increase Comparison'#\n(n={total_samples} samples across '
-    # title += f'{len(all_data)} combinations of train and (m,n))'
+    title = 'Cost Increase Comparison'
     ax.set_title(title, fontsize=24, fontweight='bold')
     
     plt.tight_layout()
@@ -229,6 +252,28 @@ def create_boxplots(all_data, save_path=None):
         plt.show()
     
     return fig
+
+def create_boxplots(simulations, save_path=None):
+    """
+    Create boxplots showing percentage cost increase.
+    
+    Parameters:
+    -----------
+    simulations : list
+        List of simulation data dictionaries
+    save_path : str or None
+        Path to save the figure. If None, display instead.
+    """
+    all_data = combine_simulations(simulations)
+    calculations = compute_percentage_increases_from_samples(all_data)
+    return create_boxplots_from_calculations(calculations, save_path=save_path)
+
+def create_boxplots_by_simulation(simulations, save_path=None):
+    """
+    Create boxplots with one value per simulation (aggregated by sums).
+    """
+    calculations = compute_percentage_increases_from_simulations(simulations)
+    return create_boxplots_from_calculations(calculations, save_path=save_path)
 
 def print_available_combinations(directory='.'):
     """Print available data combinations."""
@@ -268,12 +313,11 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # Step 2: Load all data (or specify filters)
-    # To filter, you can specify:
-    # loaded_data = load_data(data_directory, train_values=[100, 200], mn_values=[(5, 3), (10, 5)])
     loaded_data = load_data(
         data_directory, 
-        degrees=[7, 8],
-        noise_values=[0.5]
+        degrees=[8],
+        noise_values=[0.5],
+        num_seeds_values=[10]
     )
     
     if not loaded_data:
@@ -282,11 +326,32 @@ if __name__ == "__main__":
     
     # Step 3: Create boxplots
     print("\nCreating boxplots...")
-    for keys, df in loaded_data.items():
-        fig = create_boxplots(df, save_path='cost_comparison_boxplots.png')
-        fig.savefig(
+    for keys, simulations in loaded_data.items():
+        fig_samples = create_boxplots(simulations, save_path='cost_comparison_boxplots.png')
+        fig_samples.savefig(
             figure_directory / (
                 "boxplot_train_{train}_valid_{valid}_test_{test}_m_{m}_n_{n}_deg_{deg}"
+                "_noise_{noise}_seeds_{num_seeds}.png"
+            ).format(
+                train=keys[0],
+                valid=keys[1],
+                test=keys[2],
+                m=keys[3][0],
+                n=keys[3][1],
+                deg=keys[4],
+                noise=keys[5],
+                num_seeds=keys[6]
+            ),
+            dpi=300, 
+            bbox_inches="tight")
+
+        fig_sims = create_boxplots_by_simulation(
+            simulations,
+            save_path='cost_comparison_boxplots_sims.png'
+        )
+        fig_sims.savefig(
+            figure_directory / (
+                "boxplot_sims_train_{train}_valid_{valid}_test_{test}_m_{m}_n_{n}_deg_{deg}"
                 "_noise_{noise}_seeds_{num_seeds}.png"
             ).format(
                 train=keys[0],
