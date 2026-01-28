@@ -12,7 +12,7 @@ from toy_example.main_funcs import (
 from toy_example.opt import ToyOptModel
 
 # Constants
-W_TRAIN = torch.tensor([-5.0, -3.0, -1.5, -1.0, 1.0, 1.5, 3.0, 5.0]).unsqueeze(-1)  # training features
+W_TRAIN = torch.tensor([1.0]).unsqueeze(-1)  # training features
 W_TEST = torch.tensor([-1.5, 1.0, 3.0]).unsqueeze(-1)  # test features
 
 # Utility Functions
@@ -44,6 +44,11 @@ def new_predictor():
         nn.Linear(4, 4)
     )
     # predictor.apply(lambda m: weights_init(m, value=1.0))
+    with torch.no_grad():
+        predictor[0].weight = torch.nn.Parameter(torch.tensor([1, -2, -1, 2], dtype=torch.float).unsqueeze(1))
+        predictor[0].bias.zero_()
+        predictor[2].weight = torch.nn.Parameter(torch.tensor([[1.0, 1.0, 0.0, 0.0], [1, 1, 0, 0], [0, 0, 2, 2], [0, 0, 2, 2]], dtype=torch.float))
+        predictor[2].bias.zero_()
     return predictor
 
 # Learning logic
