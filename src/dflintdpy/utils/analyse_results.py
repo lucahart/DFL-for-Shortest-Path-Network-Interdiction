@@ -315,7 +315,7 @@ if __name__ == "__main__":
     # Step 2: Load all data (or specify filters)
     loaded_data = load_data(
         data_directory, 
-        degrees=[8],
+        degrees=[4],
         noise_values=[0.5],
         train_values=[1000],
         valid_values=[100]

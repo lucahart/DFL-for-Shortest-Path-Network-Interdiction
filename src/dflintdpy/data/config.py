@@ -10,20 +10,20 @@ class HP:
     random_seed = 31
     intd_seed = 53
     loader_seed = 17
-    num_seeds = 1
+    num_seeds = 10
 
     # ML hyperparameters
     num_features = 5
     num_train_samples = 1000
     num_val_samples = 100
     num_test_samples = 1000
-    batch_size = 1
-    po_epochs = 250
-    spo_epochs = 250
+    batch_size = 32
+    po_epochs = 125
+    spo_epochs = 125
     po_lr = 1e-5
     spo_lr = 1e-5
     lam = 0
-    deg = 8
+    deg = 4
     anchor = "mse"
     spo_po_epochs = 0
     noise_width = 0.5
