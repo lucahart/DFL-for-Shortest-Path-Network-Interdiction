@@ -12,8 +12,8 @@ from toy_example.main_funcs import (
 from toy_example.opt import ToyOptModel
 
 # Constants
-W_TRAIN = torch.tensor([1.0]).unsqueeze(-1)  # training features
-W_TEST = torch.tensor([-1.5, 1.0, 3.0]).unsqueeze(-1)  # test features
+W_TRAIN = torch.tensor([-1.0, 1.0]).unsqueeze(-1)  # training features
+W_TEST = torch.tensor([-3.0, -1.0, 1.0, 3.0]).unsqueeze(-1)  # test features
 
 # Utility Functions
 def set_seed(seed=0):
@@ -47,7 +47,7 @@ def new_predictor():
     with torch.no_grad():
         predictor[0].weight = torch.nn.Parameter(torch.tensor([1, -2, -1, 2], dtype=torch.float).unsqueeze(1))
         predictor[0].bias.zero_()
-        predictor[2].weight = torch.nn.Parameter(torch.tensor([[1.0, 1.0, 0.0, 0.0], [1, 1, 0, 0], [0, 0, 2, 2], [0, 0, 2, 2]], dtype=torch.float))
+        predictor[2].weight = torch.nn.Parameter(torch.tensor([[1.0, 2.0, 0.0, 0.0], [1, 2, 0, 0], [0, 0, 1, 2], [0, 0, 1, 2]], dtype=torch.float))
         predictor[2].bias.zero_()
     return predictor
 
@@ -167,7 +167,8 @@ def train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train,
         # Train with interdiction
         optimizer_.zero_grad()
         c_intd_pred = predictor(w_train) + i_train
-        loss_intd = criterion(c_intd_pred, c_train + i_train, y_train, z_train)
+        y_intd = optimizer(c_train + i_train)
+        loss_intd = criterion(c_intd_pred, c_train + i_train, y_intd, z_train)
         if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
             print(
                 f"[A-DFL] epoch {epoch + 1}/{epochs} "
