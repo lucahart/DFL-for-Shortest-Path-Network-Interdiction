@@ -260,7 +260,6 @@ def plot_predictor_sweep(
         fig.add_subplot(gs[1, 0]),
         fig.add_subplot(gs[1, 1]),
     ]
-    # match_ax = fig.add_subplot(gs[1, :])
 
     for idx, ax in enumerate(axes):
         if idx >= 2:
@@ -273,7 +272,10 @@ def plot_predictor_sweep(
         # Plot predicted costs
         if idx == 0:
             c_dfl = np.sum(y_dfl_np * dfl_np, axis=1)
-            ax.plot(w_np, c_dfl, color="tab:blue", alpha=0.8, label="DFL")
+            c12_dfl = np.sum(dfl_np[:, [0, 1]], axis=1)
+            c34_dfl = np.sum(dfl_np[:, [2, 3]], axis=1)
+            ax.plot(w_np, c12_dfl, color="tab:blue", alpha=0.8, linestyle="-", label="c_1 + c_2 + d_2 DFL")
+            ax.plot(w_np, c34_dfl, color="tab:blue", alpha=0.8, linestyle="--", label="c_3 + c_4 + d_4 DFL")
             ax.scatter(
                 w_np[match_dfl_np],
                 c_dfl[match_dfl_np],
@@ -281,7 +283,7 @@ def plot_predictor_sweep(
                 s=12,
                 alpha=0.7,
                 marker="o",
-                label="DFL Match"
+                # label="DFL Match"
             )
             ax.scatter(
                 w_np[~match_dfl_np],
@@ -289,34 +291,38 @@ def plot_predictor_sweep(
                 color="tab:red",
                 s=12,
                 alpha=0.7,
-                marker="x"
+                marker="x",
+                # label="DFL Mismatch"
             )
             ax.set_title(f"DFL Predictions")
         else:
             c_adfl = np.sum(y_adfl_np * adfl_np, axis=1)
-            ax.plot(w_np, c_adfl, color="tab:orange", alpha=0.8, label="A-DFL")
+            c12_adfl = np.sum(adfl_np[:, [0, 1]], axis=1)
+            c34_adfl = np.sum(adfl_np[:, [2, 3]], axis=1)
+            ax.plot(w_np, c12_adfl, color="tab:orange", alpha=0.8, linestyle="-", label="c_1 + c_2 + d_2 A-DFL")
+            ax.plot(w_np, c34_adfl, color="tab:orange", alpha=0.8, linestyle="--", label="c_3 + c_4 + d_4 A-DFL")
             ax.scatter(
                 w_np[match_adfl_np],
                 c_adfl[match_adfl_np],
                 color="tab:green",
-                s=14,
+                s=12,
                 alpha=0.7,
                 marker="o",
-                label="A-DFL Match"
+                # label="A-DFL Match"
             )
             ax.scatter(
                 w_np[~match_adfl_np],
                 c_adfl[~match_adfl_np],
                 color="tab:red",
-                s=14,
+                s=12,
                 alpha=0.7,
-                marker="x"
+                marker="x",
+                # label="A-DFL Mismatch"
             )
             ax.set_title(f"A-DFL Predictions")
         ax.grid(axis="y", alpha=0.2)
-        if idx in (2, 3):
-            ax.set_xlabel("w")
-        if idx in (0, 2):
+        ax.set_xlabel("w")
+        if idx == 0:
             ax.set_ylabel("Cost")
 
     axes[0].legend(loc="upper left", fontsize=9)
@@ -332,7 +338,7 @@ def plot_predictor_sweep(
     )
     axes[2].set_yticks([0.0])
     axes[2].set_yticklabels(["DFL"])
-    axes[2].set_ylim(-0.5, 1.5)
+    axes[2].set_ylim(-0.5, 0.5)
     axes[2].set_xlabel("w")
     axes[2].set_title("Solution agreement (green=match, red=mismatch)")
     axes[2].grid(axis="x", alpha=0.2)
@@ -341,13 +347,13 @@ def plot_predictor_sweep(
         w_np,
         np.full_like(w_np, 0.0),
         c=np.where(match_adfl_np, "tab:green", "tab:red"),
-        s=16,
+        s=14,
         marker="o",
         alpha=0.8
     )
     axes[3].set_yticks([0.0])
     axes[3].set_yticklabels(["A-DFL"])
-    axes[3].set_ylim(-0.5, 1.5)
+    axes[3].set_ylim(-0.5, 0.5)
     axes[3].set_xlabel("w")
     axes[3].set_title("Solution agreement (green=match, red=mismatch)")
     axes[3].grid(axis="x", alpha=0.2)
