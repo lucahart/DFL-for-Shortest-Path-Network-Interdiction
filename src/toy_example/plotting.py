@@ -55,13 +55,13 @@ def _make_sweep_figure():
     ]
     return fig, axes
 
-def _plot_true_costs(ax, w_np, true_np):
+def _plot_true_costs(ax, w_np, true_np, intd=False):
     c12_true = np.sum(true_np[:, [0, 1]], axis=1)
     c34_true = np.sum(true_np[:, [2, 3]], axis=1)
-    ax.plot(w_np, c12_true, color="black", linewidth=2, linestyle="-", label="c_1 + c_2 + d_2 True")
-    ax.plot(w_np, c34_true, color="black", linewidth=2, linestyle="--", label="c_3 + c_4 + d_4 True")
+    ax.plot(w_np, c12_true, color="black", linewidth=2, linestyle="-", label="c_1 + c_2" + (" + d_2(c) True" if intd else " True"))
+    ax.plot(w_np, c34_true, color="black", linewidth=2, linestyle="--", label="c_3 + c_4" + (" + d_4(c) True" if intd else " True"))
 
-def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_suffix):
+def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_suffix, intd=False):
     c_total = np.sum(y_pred_np * pred_np, axis=1)
     c12_pred = np.sum(pred_np[:, [0, 1]], axis=1)
     c34_pred = np.sum(pred_np[:, [2, 3]], axis=1)
@@ -71,7 +71,7 @@ def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_s
         color=color,
         alpha=0.8,
         linestyle="-",
-        label=f"c_1 + c_2 + d_2 {label_suffix}"
+        label=f"c_1 + c_2 + d_2(c) {label_suffix}" if intd else f"c_1 + c_2 {label_suffix}"
     )
     ax.plot(
         w_np,
@@ -79,7 +79,7 @@ def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_s
         color=color,
         alpha=0.8,
         linestyle="--",
-        label=f"c_3 + c_4 + d_4 {label_suffix}"
+        label=f"c_3 + c_4 + d_4(c) {label_suffix}" if intd else f"c_3 + c_4 {label_suffix}"
     )
     ax.scatter(
         w_np[match_np],
@@ -110,9 +110,9 @@ def _plot_train_lines(ax, w_train_np):
             zorder=0
         )
 
-def _plot_cost_panel(ax, plot_data, pred_key, y_key, match_key, color, title, label_suffix):
+def _plot_cost_panel(ax, plot_data, pred_key, y_key, match_key, color, title, label_suffix, intd=False):
     _plot_train_lines(ax, plot_data["train_w"])
-    _plot_true_costs(ax, plot_data["w"], plot_data["true"])
+    _plot_true_costs(ax, plot_data["w"], plot_data["true"], intd=intd)
     _plot_predicted_costs(
         ax,
         plot_data["w"],
@@ -120,7 +120,8 @@ def _plot_cost_panel(ax, plot_data, pred_key, y_key, match_key, color, title, la
         plot_data[y_key],
         plot_data[match_key],
         color,
-        label_suffix
+        label_suffix,
+        intd=intd
     )
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.2)
@@ -153,7 +154,8 @@ def plot_predictor_sweep(
     y_pred_adfl,
     save_path=None,
     show=True,
-    data_train=None
+    data_train=None,
+    intd=False
 ):
     plot_data = _prepare_sweep_plot_data(
         w_values,
@@ -174,8 +176,9 @@ def plot_predictor_sweep(
         y_key="y_dfl",
         match_key="match_dfl",
         color="tab:blue",
-        title="DFL Predictions",
-        label_suffix="DFL"
+        title="DFL Predictions" + (" with Interdiction" if intd else " without Interdiction"),
+        label_suffix="DFL",
+        intd=intd
     )
     _plot_cost_panel(
         axes[1],
@@ -184,8 +187,9 @@ def plot_predictor_sweep(
         y_key="y_adfl",
         match_key="match_adfl",
         color="tab:orange",
-        title="A-DFL Predictions",
-        label_suffix="A-DFL"
+        title="A-DFL Predictions" + (" with Interdiction" if intd else " without Interdiction"),
+        label_suffix="A-DFL",
+        intd=intd
     )
     axes[0].set_ylabel("Cost")
     axes[0].legend(loc="upper left", fontsize=9)
@@ -213,29 +217,3 @@ def plot_predictor_sweep(
         plt.show()
 
     return fig
-
-def plot_predictor_sweep_uninterdicted(
-    w_values,
-    c_true,
-    c_pred_dfl,
-    c_pred_adfl,
-    optimizer_fn,
-    save_path=None,
-    show=True,
-    data_train=None
-):
-    y_true = optimizer_fn(c_true)
-    y_pred_dfl = optimizer_fn(c_pred_dfl)
-    y_pred_adfl = optimizer_fn(c_pred_adfl)
-    return plot_predictor_sweep(
-        w_values,
-        c_true,
-        c_pred_dfl,
-        c_pred_adfl,
-        y_true,
-        y_pred_dfl,
-        y_pred_adfl,
-        save_path=save_path,
-        show=show,
-        data_train=data_train
-    )

@@ -15,7 +15,7 @@ from toy_example.plotting import (
 )
 
 # Constants
-torch.manual_seed(1)
+torch.manual_seed(5)
 W_TRAIN = (torch.rand(25, 1)-.5)*6 # torch.tensor([-1.0, 1.0]).unsqueeze(-1)  # training features
 W_TEST = torch.tensor([-3.0, -1.0, 1.0, 3.0]).unsqueeze(-1)  # test features
 
@@ -247,7 +247,8 @@ def test_predictors_sweep(seed=0, num_points=601, save_path=None, show=True):
         y_pred_adfl,
         save_path=save_path,
         show=show,
-        data_train = (W_TRAIN, c_train + i_train)
+        data_train = (W_TRAIN, c_train + i_train),
+        intd=True
     )
 
 def test_predictors_sweep_uninterdicted(seed=0, num_points=601, save_path=None, show=True):
@@ -274,7 +275,8 @@ def test_predictors_sweep_uninterdicted(seed=0, num_points=601, save_path=None, 
         y_pred_adfl,
         save_path=save_path,
         show=show,
-        data_train = (W_TRAIN, c_train)
+        data_train = (W_TRAIN, c_train),
+        intd=False
     )
 
 def main():
