@@ -58,8 +58,8 @@ def _make_sweep_figure():
 def _plot_true_costs(ax, w_np, true_np, intd=False):
     c12_true = np.sum(true_np[:, [0, 1]], axis=1)
     c34_true = np.sum(true_np[:, [2, 3]], axis=1)
-    ax.plot(w_np, c12_true, color="black", linewidth=2, linestyle="-", label="c_1 + c_2" + (" + d_2(c) True" if intd else " True"))
-    ax.plot(w_np, c34_true, color="black", linewidth=2, linestyle="--", label="c_3 + c_4" + (" + d_4(c) True" if intd else " True"))
+    ax.plot(w_np, c12_true, color="black", linewidth=2, linestyle="-", label="c_1" + (" + d_2(c) True" if intd else " True"))
+    ax.plot(w_np, c34_true, color="black", linewidth=2, linestyle="--", label="c_2" + (" + d_2(c) True" if intd else " True"))
 
 def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_suffix, intd=False):
     c_total = np.sum(y_pred_np * pred_np, axis=1)
@@ -71,7 +71,7 @@ def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_s
         color=color,
         alpha=0.8,
         linestyle="-",
-        label=f"c_1 + c_2 + d_2(c) {label_suffix}" if intd else f"c_1 + c_2 {label_suffix}"
+        label=f"c_1 + d_2(c) {label_suffix}" if intd else f"c_1 {label_suffix}"
     )
     ax.plot(
         w_np,
@@ -79,7 +79,7 @@ def _plot_predicted_costs(ax, w_np, pred_np, y_pred_np, match_np, color, label_s
         color=color,
         alpha=0.8,
         linestyle="--",
-        label=f"c_3 + c_4 + d_4(c) {label_suffix}" if intd else f"c_3 + c_4 {label_suffix}"
+        label=f"c_2 + d_2(c) {label_suffix}" if intd else f"c_2 {label_suffix}"
     )
     ax.scatter(
         w_np[match_np],

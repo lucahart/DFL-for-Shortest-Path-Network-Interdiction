@@ -11,17 +11,11 @@ def feature_cost_mapping(w):
     """
     if torch.is_tensor(w):
         w_t = w.squeeze(-1) if w.ndim > 0 and w.shape[-1] == 1 else w
-        c_pos = torch.stack((w_t, w_t, 2 * w_t, 2 * w_t), dim=-1)
-        c_neg = torch.stack((-2 * w_t, -2 * w_t, -w_t, -w_t), dim=-1)
-        return torch.where((w_t >= 0).unsqueeze(-1), c_pos, c_neg)
+        return torch.stack((w_t, w_t, -w_t, -w_t), dim=-1)
     if isinstance(w, np.ndarray):
         w_arr = np.squeeze(w, axis=-1) if w.ndim > 0 and w.shape[-1] == 1 else w
-        c_pos = np.stack((w_arr, w_arr, 2 * w_arr, 2 * w_arr), axis=-1)
-        c_neg = np.stack((-2 * w_arr, -2 * w_arr, -w_arr, -w_arr), axis=-1)
-        return np.where(w_arr[..., None] >= 0, c_pos, c_neg)
-    if w >= 0:
-        return [w, w, 2 * w, 2 * w]
-    return [-2 * w, -2 * w, -w, -w]
+        return np.stack((w_arr, w_arr, -w_arr, -w_arr), axis=-1)
+    return [w, w, -w, -w]
 
 def optimizer(c):
     """
@@ -66,7 +60,7 @@ def sol_value(c, y):
         return np.sum(c * y, axis=-1)
     return sum(c[i] * y[i] for i in range(len(c)))
     
-def interdictor(c):
+def interdictor(c, d=3):
     """
     Docstring for interdictor
     
@@ -78,22 +72,22 @@ def interdictor(c):
         rhs = c[..., 2] + c[..., 3]
         cond = lhs <= rhs
         zeros = torch.zeros_like(lhs)
-        threes = torch.full_like(lhs, 3)
-        g_left = torch.stack((zeros, threes, zeros, zeros), dim=-1)
-        g_right = torch.stack((zeros, zeros, zeros, threes), dim=-1)
+        intds = torch.full_like(lhs, d)
+        g_left = torch.stack((zeros, intds, zeros, zeros), dim=-1)
+        g_right = torch.stack((zeros, zeros, zeros, intds), dim=-1)
         return torch.where(cond.unsqueeze(-1), g_left, g_right)
     if isinstance(c, np.ndarray):
         lhs = c[..., 0] + c[..., 1]
         rhs = c[..., 2] + c[..., 3]
         cond = lhs <= rhs
         zeros = np.zeros_like(lhs)
-        threes = np.full_like(lhs, 3)
-        g_left = np.stack((zeros, threes, zeros, zeros), axis=-1)
-        g_right = np.stack((zeros, zeros, zeros, threes), axis=-1)
+        intds = np.full_like(lhs, d)
+        g_left = np.stack((zeros, intds, zeros, zeros), axis=-1)
+        g_right = np.stack((zeros, zeros, zeros, intds), axis=-1)
         return np.where(cond[..., None], g_left, g_right)
     if c[0] + c[1] <= c[2] + c[3]:
-        return [0, 3, 0, 0]
-    return [0, 0, 0, 3]
+        return [0, d, 0, 0]
+    return [0, 0, 0, d]
     
 def test_intd_pipeline_volatile():
     w = -1

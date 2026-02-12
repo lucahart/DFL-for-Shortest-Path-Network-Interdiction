@@ -14,13 +14,21 @@ from toy_example.plotting import (
     plot_predictor_sweep
 )
 
+# PARAMETERS
+SEED = 5
+N_EPOCHS = 500
+SAMPLE_MAX = 6.0
+D_TEST = 5.0
+LR_DEFAULT = 2e-2
+N_TRAIN_SAMPLES = 5000
+
 # Constants
-torch.manual_seed(5)
-W_TRAIN = (torch.rand(25, 1)-.5)*6 # torch.tensor([-1.0, 1.0]).unsqueeze(-1)  # training features
-W_TEST = torch.tensor([-3.0, -1.0, 1.0, 3.0]).unsqueeze(-1)  # test features
+torch.manual_seed(SEED)
+W_TRAIN = (torch.rand(N_TRAIN_SAMPLES, 1)-.5)*2*SAMPLE_MAX # torch.tensor([-1.0, 1.0]).unsqueeze(-1)  # training features
+W_TEST = torch.tensor([-SAMPLE_MAX, -1.0, 1.0, SAMPLE_MAX]).unsqueeze(-1)  # test features
 
 # Utility Functions
-def set_seed(seed=0):
+def set_seed(seed=SEED):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -44,10 +52,13 @@ def weights_init(m, value: float = 0.0):
 def new_predictor():
     predictor = nn.Sequential(
         nn.Linear(1, 4),
-        nn.ReLU(),
-        nn.Linear(4, 4)
+        # nn.ReLU(),
+        # nn.Linear(4, 4)
     )
     # predictor.apply(lambda m: weights_init(m, value=1.0))
+    with torch.no_grad():
+        predictor[0].weight = torch.nn.Parameter(torch.tensor([.1, .1, -.1, -.1], dtype=torch.float).unsqueeze(1))
+        predictor[0].bias.zero_()
     # with torch.no_grad():
     #     predictor[0].weight = torch.nn.Parameter(torch.tensor([1, -2, -1, 2], dtype=torch.float).unsqueeze(1))
     #     predictor[0].bias.zero_()
@@ -60,7 +71,7 @@ def build_toy_dataset_pfl(w_values):
     c = feature_cost_mapping(w_values)
     return w_values, c
 
-def train_pfl_predictor(predictor, x_train, y_train, epochs=200, lr=1e-2, seed=0):
+def train_pfl_predictor(predictor, x_train, y_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
     set_seed(seed)
     predictor.train()
     criterion = nn.MSELoss()
@@ -76,7 +87,7 @@ def train_pfl_predictor(predictor, x_train, y_train, epochs=200, lr=1e-2, seed=0
         optimizer_.step()
     return predictor
 
-def toy_example_pfl(seed=0):
+def toy_example_pfl(seed=SEED):
     set_seed(seed)
     predictor = new_predictor()
     w_values = W_TRAIN  # training features
@@ -84,7 +95,7 @@ def toy_example_pfl(seed=0):
     train_pfl_predictor(predictor, x_train, y_train, seed=seed)
     return predictor
 
-def test_pfl_predictor(seed=0):
+def test_pfl_predictor(seed=SEED):
     pred_pfl = toy_example_pfl(seed=seed)
     w = W_TEST  # test features
     c_true = feature_cost_mapping(w) # true test costs
@@ -104,7 +115,7 @@ def test_pfl_predictor(seed=0):
     print(f"Predicted interdicted opt. sol.:\n{y_pred}")
     pass
 
-def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=200, lr=1e-2, seed=0):
+def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
     set_seed(seed)
     predictor.train()
     opt_model = ToyOptModel(None)
@@ -121,7 +132,7 @@ def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=20
         optimizer_.step()
     return predictor
 
-def toy_example_dfl(seed=0):
+def toy_example_dfl(seed=SEED):
     set_seed(seed)
     predictor = new_predictor()
     # predictor = toy_example_pfl(seed=seed)
@@ -130,7 +141,7 @@ def toy_example_dfl(seed=0):
     train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, seed=seed)
     return predictor
 
-def test_dfl_predictor(seed=0):
+def test_dfl_predictor(seed=SEED):
     pred_dfl = toy_example_dfl(seed=seed)
     w = W_TEST  # test features
     c_true = feature_cost_mapping(w) # true test costs
@@ -154,7 +165,7 @@ def test_dfl_predictor(seed=0):
     print(f"Predicted interdicted opt. sol.:\n{y_pred}")
     pass
 
-def train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train, epochs=200, lr=1e-2, seed=0):
+def train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
     set_seed(seed)
     predictor.train()
     opt_model = ToyOptModel(None)
@@ -189,7 +200,7 @@ def build_toy_dataset_adfl(w_values):
     i = interdictor(c)
     return w_values, c, y, z, i
 
-def toy_example_adfl(seed=0):
+def toy_example_adfl(seed=SEED):
     set_seed(seed)
     predictor = new_predictor()
     w_values = W_TRAIN  # training features
@@ -197,7 +208,7 @@ def toy_example_adfl(seed=0):
     train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train, seed=seed)
     return predictor
 
-def test_adfl_predictor(seed=0):
+def test_adfl_predictor(seed=SEED):
     pred_adfl = toy_example_adfl(seed=seed)
     w = W_TEST  # test features
     c_true = feature_cost_mapping(w) # true test costs
@@ -222,22 +233,42 @@ def test_adfl_predictor(seed=0):
     pass
 
 
-def test_predictors_sweep(seed=0, num_points=601, save_path=None, show=True):
+def test_predictors_sweep(seed=SEED, num_points_per_1pu=100, save_path=None, show=True):
     pred_dfl = toy_example_dfl(seed=seed)
     pred_adfl = toy_example_adfl(seed=seed)
-    w = torch.linspace(-3.0, 3.0, steps=num_points).unsqueeze(-1)
+    num_points = num_points_per_1pu*2*int(SAMPLE_MAX)+1
+    w = torch.linspace(-SAMPLE_MAX, SAMPLE_MAX, steps=num_points).unsqueeze(-1)
     c_true = feature_cost_mapping(w)
     c_train = feature_cost_mapping(W_TRAIN)
     i_train = interdictor(c_train)
-    i_true = interdictor(c_true)
+    i_true = interdictor(c_true, d=D_TEST)
     with torch.no_grad():
         c_pred_dfl = pred_dfl(w)
         c_pred_adfl = pred_adfl(w)
+
+    # Without Interdiction
+    y_true = optimizer(c_true)
+    y_pred_dfl = optimizer(c_pred_dfl)
+    y_pred_adfl = optimizer(c_pred_adfl)
+    fig_unintd = plot_predictor_sweep(
+        w,
+        c_true,
+        c_pred_dfl,
+        c_pred_adfl,
+        y_true,
+        y_pred_dfl,
+        y_pred_adfl,
+        save_path=save_path,
+        show=show,
+        # data_train = (W_TRAIN, c_train),
+        intd=False
+    )
+
+    # With Interdiction
     y_true = optimizer(c_true+i_true)
     y_pred_dfl = optimizer(c_pred_dfl+i_true)
     y_pred_adfl = optimizer(c_pred_adfl+i_true)
-
-    return plot_predictor_sweep(
+    fig_intd = plot_predictor_sweep(
         w,
         c_true+i_true,
         c_pred_dfl+i_true,
@@ -247,17 +278,19 @@ def test_predictors_sweep(seed=0, num_points=601, save_path=None, show=True):
         y_pred_adfl,
         save_path=save_path,
         show=show,
-        data_train = (W_TRAIN, c_train + i_train),
+        # data_train = (W_TRAIN, c_train + i_train),
         intd=True
     )
 
-def test_predictors_sweep_uninterdicted(seed=0, num_points=601, save_path=None, show=True):
+    return fig_unintd, fig_intd
+
+def test_predictors_sweep_uninterdicted(seed=SEED, num_points_per_1pu=100, save_path=None, show=True):
     pred_dfl = toy_example_dfl(seed=seed)
     pred_adfl = toy_example_adfl(seed=seed)
-    w = torch.linspace(-3.0, 3.0, steps=num_points).unsqueeze(-1)
+    num_points = num_points_per_1pu*2*int(SAMPLE_MAX)+1
+    w = torch.linspace(-SAMPLE_MAX, SAMPLE_MAX, steps=num_points).unsqueeze(-1)
     c_true = feature_cost_mapping(w)
     c_train = feature_cost_mapping(W_TRAIN)
-    # i_true = interdictor(c_true)
     with torch.no_grad():
         c_pred_dfl = pred_dfl(w)
         c_pred_adfl = pred_adfl(w)
@@ -275,12 +308,12 @@ def test_predictors_sweep_uninterdicted(seed=0, num_points=601, save_path=None, 
         y_pred_adfl,
         save_path=save_path,
         show=show,
-        data_train = (W_TRAIN, c_train),
+        # data_train = (W_TRAIN, c_train),
         intd=False
     )
 
 def main():
-    test_predictors_sweep_uninterdicted()
+    # test_predictors_sweep_uninterdicted()
     test_predictors_sweep()
     # test_dfl_predictor()
     # test_adfl_predictor()
