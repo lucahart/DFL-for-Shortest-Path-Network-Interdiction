@@ -27,14 +27,26 @@ def gen_train_data(
 
     # Generate file path if directory is provided
     if path_dir is not None:
-        file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seed_{seed}.csv".format(
-            samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
-            m=cfg.get("grid_size")[0], 
-            n=cfg.get("grid_size")[1], 
-            deg=cfg.get("deg"), 
-            noise=cfg.get("noise_width"), 
-            seed=cfg.get("random_seed")
-        )
+        if cfg.get("num_scenarios") is not None:
+            file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_scenarios_{scenarios}_seed_{seed}.csv".format(
+                samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
+                m=cfg.get("grid_size")[0], 
+                n=cfg.get("grid_size")[1], 
+                deg=cfg.get("deg"), 
+                noise=cfg.get("noise_width"), 
+                scenarios=cfg.get("num_scenarios"),
+                seed=cfg.get("random_seed")
+            )
+        else:
+            file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seed_{seed}.csv".format(
+                samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
+                m=cfg.get("grid_size")[0], 
+                n=cfg.get("grid_size")[1], 
+                deg=cfg.get("deg"), 
+                noise=cfg.get("noise_width"),
+                seed=cfg.get("random_seed")
+            )
+
         path_file = path_dir / ("xy" + file_name_body)
         
         try:

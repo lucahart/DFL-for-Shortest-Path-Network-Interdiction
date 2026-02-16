@@ -24,7 +24,7 @@ for seed in range(num_seeds):
     print("="*80)
 
     # Generate random seeds
-    np.random.seed(seed)
+    np.random.seed(seed + 100)
     seed1, seed2, seed3 = np.random.randint(0, 150, 3).tolist()
 
     # Set random seeds

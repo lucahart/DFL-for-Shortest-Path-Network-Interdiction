@@ -120,20 +120,20 @@ def load_data(
         simulations = load_results_from_csv(filepath)
         loaded_data[(train, valid, test, mn, deg, noise, num_seeds)] = simulations
         
-        print(
-            "Loaded: train={train}, valid={valid}, test={test}, (m,n)={mn}, "
-            "deg={deg}, noise={noise}, num_seeds={num_seeds} from {filename}"
-            .format(
-                train=train,
-                valid=valid,
-                test=test,
-                mn=mn,
-                deg=deg,
-                noise=noise,
-                num_seeds=num_seeds,
-                filename=file_info[0]['filename']
-            )
-        )
+        # print(
+        #     "Loaded: train={train}, valid={valid}, test={test}, (m,n)={mn}, "
+        #     "deg={deg}, noise={noise}, num_seeds={num_seeds} from {filename}"
+        #     .format(
+        #         train=train,
+        #         valid=valid,
+        #         test=test,
+        #         mn=mn,
+        #         deg=deg,
+        #         noise=noise,
+        #         num_seeds=num_seeds,
+        #         filename=file_info[0]['filename']
+        #     )
+        # )
     
     return loaded_data
 
@@ -159,9 +159,13 @@ def compute_percentage_increases_from_samples(all_data):
     calculations['sym_intd_s'] = (all_data['s_s'] - all_data['s_o']) / all_data['s_o'] * 100
     calculations['sym_intd_a'] = (all_data['s_a'] - all_data['s_o']) / all_data['s_o'] * 100
     
-    calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
-    calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100
-    calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100
+    # calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
+    # calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100
+    # calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100
+
+    calculations['asym_intd_p'] = np.zeros_like(all_data['o_o'])
+    calculations['asym_intd_s'] = np.zeros_like(all_data['o_o'])
+    calculations['asym_intd_a'] = np.zeros_like(all_data['o_o'])
 
     return calculations
 
@@ -190,15 +194,18 @@ def compute_percentage_increases_from_simulations(simulations):
             np.sum(sim_data['s_a'] - sim_data['s_o']) / np.sum(sim_data['s_o']) * 100
         )
 
-        calculations['asym_intd_p'].append(
-            np.sum(sim_data['a_p'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
-        )
-        calculations['asym_intd_s'].append(
-            np.sum(sim_data['a_s'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
-        )
-        calculations['asym_intd_a'].append(
-            np.sum(sim_data['a_a'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
-        )
+        # calculations['asym_intd_p'].append(
+        #     np.sum(sim_data['a_p'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
+        # )
+        # calculations['asym_intd_s'].append(
+        #     np.sum(sim_data['a_s'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
+        # )
+        # calculations['asym_intd_a'].append(
+        #     np.sum(sim_data['a_a'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
+        # )
+        calculations['asym_intd_p'].append(0)
+        calculations['asym_intd_s'].append(0)
+        calculations['asym_intd_a'].append(0)
 
     return dict(calculations)
 
@@ -315,10 +322,11 @@ if __name__ == "__main__":
     # Step 2: Load all data (or specify filters)
     loaded_data = load_data(
         data_directory, 
-        degrees=[4],
+        # degrees=[4],
         noise_values=[0.5],
         train_values=[1000],
-        valid_values=[100]
+        # valid_values=[50],
+        num_seeds_values=[5]
     )
     
     if not loaded_data:

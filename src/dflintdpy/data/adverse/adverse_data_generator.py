@@ -36,7 +36,7 @@ class AdvDataGenerator:
                  budget: int, 
                  normalization_constant: float,
                  *,
-                 num_scenarios: int = 10,
+                 num_scenarios: int = 2,
                  seed: int = 0,
                  adverse_problem: str = "SPNI",
                  **kwargs):
@@ -55,7 +55,7 @@ class AdvDataGenerator:
         normalization_constant : float
             Normalization constant for the costs.
         num_scenarios : int, optional
-            Number of interdictions to select for each sample. Defaults to 10.
+            Number of interdictions to select for each sample. Defaults to 2.
         seed : int, optional
             Seed for random number generation. Defaults to 0.
         **kwargs : dict

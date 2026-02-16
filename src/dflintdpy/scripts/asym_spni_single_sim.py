@@ -77,7 +77,10 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         verbose=visualize
     )
 
+    num_scenarios = cfg.get("num_scenarios")
+    spo_epochs = cfg.get("spo_epochs")
     cfg.set("num_scenarios", 1)
+    cfg.set("spo_epochs", spo_epochs * 2)
 
     # Generate normalized training and testing data
     training_data_non_adverse, testing_data_non_adverse, normalization_constant = gen_train_data(cfg, opt_model)
@@ -90,7 +93,8 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         verbose=visualize
     )
 
-    cfg.set("num_scenarios", 10)
+    cfg.set("num_scenarios", num_scenarios)
+    cfg.set("spo_epochs", spo_epochs)
 
 
     #########################################

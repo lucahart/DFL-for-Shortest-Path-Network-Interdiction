@@ -150,12 +150,15 @@ def compare_sym_intd(
         opt_model.setObj(cost + x_intd * interdiction)
 
         # Store the results
-        true_objs.append(opt_model._graph(y_true, interdictions=x_intd * interdiction))
-        pfl_objs.append(opt_model._graph(y_po, interdictions=x_intd * interdiction))
-        dfl_objs.append(opt_model._graph(y_spo, interdictions=x_intd * interdiction))
+        true_objs.append(opt_model._graph(y_true))
+        pfl_objs.append(opt_model._graph(y_po))
+        dfl_objs.append(opt_model._graph(y_spo))
         if adfl_predictor is not None:
-            adfl_objs.append(opt_model._graph(y_adv_spo, interdictions=x_intd * interdiction))
+            adfl_objs.append(opt_model._graph(y_adv_spo))
         print_progress(i, num_test_samples)
+
+        if true_objs[-1] > pfl_objs[-1] + 1e-3:
+            print(f"Warning: PO objective {pfl_objs[-1]:.4f} is better than true objective {true_objs[-1]:.4f} at sample {i}.")
 
     # Evaluate performance
     return {
