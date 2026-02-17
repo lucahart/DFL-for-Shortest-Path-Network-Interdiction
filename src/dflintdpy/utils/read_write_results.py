@@ -67,9 +67,9 @@ def load_results_from_csv(input_path: str) -> List[Dict[str, Any]]:
     
     # Group by simulation_index
     results = []
-    data_keys = ['o_o', 'o_p', 'o_s', 'o_a', 
-                 's_o', 's_p', 's_s', 's_a',
-                 'a_o', 'a_p', 'a_s', 'a_a']
+    data_keys = ['o_o', 'o_p', 'o_s', 'o_r', 'o_a', 
+                 's_o', 's_p', 's_s', 's_r', 's_a',
+                 'a_o', 'a_p', 'a_s', 'a_r', 'a_a']
     
     for sim_idx in sorted(df['simulation_index'].unique()):
         sim_data = df[df['simulation_index'] == sim_idx].sort_values('sample_index')
@@ -77,6 +77,9 @@ def load_results_from_csv(input_path: str) -> List[Dict[str, Any]]:
         # Reconstruct all_data
         all_data = {}
         for key in data_keys:
+            if key not in sim_data.columns:
+                all_data[key] = np.full(len(sim_data), np.nan)
+                continue
             values = sim_data[key].values
             # Try to parse JSON strings back to lists/arrays
             parsed_values = []

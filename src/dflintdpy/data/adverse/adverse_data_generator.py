@@ -39,6 +39,7 @@ class AdvDataGenerator:
                  num_scenarios: int = 2,
                  seed: int = 0,
                  adverse_problem: str = "SPNI",
+                 interdiction_policy: str = "adversarial",
                  **kwargs):
         """
         Initialize the AdverseDataGenerator.
@@ -58,6 +59,10 @@ class AdvDataGenerator:
             Number of interdictions to select for each sample. Defaults to 2.
         seed : int, optional
             Seed for random number generation. Defaults to 0.
+        interdiction_policy : str, optional
+            ``"adversarial"`` uses Benders optimization to choose interdicted
+            edges, ``"random"`` samples a random cardinality-constrained
+            interdiction pattern.
         **kwargs : dict
             Additional keyword arguments including:
             # For Bender's Decomposition:
@@ -87,6 +92,12 @@ class AdvDataGenerator:
             )
         else:
             self.adverse_problem = adverse_problem
+
+        if interdiction_policy not in ["adversarial", "random"]:
+            raise ValueError(
+                f"Unknown interdiction policy: {interdiction_policy}"
+            )
+        self.interdiction_policy = interdiction_policy
 
         if self.adverse_problem == "SPNI":
             # Check correctness of num_scenarios
@@ -236,8 +247,11 @@ class AdvDataGenerator:
         # Fill scenario 0 with original costs
         costs_grouped[:, 0, :] = costs
         
-        print(f"Generating SPNI adversarial examples for {n_samples} samples" + 
-              f" with {self.num_scenarios} scenarios...")
+        print(
+            f"Generating SPNI examples for {n_samples} samples"
+            f" with {self.num_scenarios} scenarios"
+            f" using {self.interdiction_policy} interdictions..."
+        )
         
         for idx in range(n_samples):
             cost = costs[idx]
@@ -253,12 +267,20 @@ class AdvDataGenerator:
             for scenario_idx, intd_idx in enumerate(selected_interdictions):
                 intd = self.interdictions[intd_idx, :]
                 
-                # Solve the adversarial interdiction problem
-                self._sym_interdictor.opt_model.setObj(cost)
-                sym_intd, _, _ = self._sym_interdictor.benders_decomposition(
-                    interdiction_cost=intd,
-                    versatile=versatile,
-                )
+                if self.interdiction_policy == "adversarial":
+                    # Solve the adversarial interdiction problem.
+                    self._sym_interdictor.opt_model.setObj(cost)
+                    sym_intd, _, _ = self._sym_interdictor.benders_decomposition(
+                        interdiction_cost=intd,
+                        versatile=versatile,
+                    )
+                else:
+                    # Draw a random cardinality-constrained interdiction pattern.
+                    sym_intd = np.zeros(m, dtype=np.float32)
+                    k = min(int(self._sym_interdictor.k), m)
+                    if k > 0:
+                        chosen = self._rng.choice(m, size=k, replace=False)
+                        sym_intd[chosen] = 1.0
                 
                 # Create new cost vector by adding the interdiction costs
                 new_cost = cost + sym_intd * intd

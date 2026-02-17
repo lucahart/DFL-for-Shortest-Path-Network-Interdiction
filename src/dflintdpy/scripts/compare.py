@@ -84,7 +84,8 @@ def compare_sym_intd(
         interdictions, 
         normalization_constant, 
         idx = None, 
-        adfl_predictor = None
+        adfl_predictor = None,
+        rand_adfl_predictor = None
     ):
     """
     Compare the performance of the PO and SPO models using symmetric shortest path interdiction.
@@ -99,6 +100,7 @@ def compare_sym_intd(
     pfl_objs = []
     dfl_objs = []
     adfl_objs = []
+    rand_adfl_objs = []
 
     # Print that the simulation is starting
     print(f"Running symmetric simulations with {num_test_samples} samples...")
@@ -117,6 +119,9 @@ def compare_sym_intd(
             .detach().numpy() * normalization_constant
         if adfl_predictor is not None:
             adfl_cost = adfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
+                .detach().numpy() * normalization_constant
+        if rand_adfl_predictor is not None:
+            rand_adfl_cost = rand_adfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
                 .detach().numpy() * normalization_constant
 
         # Solutions without information asymmetry
@@ -145,6 +150,9 @@ def compare_sym_intd(
         if adfl_predictor is not None:
             opt_model.setObj(adfl_cost + x_intd * interdiction)
             y_adv_spo, _ = opt_model.solve()
+        if rand_adfl_predictor is not None:
+            opt_model.setObj(rand_adfl_cost + x_intd * interdiction)
+            y_rand_adv_spo, _ = opt_model.solve()
 
         # Set true cost to evaluate objectives
         opt_model.setObj(cost + x_intd * interdiction)
@@ -155,22 +163,25 @@ def compare_sym_intd(
         dfl_objs.append(opt_model._graph(y_spo))
         if adfl_predictor is not None:
             adfl_objs.append(opt_model._graph(y_adv_spo))
+        if rand_adfl_predictor is not None:
+            rand_adfl_objs.append(opt_model._graph(y_rand_adv_spo))
         print_progress(i, num_test_samples)
 
-        if true_objs[-1] > pfl_objs[-1] + 1e-3:
+        if rand_adfl_predictor is not None and \
+           true_objs[-1] > rand_adfl_objs[-1] + 1e-3:
             print(f"Warning: PO objective {pfl_objs[-1]:.4f} is better than true objective {true_objs[-1]:.4f} at sample {i}.")
 
     # Evaluate performance
-    return {
+    results = {
         "true_objective": np.array(true_objs),
         "po_objective": np.array(pfl_objs),
         "spo_objective": np.array(dfl_objs),
-    } if adfl_predictor is None else {
-        "true_objective": np.array(true_objs),
-        "po_objective": np.array(pfl_objs),
-        "spo_objective": np.array(dfl_objs),
-        "adv_spo_objective": np.array(adfl_objs)
     }
+    if adfl_predictor is not None:
+        results["adv_spo_objective"] = np.array(adfl_objs)
+    if rand_adfl_predictor is not None:
+        results["rand_adv_spo_objective"] = np.array(rand_adfl_objs)
+    return results
 
 
 def compare_asym_intd(
@@ -323,7 +334,6 @@ def compare_wrong_asym_intd(
     #     "estimated_objective": np.array(est_objs),
     # }
     return np.array(est_objs)
-
 
 
 

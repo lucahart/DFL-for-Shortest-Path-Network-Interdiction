@@ -18,10 +18,13 @@ from dflintdpy.data.adverse.adverse_loader import AdvLoader
 def gen_train_data(
         cfg: HP,
         opt_model: 'ShortestPathGrb',
-        path_dir: str = None
+        path_dir: str = None,
+        interdiction_policy: str = "adversarial",
 ) -> dict:
     """
     Sets up the graph and data loaders for the shortest path problem.
+    ``interdiction_policy`` controls whether scenario generation uses
+    adversarial or random interdictions.
     """
     file_found = False
 
@@ -99,17 +102,24 @@ def gen_train_data(
         opt_model, 
         budget=cfg.get("budget"), 
         normalization_constant=normalization_constant,
-        num_scenarios=cfg.get("num_scenarios")
+        num_scenarios=cfg.get("num_scenarios"),
+        interdiction_policy=interdiction_policy,
     )
     X_train, c_train, i_train = adversarial_generator.generate(
         X_train, 
         c_train,
-        file_path=path_dir / ("i_train" + file_name_body) if path_dir is not None else None
+        file_path=(
+            path_dir / (f"i_train_{interdiction_policy}" + file_name_body)
+            if path_dir is not None else None
+        )
     )
     X_val, c_val, i_val = adversarial_generator.generate(
         X_val, 
         c_val,
-        file_path=path_dir / ("i_valid" + file_name_body) if path_dir is not None else None
+        file_path=(
+            path_dir / (f"i_valid_{interdiction_policy}" + file_name_body)
+            if path_dir is not None else None
+        )
     )
 
     # Create data sets
@@ -357,5 +367,3 @@ def setup_dfl_predictor(
         print("Final regret on validation set: ", val_regret_log[-1])
 
     return spo_model
-
-
