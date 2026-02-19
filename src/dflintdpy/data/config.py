@@ -22,9 +22,9 @@ class HP:
     num_test_samples = 1000
     batch_size = 32
     po_epochs = 400
-    spo_epochs = 200
-    po_lr = 2e-4
-    spo_lr = 3.5e-4
+    spo_epochs = 200 # 300
+    po_lr = 2e-4 # 2e-3
+    spo_lr = 3.5e-4 # 5e-3
     lam = 0
     deg = 8
     anchor = "mse"

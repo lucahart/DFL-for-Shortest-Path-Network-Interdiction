@@ -69,6 +69,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         interdiction_policy="random",
     )
 
+    print(f"Training PFL prediction model.")
     po_model = setup_pfl_predictor(
         cfg,
         graph,
@@ -77,6 +78,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         verbose=visualize
     )
 
+    print(f"Training A-DFL prediction model.")
     spo_model_adversarial = setup_dfl_predictor(
         cfg,
         graph,
@@ -85,6 +87,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         verbose=visualize
     )
 
+    print(f"Training R-DFL prediction model.")
     spo_model_random = setup_dfl_predictor(
         cfg,
         graph,
@@ -105,6 +108,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         interdiction_policy="adversarial",
     )
 
+    print(f"Training DFL prediction model.")
     spo_model_non_adverse = setup_dfl_predictor(
         cfg,
         graph,
