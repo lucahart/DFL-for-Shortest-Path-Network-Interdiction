@@ -278,3 +278,83 @@ def plot_dfl_init_vs_trained(
         plt.show()
 
     return fig
+
+def plot_dfl_init_vs_cvx_vs_spo(
+    w_values,
+    c_true,
+    c_pred_init,
+    c_pred_cvx,
+    c_pred_spo,
+    y_true,
+    y_pred_init,
+    y_pred_cvx,
+    y_pred_spo,
+    save_path=None,
+    show=True,
+    data_train=None,
+    intd=False
+):
+    w_np = _to_numpy(w_values).squeeze(-1)
+    true_np = _to_numpy(c_true)
+    model_data = [
+        (
+            "Initialized Model" + (" with Interdiction" if intd else ""),
+            "Init",
+            "tab:gray",
+            _to_numpy(c_pred_init),
+            _to_numpy(y_pred_init),
+            _to_numpy(_solution_match_mask(y_true, y_pred_init)).astype(bool),
+        ),
+        (
+            "CVXPYLayers-Trained Model" + (" with Interdiction" if intd else ""),
+            "CVXPY",
+            "tab:blue",
+            _to_numpy(c_pred_cvx),
+            _to_numpy(y_pred_cvx),
+            _to_numpy(_solution_match_mask(y_true, y_pred_cvx)).astype(bool),
+        ),
+        (
+            "SPO+-Trained Model" + (" with Interdiction" if intd else ""),
+            "SPO+",
+            "tab:orange",
+            _to_numpy(c_pred_spo),
+            _to_numpy(y_pred_spo),
+            _to_numpy(_solution_match_mask(y_true, y_pred_spo)).astype(bool),
+        ),
+    ]
+
+    train_w = None
+    if data_train is not None:
+        train_w, _ = data_train
+        train_w = _to_numpy(train_w).squeeze(-1)
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 4.5), sharey=True)
+    for ax, (title, label_suffix, color, pred_np, y_pred_np, match_np) in zip(axes, model_data):
+        if train_w is not None:
+            _plot_train_lines(ax, train_w)
+        _plot_true_costs(ax, w_np, true_np, intd=intd)
+        _plot_predicted_costs(
+            ax,
+            w_np,
+            pred_np,
+            y_pred_np,
+            match_np,
+            color,
+            label_suffix,
+            intd=intd
+        )
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.2)
+        ax.set_xlabel("w")
+        ax.legend(loc="upper left", fontsize=9)
+
+    axes[0].set_ylabel("Cost")
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        print(f"Saved init-vs-cvx-vs-spo plot to {save_path}")
+    if show:
+        plt.show()
+
+    return fig

@@ -9,6 +9,10 @@ try:
 except ImportError:
     cp = None
     CvxpyLayer = None
+try:
+    import pyepo
+except ImportError:
+    pyepo = None
 from toy_example.main_funcs import (
     feature_cost_mapping, 
     optimizer, 
@@ -17,7 +21,7 @@ from toy_example.main_funcs import (
 )
 from toy_example.plotting import (
     plot_predictor_sweep,
-    plot_dfl_init_vs_trained,
+    plot_dfl_init_vs_cvx_vs_spo,
 )
 
 # PARAMETERS
@@ -26,7 +30,7 @@ N_EPOCHS = 100
 SAMPLE_MAX = 6.0
 D_TEST = 5.0
 LR_DEFAULT = 2e-2
-N_TRAIN_SAMPLES = 3
+N_TRAIN_SAMPLES = 100
 
 # Constants
 torch.manual_seed(SEED)
@@ -45,6 +49,13 @@ def _require_cvxpy_layers():
         raise ImportError(
             "cvxpy and cvxpylayers are required for DFL backward pass. "
             "Install with: pip install cvxpy cvxpylayers"
+        )
+
+def _require_pyepo():
+    if pyepo is None:
+        raise ImportError(
+            "pyepo is required for SPO+ training. "
+            "Install with: pip install pyepo"
         )
 
 def _get_cvxpy_path_layer():
@@ -84,6 +95,9 @@ def dfl_loss_cvxpy(c_pred, c_true, path_layer):
     )
     y_pred = _path_mix_to_edge_solution(path_mix_pred)
     return torch.mean(torch.sum(c_true * y_pred, dim=-1))
+
+def dfl_loss_spoplus(c_pred, c_true, y_true, z_true, spo_plus_loss):
+    return spo_plus_loss(c_pred, c_true, y_true, z_true)
 
 def build_toy_dataset_dfl(w_values):
     c = feature_cost_mapping(w_values)
@@ -168,7 +182,7 @@ def test_pfl_predictor(seed=SEED):
     print(f"Predicted interdicted opt. sol.:\n{y_pred}")
     pass
 
-def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
+def train_dfl_predictor_cvx(predictor, w_train, c_train, y_train, z_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
     set_seed(seed)
     predictor.train()
     path_layer = _get_cvxpy_path_layer()
@@ -179,66 +193,116 @@ def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=N_
         c_pred = predictor(w_train)
         loss = dfl_loss_cvxpy(c_pred, c_train, path_layer)
         if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
-            print(f"[DFL] epoch {epoch + 1}/{epochs} loss: {loss.item():.6f}")
+            print(f"[DFL-CVXPY] epoch {epoch + 1}/{epochs} loss: {loss.item():.6f}")
         loss.backward()
         optimizer_.step()
     return predictor
 
-def toy_example_dfl(seed=SEED, return_initialized=False):
+def train_dfl_predictor_spo(predictor, w_train, c_train, y_train, z_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
+    _require_pyepo()
+    from toy_example.opt import ToyOptModel
+
+    set_seed(seed)
+    predictor.train()
+    opt_model = ToyOptModel(None)
+    spo_plus_loss = pyepo.func.SPOPlus(opt_model, processes=1)
+    optimizer_ = torch.optim.Adam(predictor.parameters(), lr=lr)
+    print_every = max(1, epochs // 10)
+    for epoch in range(epochs):
+        optimizer_.zero_grad()
+        c_pred = predictor(w_train)
+        loss = dfl_loss_spoplus(c_pred, c_train, y_train, z_train, spo_plus_loss)
+        if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
+            print(f"[DFL-SPO+] epoch {epoch + 1}/{epochs} loss: {loss.item():.6f}")
+        loss.backward()
+        optimizer_.step()
+    return predictor
+
+def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED, method="cvx"):
+    if method == "cvx":
+        return train_dfl_predictor_cvx(
+            predictor, w_train, c_train, y_train, z_train, epochs=epochs, lr=lr, seed=seed
+        )
+    if method == "spo":
+        return train_dfl_predictor_spo(
+            predictor, w_train, c_train, y_train, z_train, epochs=epochs, lr=lr, seed=seed
+        )
+    raise ValueError(f"Unknown DFL training method '{method}'. Expected 'cvx' or 'spo'.")
+
+def toy_example_dfl(seed=SEED, return_initialized=False, method="cvx"):
     set_seed(seed)
     predictor = new_predictor()
     predictor_init = copy.deepcopy(predictor) if return_initialized else None
     # predictor = toy_example_pfl(seed=seed)
     w_values = W_TRAIN  # training features
     w_train, c_train, y_train, z_train = build_toy_dataset_dfl(w_values)
-    train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, seed=seed)
+    train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, method=method, seed=seed)
     if return_initialized:
         return predictor_init, predictor
     return predictor
 
 def test_dfl_predictor(seed=SEED, num_points_per_1pu=100, save_path=None, show=True):
-    pred_dfl_init, pred_dfl = toy_example_dfl(seed=seed, return_initialized=True)
+    set_seed(seed)
+    pred_dfl_init = new_predictor()
+    pred_dfl_cvx = copy.deepcopy(pred_dfl_init)
+    pred_dfl_spo = copy.deepcopy(pred_dfl_init)
+
+    w_train, c_train, y_train, z_train = build_toy_dataset_dfl(W_TRAIN)
+    train_dfl_predictor_cvx(pred_dfl_cvx, w_train, c_train, y_train, z_train, seed=seed)
+    train_dfl_predictor_spo(pred_dfl_spo, w_train, c_train, y_train, z_train, seed=seed)
+
     num_points = num_points_per_1pu*2*int(SAMPLE_MAX)+1
     w_sweep = torch.linspace(-SAMPLE_MAX, SAMPLE_MAX, steps=num_points).unsqueeze(-1)
     c_sweep_true = feature_cost_mapping(w_sweep)
     with torch.no_grad():
         c_sweep_pred_init = pred_dfl_init(w_sweep)
-        c_sweep_pred = pred_dfl(w_sweep)
+        c_sweep_pred_cvx = pred_dfl_cvx(w_sweep)
+        c_sweep_pred_spo = pred_dfl_spo(w_sweep)
     y_sweep_true = optimizer(c_sweep_true)
     y_sweep_pred_init = optimizer(c_sweep_pred_init)
-    y_sweep_pred = optimizer(c_sweep_pred)
-    plot_dfl_init_vs_trained(
+    y_sweep_pred_cvx = optimizer(c_sweep_pred_cvx)
+    y_sweep_pred_spo = optimizer(c_sweep_pred_spo)
+    plot_dfl_init_vs_cvx_vs_spo(
         w_sweep,
         c_sweep_true,
         c_sweep_pred_init,
-        c_sweep_pred,
+        c_sweep_pred_cvx,
+        c_sweep_pred_spo,
         y_sweep_true,
         y_sweep_pred_init,
-        y_sweep_pred,
+        y_sweep_pred_cvx,
+        y_sweep_pred_spo,
         save_path=save_path,
         show=show,
+        # data_train=(W_TRAIN, c_train),
     )
 
     w = W_TEST  # test features
     c_true = feature_cost_mapping(w) # true test costs
     with torch.no_grad():
-        c_pred = pred_dfl(w) # predicted test costs
+        c_pred_cvx = pred_dfl_cvx(w) # predicted test costs
+        c_pred_spo = pred_dfl_spo(w) # predicted test costs
     intd = interdictor(c_true) # interdictions
     c_intd_true = c_true + intd # true interdicted costs
-    c_intd_pred = c_pred + intd # predicted interdicted costs
+    c_intd_pred_cvx = c_pred_cvx + intd # predicted interdicted costs
+    c_intd_pred_spo = c_pred_spo + intd # predicted interdicted costs
     y_true = optimizer(c_intd_true) # true interdicted opt. sol.
-    y_pred = optimizer(c_intd_pred) # predicted interdicted opt. sol.
+    y_pred_cvx = optimizer(c_intd_pred_cvx) # predicted interdicted opt. sol.
+    y_pred_spo = optimizer(c_intd_pred_spo) # predicted interdicted opt. sol.
     print("="*30)
-    print(f"Test DFL Predictor Results:")
+    print(f"Test DFL Predictor Results (CVXPY vs SPO+):")
     print("="*30)
     print(f"Features:\n{w}")
     print(f"True costs:\n{c_true}")
-    print(f"Predicted costs:\n{c_pred}")
+    print(f"Predicted costs (CVXPY):\n{c_pred_cvx}")
+    print(f"Predicted costs (SPO+):\n{c_pred_spo}")
     print(f"Interdictions:\n{intd}")
     print(f"True interdicted costs:\n{c_intd_true}")
-    print(f"Predicted interdicted costs:\n{c_intd_pred}")
+    print(f"Predicted interdicted costs (CVXPY):\n{c_intd_pred_cvx}")
+    print(f"Predicted interdicted costs (SPO+):\n{c_intd_pred_spo}")
     print(f"True interdicted opt. sol.:\n{y_true}")
-    print(f"Predicted interdicted opt. sol.:\n{y_pred}")
+    print(f"Predicted interdicted opt. sol. (CVXPY):\n{y_pred_cvx}")
+    print(f"Predicted interdicted opt. sol. (SPO+):\n{y_pred_spo}")
     pass
 
 def train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
