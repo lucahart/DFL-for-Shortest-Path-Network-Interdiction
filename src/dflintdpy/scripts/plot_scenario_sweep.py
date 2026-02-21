@@ -217,6 +217,7 @@ def main() -> None:
         title="Percentage Increase vs Oracle (Mean+Std over Samples)",
         show=args.show,
     )
+    pass
 
 
 if __name__ == "__main__":
