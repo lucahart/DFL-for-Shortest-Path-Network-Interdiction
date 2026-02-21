@@ -3,14 +3,18 @@ import copy
 import numpy as np
 import torch
 import torch.nn as nn
-import pyepo
+try:
+    import cvxpy as cp
+    from cvxpylayers.torch import CvxpyLayer
+except ImportError:
+    cp = None
+    CvxpyLayer = None
 from toy_example.main_funcs import (
     feature_cost_mapping, 
     optimizer, 
     sol_value,
     interdictor
 )
-from toy_example.opt import ToyOptModel
 from toy_example.plotting import (
     plot_predictor_sweep,
     plot_dfl_init_vs_trained,
@@ -18,11 +22,11 @@ from toy_example.plotting import (
 
 # PARAMETERS
 SEED = 5
-N_EPOCHS = 500
+N_EPOCHS = 100
 SAMPLE_MAX = 6.0
 D_TEST = 5.0
 LR_DEFAULT = 2e-2
-N_TRAIN_SAMPLES = 500
+N_TRAIN_SAMPLES = 3
 
 # Constants
 torch.manual_seed(SEED)
@@ -30,9 +34,56 @@ W_TRAIN = (torch.rand(N_TRAIN_SAMPLES, 1)-.5)*2*SAMPLE_MAX # torch.tensor([-1.0,
 W_TEST = torch.tensor([-SAMPLE_MAX, -1.0, 1.0, SAMPLE_MAX]).unsqueeze(-1)  # test features
 
 # Utility Functions
+_CVXPY_PATH_LAYER = None
+
 def set_seed(seed=SEED):
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+def _require_cvxpy_layers():
+    if cp is None or CvxpyLayer is None:
+        raise ImportError(
+            "cvxpy and cvxpylayers are required for DFL backward pass. "
+            "Install with: pip install cvxpy cvxpylayers"
+        )
+
+def _get_cvxpy_path_layer():
+    global _CVXPY_PATH_LAYER
+    _require_cvxpy_layers()
+    if _CVXPY_PATH_LAYER is None:
+        path_cost = cp.Parameter(2)
+        path_mix = cp.Variable(2)
+        objective = cp.Minimize(
+            path_cost @ path_mix #+ 1e-3 * cp.sum_squares(path_mix)
+        )
+        constraints = [cp.sum(path_mix) == 1, path_mix >= 0]
+        problem = cp.Problem(objective, constraints)
+        if not problem.is_dpp():
+            raise RuntimeError("CVXPY problem is not DPP-compliant for CvxpyLayer.")
+        _CVXPY_PATH_LAYER = CvxpyLayer(
+            problem,
+            parameters=[path_cost],
+            variables=[path_mix]
+        )
+    return _CVXPY_PATH_LAYER
+
+def _edge_to_path_costs(c):
+    return torch.stack((c[..., 0] + c[..., 1], c[..., 2] + c[..., 3]), dim=-1)
+
+def _path_mix_to_edge_solution(path_mix):
+    return torch.stack(
+        (path_mix[..., 0], path_mix[..., 0], path_mix[..., 1], path_mix[..., 1]),
+        dim=-1
+    )
+
+def dfl_loss_cvxpy(c_pred, c_true, path_layer):
+    pred_path_costs = _edge_to_path_costs(c_pred)
+    path_mix_pred, = path_layer(
+        pred_path_costs,
+        solver_args={"eps": 1e-8, "max_iters": 5000}
+    )
+    y_pred = _path_mix_to_edge_solution(path_mix_pred)
+    return torch.mean(torch.sum(c_true * y_pred, dim=-1))
 
 def build_toy_dataset_dfl(w_values):
     c = feature_cost_mapping(w_values)
@@ -120,14 +171,13 @@ def test_pfl_predictor(seed=SEED):
 def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
     set_seed(seed)
     predictor.train()
-    opt_model = ToyOptModel(None)
-    criterion = pyepo.func.SPOPlus(opt_model, processes=1)
+    path_layer = _get_cvxpy_path_layer()
     optimizer_ = torch.optim.Adam(predictor.parameters(), lr=lr)
     print_every = max(1, epochs // 10)
     for epoch in range(epochs):
         optimizer_.zero_grad()
         c_pred = predictor(w_train)
-        loss = criterion(c_pred, c_train, y_train, z_train)
+        loss = dfl_loss_cvxpy(c_pred, c_train, path_layer)
         if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
             print(f"[DFL] epoch {epoch + 1}/{epochs} loss: {loss.item():.6f}")
         loss.backward()
@@ -194,22 +244,21 @@ def test_dfl_predictor(seed=SEED, num_points_per_1pu=100, save_path=None, show=T
 def train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
     set_seed(seed)
     predictor.train()
-    opt_model = ToyOptModel(None)
-    criterion = pyepo.func.SPOPlus(opt_model, processes=1)
+    path_layer = _get_cvxpy_path_layer()
     optimizer_ = torch.optim.Adam(predictor.parameters(), lr=lr)
     print_every = max(1, epochs // 10)
     for epoch in range(epochs):
         # Train without interdiction
         optimizer_.zero_grad()
         c_pred = predictor(w_train)
-        loss = criterion(c_pred, c_train, y_train, z_train)
+        loss = dfl_loss_cvxpy(c_pred, c_train, path_layer)
         loss.backward()
         optimizer_.step()
         # Train with interdiction
         optimizer_.zero_grad()
+        c_intd_true = c_train + i_train
         c_intd_pred = predictor(w_train) + i_train
-        y_intd = optimizer(c_train + i_train)
-        loss_intd = criterion(c_intd_pred, c_train + i_train, y_intd, z_train)
+        loss_intd = dfl_loss_cvxpy(c_intd_pred, c_intd_true, path_layer)
         if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
             print(
                 f"[A-DFL] epoch {epoch + 1}/{epochs} "
