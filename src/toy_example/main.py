@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import copy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,7 +12,8 @@ from toy_example.main_funcs import (
 )
 from toy_example.opt import ToyOptModel
 from toy_example.plotting import (
-    plot_predictor_sweep
+    plot_predictor_sweep,
+    plot_dfl_init_vs_trained,
 )
 
 # PARAMETERS
@@ -20,7 +22,7 @@ N_EPOCHS = 500
 SAMPLE_MAX = 6.0
 D_TEST = 5.0
 LR_DEFAULT = 2e-2
-N_TRAIN_SAMPLES = 5000
+N_TRAIN_SAMPLES = 500
 
 # Constants
 torch.manual_seed(SEED)
@@ -56,9 +58,9 @@ def new_predictor():
         # nn.Linear(4, 4)
     )
     # predictor.apply(lambda m: weights_init(m, value=1.0))
-    with torch.no_grad():
-        predictor[0].weight = torch.nn.Parameter(torch.tensor([.1, .1, -.1, -.1], dtype=torch.float).unsqueeze(1))
-        predictor[0].bias.zero_()
+    # with torch.no_grad():
+    #     predictor[0].weight = torch.nn.Parameter(torch.tensor([.1, .1, -.1, -.1], dtype=torch.float).unsqueeze(1))
+    #     predictor[0].bias.zero_()
     # with torch.no_grad():
     #     predictor[0].weight = torch.nn.Parameter(torch.tensor([1, -2, -1, 2], dtype=torch.float).unsqueeze(1))
     #     predictor[0].bias.zero_()
@@ -132,17 +134,41 @@ def train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, epochs=N_
         optimizer_.step()
     return predictor
 
-def toy_example_dfl(seed=SEED):
+def toy_example_dfl(seed=SEED, return_initialized=False):
     set_seed(seed)
     predictor = new_predictor()
+    predictor_init = copy.deepcopy(predictor) if return_initialized else None
     # predictor = toy_example_pfl(seed=seed)
     w_values = W_TRAIN  # training features
     w_train, c_train, y_train, z_train = build_toy_dataset_dfl(w_values)
     train_dfl_predictor(predictor, w_train, c_train, y_train, z_train, seed=seed)
+    if return_initialized:
+        return predictor_init, predictor
     return predictor
 
-def test_dfl_predictor(seed=SEED):
-    pred_dfl = toy_example_dfl(seed=seed)
+def test_dfl_predictor(seed=SEED, num_points_per_1pu=100, save_path=None, show=True):
+    pred_dfl_init, pred_dfl = toy_example_dfl(seed=seed, return_initialized=True)
+    num_points = num_points_per_1pu*2*int(SAMPLE_MAX)+1
+    w_sweep = torch.linspace(-SAMPLE_MAX, SAMPLE_MAX, steps=num_points).unsqueeze(-1)
+    c_sweep_true = feature_cost_mapping(w_sweep)
+    with torch.no_grad():
+        c_sweep_pred_init = pred_dfl_init(w_sweep)
+        c_sweep_pred = pred_dfl(w_sweep)
+    y_sweep_true = optimizer(c_sweep_true)
+    y_sweep_pred_init = optimizer(c_sweep_pred_init)
+    y_sweep_pred = optimizer(c_sweep_pred)
+    plot_dfl_init_vs_trained(
+        w_sweep,
+        c_sweep_true,
+        c_sweep_pred_init,
+        c_sweep_pred,
+        y_sweep_true,
+        y_sweep_pred_init,
+        y_sweep_pred,
+        save_path=save_path,
+        show=show,
+    )
+
     w = W_TEST  # test features
     c_true = feature_cost_mapping(w) # true test costs
     with torch.no_grad():
@@ -314,8 +340,8 @@ def test_predictors_sweep_uninterdicted(seed=SEED, num_points_per_1pu=100, save_
 
 def main():
     # test_predictors_sweep_uninterdicted()
-    test_predictors_sweep()
-    # test_dfl_predictor()
+    # test_predictors_sweep()
+    test_dfl_predictor()
     # test_adfl_predictor()
     pass
 

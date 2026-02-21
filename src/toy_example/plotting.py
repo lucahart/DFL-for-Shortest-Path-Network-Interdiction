@@ -217,3 +217,64 @@ def plot_predictor_sweep(
         plt.show()
 
     return fig
+
+def plot_dfl_init_vs_trained(
+    w_values,
+    c_true,
+    c_pred_init,
+    c_pred_trained,
+    y_true,
+    y_pred_init,
+    y_pred_trained,
+    save_path=None,
+    show=True,
+    data_train=None,
+    intd=False
+):
+    plot_data = _prepare_sweep_plot_data(
+        w_values,
+        c_true,
+        c_pred_init,
+        c_pred_trained,
+        y_true,
+        y_pred_init,
+        y_pred_trained,
+        data_train=data_train
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
+    _plot_cost_panel(
+        axes[0],
+        plot_data,
+        pred_key="dfl",
+        y_key="y_dfl",
+        match_key="match_dfl",
+        color="tab:gray",
+        title="Initialized Model" + (" with Interdiction" if intd else ""),
+        label_suffix="Init",
+        intd=intd
+    )
+    _plot_cost_panel(
+        axes[1],
+        plot_data,
+        pred_key="adfl",
+        y_key="y_adfl",
+        match_key="match_adfl",
+        color="tab:blue",
+        title="Trained Model" + (" with Interdiction" if intd else ""),
+        label_suffix="Trained",
+        intd=intd
+    )
+
+    axes[0].set_ylabel("Cost")
+    axes[0].legend(loc="upper left", fontsize=9)
+    axes[1].legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        print(f"Saved init-vs-trained plot to {save_path}")
+    if show:
+        plt.show()
+
+    return fig
