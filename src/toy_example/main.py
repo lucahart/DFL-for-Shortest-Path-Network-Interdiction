@@ -21,6 +21,7 @@ from toy_example.main_funcs import (
 )
 from toy_example.plotting import (
     plot_predictor_sweep,
+    plot_dfl_init_vs_trained,
     plot_dfl_init_vs_cvx_vs_spo,
 )
 
@@ -67,14 +68,16 @@ def _get_cvxpy_path_layer():
         objective = cp.Minimize(
             path_cost @ path_mix #+ 1e-3 * cp.sum_squares(path_mix)
         )
-        constraints = [cp.sum(path_mix) == 1, path_mix >= 0]
+        constraints = [cp.sum(path_mix) >= 1, path_mix >= 0]
         problem = cp.Problem(objective, constraints)
         if not problem.is_dpp():
             raise RuntimeError("CVXPY problem is not DPP-compliant for CvxpyLayer.")
         _CVXPY_PATH_LAYER = CvxpyLayer(
             problem,
             parameters=[path_cost],
-            variables=[path_mix]
+            variables=[path_mix],
+            # solver="DIFFCP",
+            # solver_args={"eps": 1e-8, "max_iters": 5000}
         )
     return _CVXPY_PATH_LAYER
 
@@ -90,8 +93,7 @@ def _path_mix_to_edge_solution(path_mix):
 def dfl_loss_cvxpy(c_pred, c_true, path_layer):
     pred_path_costs = _edge_to_path_costs(c_pred)
     path_mix_pred, = path_layer(
-        pred_path_costs,
-        solver_args={"eps": 1e-8, "max_iters": 5000}
+        pred_path_costs
     )
     y_pred = _path_mix_to_edge_solution(path_mix_pred)
     return torch.mean(torch.sum(c_true * y_pred, dim=-1))
@@ -241,68 +243,137 @@ def toy_example_dfl(seed=SEED, return_initialized=False, method="cvx"):
         return predictor_init, predictor
     return predictor
 
-def test_dfl_predictor(seed=SEED, num_points_per_1pu=100, save_path=None, show=True):
+def test_dfl_predictor(
+    seed=SEED,
+    num_points_per_1pu=100,
+    save_path=None,
+    show=True,
+    comparison_view="all"
+):
+    aliases = {
+        "init+cvxpylayers trained": "init_cvx",
+        "init+spo+ trained": "init_spo",
+        "init, cvxpylayers trained, spo+ trained": "all",
+    }
+    comparison_view = aliases.get(comparison_view, comparison_view)
+    valid_views = {"init_cvx", "init_spo", "all"}
+    if comparison_view not in valid_views:
+        raise ValueError(
+            f"Unknown comparison_view '{comparison_view}'. "
+            f"Expected one of {sorted(valid_views)}."
+        )
+
     set_seed(seed)
     pred_dfl_init = new_predictor()
-    pred_dfl_cvx = copy.deepcopy(pred_dfl_init)
-    pred_dfl_spo = copy.deepcopy(pred_dfl_init)
+    need_cvx = comparison_view in {"init_cvx", "all"}
+    need_spo = comparison_view in {"init_spo", "all"}
+    pred_dfl_cvx = copy.deepcopy(pred_dfl_init) if need_cvx else None
+    pred_dfl_spo = copy.deepcopy(pred_dfl_init) if need_spo else None
 
     w_train, c_train, y_train, z_train = build_toy_dataset_dfl(W_TRAIN)
-    train_dfl_predictor_cvx(pred_dfl_cvx, w_train, c_train, y_train, z_train, seed=seed)
-    train_dfl_predictor_spo(pred_dfl_spo, w_train, c_train, y_train, z_train, seed=seed)
+    if need_cvx:
+        train_dfl_predictor_cvx(pred_dfl_cvx, w_train, c_train, y_train, z_train, seed=seed)
+    if need_spo:
+        train_dfl_predictor_spo(pred_dfl_spo, w_train, c_train, y_train, z_train, seed=seed)
 
     num_points = num_points_per_1pu*2*int(SAMPLE_MAX)+1
     w_sweep = torch.linspace(-SAMPLE_MAX, SAMPLE_MAX, steps=num_points).unsqueeze(-1)
     c_sweep_true = feature_cost_mapping(w_sweep)
     with torch.no_grad():
         c_sweep_pred_init = pred_dfl_init(w_sweep)
-        c_sweep_pred_cvx = pred_dfl_cvx(w_sweep)
-        c_sweep_pred_spo = pred_dfl_spo(w_sweep)
+        c_sweep_pred_cvx = pred_dfl_cvx(w_sweep) if need_cvx else None
+        c_sweep_pred_spo = pred_dfl_spo(w_sweep) if need_spo else None
     y_sweep_true = optimizer(c_sweep_true)
     y_sweep_pred_init = optimizer(c_sweep_pred_init)
-    y_sweep_pred_cvx = optimizer(c_sweep_pred_cvx)
-    y_sweep_pred_spo = optimizer(c_sweep_pred_spo)
-    plot_dfl_init_vs_cvx_vs_spo(
-        w_sweep,
-        c_sweep_true,
-        c_sweep_pred_init,
-        c_sweep_pred_cvx,
-        c_sweep_pred_spo,
-        y_sweep_true,
-        y_sweep_pred_init,
-        y_sweep_pred_cvx,
-        y_sweep_pred_spo,
-        save_path=save_path,
-        show=show,
-        # data_train=(W_TRAIN, c_train),
-    )
+    y_sweep_pred_cvx = optimizer(c_sweep_pred_cvx) if need_cvx else None
+    y_sweep_pred_spo = optimizer(c_sweep_pred_spo) if need_spo else None
+
+    if comparison_view == "init_cvx":
+        plot_dfl_init_vs_trained(
+            w_sweep,
+            c_sweep_true,
+            c_sweep_pred_init,
+            c_sweep_pred_cvx,
+            y_sweep_true,
+            y_sweep_pred_init,
+            y_sweep_pred_cvx,
+            save_path=save_path,
+            show=show,
+            # data_train=(W_TRAIN, c_train),
+            title_init="Initialized Model",
+            title_trained="CVXPYLayers-Trained Model",
+            label_init="Init",
+            label_trained="CVXPY",
+            color_init="tab:gray",
+            color_trained="tab:blue",
+        )
+    elif comparison_view == "init_spo":
+        plot_dfl_init_vs_trained(
+            w_sweep,
+            c_sweep_true,
+            c_sweep_pred_init,
+            c_sweep_pred_spo,
+            y_sweep_true,
+            y_sweep_pred_init,
+            y_sweep_pred_spo,
+            save_path=save_path,
+            show=show,
+            # data_train=(W_TRAIN, c_train),
+            title_init="Initialized Model",
+            title_trained="SPO+-Trained Model",
+            label_init="Init",
+            label_trained="SPO+",
+            color_init="tab:gray",
+            color_trained="tab:orange",
+        )
+    else:
+        plot_dfl_init_vs_cvx_vs_spo(
+            w_sweep,
+            c_sweep_true,
+            c_sweep_pred_init,
+            c_sweep_pred_cvx,
+            c_sweep_pred_spo,
+            y_sweep_true,
+            y_sweep_pred_init,
+            y_sweep_pred_cvx,
+            y_sweep_pred_spo,
+            save_path=save_path,
+            show=show,
+            # data_train=(W_TRAIN, c_train),
+        )
 
     w = W_TEST  # test features
     c_true = feature_cost_mapping(w) # true test costs
     with torch.no_grad():
-        c_pred_cvx = pred_dfl_cvx(w) # predicted test costs
-        c_pred_spo = pred_dfl_spo(w) # predicted test costs
+        c_pred_cvx = pred_dfl_cvx(w) if need_cvx else None
+        c_pred_spo = pred_dfl_spo(w) if need_spo else None
     intd = interdictor(c_true) # interdictions
     c_intd_true = c_true + intd # true interdicted costs
-    c_intd_pred_cvx = c_pred_cvx + intd # predicted interdicted costs
-    c_intd_pred_spo = c_pred_spo + intd # predicted interdicted costs
+    c_intd_pred_cvx = c_pred_cvx + intd if need_cvx else None
+    c_intd_pred_spo = c_pred_spo + intd if need_spo else None
     y_true = optimizer(c_intd_true) # true interdicted opt. sol.
-    y_pred_cvx = optimizer(c_intd_pred_cvx) # predicted interdicted opt. sol.
-    y_pred_spo = optimizer(c_intd_pred_spo) # predicted interdicted opt. sol.
+    y_pred_cvx = optimizer(c_intd_pred_cvx) if need_cvx else None
+    y_pred_spo = optimizer(c_intd_pred_spo) if need_spo else None
     print("="*30)
-    print(f"Test DFL Predictor Results (CVXPY vs SPO+):")
+    print(f"Test DFL Predictor Results (comparison_view={comparison_view}):")
     print("="*30)
     print(f"Features:\n{w}")
     print(f"True costs:\n{c_true}")
-    print(f"Predicted costs (CVXPY):\n{c_pred_cvx}")
-    print(f"Predicted costs (SPO+):\n{c_pred_spo}")
+    if need_cvx:
+        print(f"Predicted costs (CVXPY):\n{c_pred_cvx}")
+    if need_spo:
+        print(f"Predicted costs (SPO+):\n{c_pred_spo}")
     print(f"Interdictions:\n{intd}")
     print(f"True interdicted costs:\n{c_intd_true}")
-    print(f"Predicted interdicted costs (CVXPY):\n{c_intd_pred_cvx}")
-    print(f"Predicted interdicted costs (SPO+):\n{c_intd_pred_spo}")
+    if need_cvx:
+        print(f"Predicted interdicted costs (CVXPY):\n{c_intd_pred_cvx}")
+    if need_spo:
+        print(f"Predicted interdicted costs (SPO+):\n{c_intd_pred_spo}")
     print(f"True interdicted opt. sol.:\n{y_true}")
-    print(f"Predicted interdicted opt. sol. (CVXPY):\n{y_pred_cvx}")
-    print(f"Predicted interdicted opt. sol. (SPO+):\n{y_pred_spo}")
+    if need_cvx:
+        print(f"Predicted interdicted opt. sol. (CVXPY):\n{y_pred_cvx}")
+    if need_spo:
+        print(f"Predicted interdicted opt. sol. (SPO+):\n{y_pred_spo}")
     pass
 
 def train_adfl_predictor(predictor, w_train, c_train, y_train, z_train, i_train, epochs=N_EPOCHS, lr=LR_DEFAULT, seed=SEED):
@@ -454,7 +525,7 @@ def test_predictors_sweep_uninterdicted(seed=SEED, num_points_per_1pu=100, save_
 def main():
     # test_predictors_sweep_uninterdicted()
     # test_predictors_sweep()
-    test_dfl_predictor()
+    test_dfl_predictor(comparison_view="init_cvx")
     # test_adfl_predictor()
     pass
 

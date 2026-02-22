@@ -229,7 +229,13 @@ def plot_dfl_init_vs_trained(
     save_path=None,
     show=True,
     data_train=None,
-    intd=False
+    intd=False,
+    title_init="Initialized Model",
+    title_trained="Trained Model",
+    label_init="Init",
+    label_trained="Trained",
+    color_init="tab:gray",
+    color_trained="tab:blue"
 ):
     plot_data = _prepare_sweep_plot_data(
         w_values,
@@ -249,9 +255,9 @@ def plot_dfl_init_vs_trained(
         pred_key="dfl",
         y_key="y_dfl",
         match_key="match_dfl",
-        color="tab:gray",
-        title="Initialized Model" + (" with Interdiction" if intd else ""),
-        label_suffix="Init",
+        color=color_init,
+        title=title_init + (" with Interdiction" if intd else ""),
+        label_suffix=label_init,
         intd=intd
     )
     _plot_cost_panel(
@@ -260,9 +266,9 @@ def plot_dfl_init_vs_trained(
         pred_key="adfl",
         y_key="y_adfl",
         match_key="match_adfl",
-        color="tab:blue",
-        title="Trained Model" + (" with Interdiction" if intd else ""),
-        label_suffix="Trained",
+        color=color_trained,
+        title=title_trained + (" with Interdiction" if intd else ""),
+        label_suffix=label_trained,
         intd=intd
     )
 
