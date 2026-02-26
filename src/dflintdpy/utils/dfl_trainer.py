@@ -1,3 +1,4 @@
+import copy
 from typing import Optional, Tuple
 from unicodedata import name
 from matplotlib.axes import Axes
@@ -7,7 +8,6 @@ import pyepo.metric
 import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-
 from dflintdpy.data.config import HP
 
 class DFLTrainer:
@@ -22,6 +22,9 @@ class DFLTrainer:
     loss_criterion: torch.nn.Module
     method_name: str
 
+    # Threshold for increase in training loss (10%)
+    LOSS_INCREASE_THRESHOLD = 0.10
+
     def __init__(self,
                  pred_model: torch.nn.Module,
                  opt_model: torch.nn.Module,
@@ -31,6 +34,7 @@ class DFLTrainer:
                  cfg: HP = None,
                  aggregate: str = "mean",
                  cvar_alpha: float = 0.9,
+                 dfl_variant: str = "a-dfl"
                  ) -> None:
         """
         Initializes the Trainer class.
@@ -55,6 +59,9 @@ class DFLTrainer:
         device : torch.device, optional
             The device on which the model will be trained (default is 'cuda' if available,
             otherwise 'cpu').
+        dfl_variant : str, optional
+            The variant of DFL to train. Options are ``"a-dfl"`` (default) or ``"mixed"``.
+            ``"mixed"`` uses both the original and interdicted scenarios for training.
         """
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -73,6 +80,7 @@ class DFLTrainer:
 
         self.aggregate = aggregate
         self.cvar_alpha = cvar_alpha
+        self.dfl_variant = dfl_variant
 
     def train_epoch(self,
                     loader: DataLoader
@@ -108,35 +116,47 @@ class DFLTrainer:
             intds = intds.to(self.device)
 
             pred = self.pred_model(feats).unsqueeze(1) + intds
-            B, K = costs.shape[:2]
+            B, K = costs.shape[:2] # batch size and number of scenarios per instance
 
             try:
+                if K == 1 or self.dfl_variant == "mixed":
+                    # Mixed DFL (Uses unintd & intd scenarios together for training)
+                    p = pred.view(B * K, *pred.shape[2:]) # reshape to (B*K, ...)
+                    c = costs.view(B * K, *costs.shape[2:])
+                    s = sols.view(B * K, *sols.shape[2:])
+                    o = objs.view(B * K, *objs.shape[2:])
+                else:
+                    # A-DFL (Uses only intd scenarios for training)
+                        p = pred.view(B * K, *pred.shape[2:])[B:,...] # reshape to (B*(K-1), ...)
+                        c = costs.view(B * K, *costs.shape[2:])[B:,...]
+                        s = sols.view(B * K, *sols.shape[2:])[B:,...]
+                        o = objs.view(B * K, *objs.shape[2:])[B:,...]
+
                 loss_flat = type(self).compute_loss(
                     self.loss_criterion,
-                    pred.view(B * K, *pred.shape[2:]),
-                    costs.view(B * K, *costs.shape[2:]),
-                    sols.view(B * K, *sols.shape[2:]),
-                    objs.view(B * K, *objs.shape[2:]),
+                    p,
+                    c,
+                    s,
+                    o,
                     method_name=self.method_name,
                 )
             except Exception:
                 try:
-                    c = costs.view(B * K, *costs.shape[2:])
-                    p = pred.view(B * K, *pred.shape[2:])
                     delta = 2*p - c
                     c[delta<0] += delta[delta<0]
                     loss_flat = type(self).compute_loss(
                         self.loss_criterion,
-                        pred.view(B * K, *pred.shape[2:]),
+                        p,
                         c,
-                        sols.view(B * K, *sols.shape[2:]),
-                        objs.view(B * K, *objs.shape[2:]),
+                        s,
+                        o,
                         method_name=self.method_name,
                     )
                 except Exception:
                     print("Warning: Loss computation error during training. Skipping sample.")
                 continue
 
+            # TODO: Get rid of these aggregations...
             if loss_flat.dim() == 0:
                 loss_per_scen = loss_flat.repeat(B, K)
             else:
@@ -193,26 +213,37 @@ class DFLTrainer:
                 B, K = costs.shape[:2]
 
                 try:
+                    if K == 1 or self.dfl_variant == "mixed":
+                        # Mixed DFL (Uses unintd & intd scenarios together for training)
+                        p = pred.view(B * K, *pred.shape[2:]) # reshape to (B*K, ...)
+                        c = costs.view(B * K, *costs.shape[2:])
+                        s = sols.view(B * K, *sols.shape[2:])
+                        o = objs.view(B * K, *objs.shape[2:])
+                    else:
+                        # A-DFL (Uses only intd scenarios for training)
+                        p = pred.view(B * K, *pred.shape[2:])[B:,...] # reshape to (B*(K-1), ...)
+                        c = costs.view(B * K, *costs.shape[2:])[B:,...]
+                        s = sols.view(B * K, *sols.shape[2:])[B:,...]
+                        o = objs.view(B * K, *objs.shape[2:])[B:,...]
+
                     loss_flat = type(self).compute_loss(
                         self.loss_criterion,
-                        pred.view(B * K, *pred.shape[2:]),
-                        costs.view(B * K, *costs.shape[2:]),
-                        sols.view(B * K, *sols.shape[2:]),
-                        objs.view(B * K, *objs.shape[2:]),
-                        self.method_name,
+                        p,
+                        c,
+                        s,
+                        o,
+                        method_name=self.method_name,
                     )
                 except Exception:
                     try:
-                        c = costs.view(B * K, *costs.shape[2:])
-                        p = pred.view(B * K, *pred.shape[2:])
                         delta = 2*p - c
                         c[delta<0] += delta[delta<0]
                         loss_flat = type(self).compute_loss(
                             self.loss_criterion,
-                            pred.view(B * K, *pred.shape[2:]),
+                            p,
                             c,
-                            sols.view(B * K, *sols.shape[2:]),
-                            objs.view(B * K, *objs.shape[2:]),
+                            s,
+                            o,
                             method_name=self.method_name,
                         )
                     except Exception:
@@ -283,12 +314,18 @@ class DFLTrainer:
 
         # If test_loader is provided, initialize test loss and regret vectors
         if val_loader is not None:
-            test_loss, test_regret = self.evaluate(val_loader)
-            test_loss_vector = [test_loss]
-            test_regret_vector = [test_regret]
+            test_loss_vector = []
+            test_regret_vector = []
+
+        # Variables for storing best model
+        best_val_loss = float('inf')
+        best_model_state = None
 
         # Print the initial evaluation before starting training
         if val_loader is not None:
+            test_loss, test_regret = self.evaluate(val_loader)
+            test_loss_vector.append(test_loss)
+            test_regret_vector.append(test_regret)
             print(
                 f"Epoch {0:02d} "
                 f"| Train Loss: {train_loss:.4f} "
@@ -305,9 +342,9 @@ class DFLTrainer:
         
         # Training loop
         for epoch in range(epochs):
-            # Set lambda for hybrid method
-            if self.method_name == "hybrid":
-                self.loss_criterion.lam = DFLTrainer.lambda_schedule(self.cfg, epoch)
+            # # Set lambda for hybrid method
+            # if self.method_name == "hybrid":
+            #     self.loss_criterion.lam = DFLTrainer.lambda_schedule(self.cfg, epoch)
 
             # Train the model for one epoch
             train_loss = self.train_epoch(train_loader)
@@ -322,6 +359,24 @@ class DFLTrainer:
             # Append loss and regret to vectors
             train_loss_vector.append(train_loss)
             train_regret_vector.append(train_regret)
+
+            # Save best model based on validation loss
+            if val_loader is not None and train_loss < best_val_loss:
+                best_val_loss = train_loss
+                best_model_state = copy.deepcopy(self.pred_model.state_dict())
+
+            # Check for increase in training loss and 
+            # adjust learning rate if necessary
+            if (val_loader is not None and 
+                train_loss - best_val_loss > \
+                    self.LOSS_INCREASE_THRESHOLD * best_val_loss):
+                self.optimizer.param_groups[0]['lr'] *= 0.5
+                print(
+                    f"Epoch {epoch+1:02d} | " + 
+                    f"Increase in training loss detected. " + 
+                    f"Reducing learning rate to " + 
+                    f"{self.optimizer.param_groups[0]['lr']:.2e}"
+                )
             
             # Print loss every n_epochs
             if (epoch + 1) % self.n_epochs == 0:
@@ -340,6 +395,12 @@ class DFLTrainer:
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f}"
                     )
+
+        # Load best model state        
+        if best_model_state is not None:
+            self.pred_model.load_state_dict(best_model_state)
+
+        # TODO: Save best model to file
 
         return (train_loss_vector, 
             train_regret_vector, 
@@ -398,21 +459,21 @@ class DFLTrainer:
         elif method_name in ["pg", "ltr"]:
             return loss_criterion(costs_pred, costs)
     
-    @staticmethod
-    def lambda_schedule(cfg, epoch):
-        # Example: warm start with strong anchor, then linear decay
-        if epoch < cfg.get("spo_po_epochs"):
-            return 1.0             # train without SPO for first epochs
-        else:
-            return cfg.get("lam")  # use constant lambda afterwards
-        # if epoch < 33:
-        #     return 0.7             # strong anchor for 3 epochs
-        # elif epoch < 45:
-        #     # decay to 0.1 by epoch 45
-        #     t = (epoch - 33) / (45 - 33)
-        #     return (1 - t) * 0.7 + t * 0.1
-        # else:
-        #     return 0.05            # long tail
+    # @staticmethod
+    # def lambda_schedule(cfg, epoch):
+    #     # Example: warm start with strong anchor, then linear decay
+    #     if epoch < cfg.get("spo_po_epochs"):
+    #         return 1.0             # train without SPO for first epochs
+    #     else:
+    #         return cfg.get("lam")  # use constant lambda afterwards
+    #     # if epoch < 33:
+    #     #     return 0.7             # strong anchor for 3 epochs
+    #     # elif epoch < 45:
+    #     #     # decay to 0.1 by epoch 45
+    #     #     t = (epoch - 33) / (45 - 33)
+    #     #     return (1 - t) * 0.7 + t * 0.1
+    #     # else:
+    #     #     return 0.05            # long tail
 
 
     @staticmethod

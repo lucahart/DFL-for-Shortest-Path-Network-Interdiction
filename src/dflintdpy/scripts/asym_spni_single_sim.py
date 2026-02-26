@@ -127,24 +127,25 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
 
     interdictions = gen_data(cfg, seed=cfg.get("intd_seed"), normalization_constant=normalization_constant)
 
-    # Comparison of different means of costs to show similar 
-    print(f"Mean value comparison:")
-    print(f"\tTest:     {testing_data['costs'].mean():.7f}")
-    print(f"\tTrain:    {training_data_adverse['train_loader'].dataset.costs.mean():.7f}")
-    print(f"\tIntd:     {interdictions['costs'].mean():.7f}")
-    print(f"\tPO:       {po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
-    print(f"\tSPO+:     {spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
-    print(f"\tSPO+ rnd: {spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
-    print(f"\tSPO+ adv: {spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
+    if False: # Skipping this data
+        # Comparison of different means of costs to show similar 
+        print(f"Mean value comparison:")
+        print(f"\tTest:     {testing_data['costs'].mean():.7f}")
+        print(f"\tTrain:    {training_data_adverse['train_loader'].dataset.costs.mean():.7f}")
+        print(f"\tIntd:     {interdictions['costs'].mean():.7f}")
+        print(f"\tPO:       {po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
+        print(f"\tSPO+:     {spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
+        print(f"\tSPO+ rnd: {spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
+        print(f"\tSPO+ adv: {spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
 
-    print(f"Std value comparison:")
-    print(f"\tTest:     {testing_data['costs'].std():.7f}")
-    print(f"\tTrain:    {training_data_adverse['train_loader'].dataset.costs.std():.7f}")
-    print(f"\tIntd:     {interdictions['costs'].std():.7f}")
-    print(f"\tPO:       {po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
-    print(f"\tSPO+:     {spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
-    print(f"\tSPO+ rnd: {spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
-    print(f"\tSPO+ adv: {spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
+        print(f"Std value comparison:")
+        print(f"\tTest:     {testing_data['costs'].std():.7f}")
+        print(f"\tTrain:    {training_data_adverse['train_loader'].dataset.costs.std():.7f}")
+        print(f"\tIntd:     {interdictions['costs'].std():.7f}")
+        print(f"\tPO:       {po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
+        print(f"\tSPO+:     {spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
+        print(f"\tSPO+ rnd: {spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
+        print(f"\tSPO+ adv: {spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
 
     ################################################
     ##### Compare Shortest Paths of PO and SPO #####

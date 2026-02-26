@@ -9,6 +9,7 @@ from dflintdpy.utils.read_write_results import save_results_to_csv
 # Initialize the configuration class
 cfg = HP()
 num_seeds = cfg.get("num_seeds")
+seed_0 = cfg.get("seed_sweep_offset")
 compute_asym_intd_2 = False # Matrix comparison with lack of evader knowledge (table 2)
 compute_asym_intd = False # Asym. Interdictor column in table 1
 
@@ -17,17 +18,18 @@ compute_asym_intd = False # Asym. Interdictor column in table 1
 results = []
 
 # Loop over different random seeds
-for seed in range(num_seeds):
+for seed in range(seed_0, seed_0 + num_seeds):
     # Keep track of simulation progress
     print("="*80)
-    print(f"STARTING SIMULATION {seed+1} / {num_seeds}")
+    print(f"STARTING SIMULATION {seed - seed_0 + 1} / {num_seeds}")
     print("="*80)
 
     # Generate random seeds
-    np.random.seed(seed + 100)
+    np.random.seed(seed)
     seed1, seed2, seed3 = np.random.randint(0, 150, 3).tolist()
 
     # Set random seeds
+    cfg.set("seed", seed)
     cfg.set("random_seed", seed1)
     cfg.set("intd_seed", seed2)
     cfg.set("loader_seed", seed3)

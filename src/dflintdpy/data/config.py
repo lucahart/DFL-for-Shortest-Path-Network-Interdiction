@@ -1,40 +1,48 @@
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Tuple
 
 @dataclass
 class HP:
-    # Define hyperparameters
-    budget = 10
-    grid_size = (5, 5)
-    num_scenarios = 2
-    num_seeds = 5
+    # Hyperparameters
+    num_seeds : int = 5 # number of simulations to run and random seed sets to use
+    seed_sweep_offset : int = 100 # Offset to ensure different random seeds for different runs
 
-    random_seed = 31
-    intd_seed = 53
-    loader_seed = 17
+    # Data parameters
+    num_features : int = 5
+    num_train_samples : int = 1000
+    num_val_samples : int = 100
+    num_test_samples : int = 1000
 
+    grid_size : Tuple[int, int] = (5, 5)
+    deg : int = 8
+    noise_width : float = 0.5
+
+    seed : int = seed_sweep_offset
+    random_seed : int = 31
+    loader_seed : int = 17
+
+    # Interdiction parameters
+    budget : int = 10
+    num_scenarios : int = 3
+
+    benders_max_count : int = 100
+    benders_eps : float = 1e-3
+    lsd : float = 1e-5
+
+    intd_seed : int = 53
 
     # ML hyperparameters
-    num_features = 5
-    num_train_samples = 1000
-    num_val_samples = 100
-    num_test_samples = 1000
-    batch_size = 32
-    po_epochs = 400
-    spo_epochs = 200 # 300
-    po_lr = 2e-4 # 2e-3
-    spo_lr = 3.5e-4 # 5e-3
-    lam = 0
-    deg = 8
+    batch_size : int = 32
+    po_epochs : int = 400
+    spo_epochs : int = 200 # 300
+    po_lr : float = 2e-4 # 2e-3
+    spo_lr : float = 3.5e-4 # 5e-3
+
+    # Deprecated parameters. TODO: Remove them in the future.
+    lam = 0.0
     anchor = "mse"
     spo_po_epochs = 0
-    noise_width = 0.5
-
-    # Interdictor parameters
-    benders_max_count = 100
-    benders_eps = 1e-3
-    lsd = 1e-5
 
     # -------- Convenience methods --------
     def set(self, key: str, value: Any) -> None:

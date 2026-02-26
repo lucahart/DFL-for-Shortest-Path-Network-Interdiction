@@ -31,7 +31,7 @@ def _parse_scenarios(raw: str) -> list[int]:
 
 
 def _seed_triplet(seed_idx: int) -> tuple[int, int, int]:
-    np.random.seed(seed_idx + 100)
+    np.random.seed(seed_idx)
     return tuple(np.random.randint(0, 150, 3).tolist())
 
 
@@ -69,9 +69,10 @@ def run_sweep(cfg: HP, scenarios: list[int], num_seeds: int) -> tuple[dict, dict
         print(f"Running scenario sweep for num_scenarios={scenario}")
         print("=" * 80)
         cfg.set("num_scenarios", scenario)
+        seed_0 = cfg.get("seed_sweep_offset")
 
         for seed_idx in range(num_seeds):
-            seed1, seed2, seed3 = _seed_triplet(seed_idx)
+            seed1, seed2, seed3 = _seed_triplet(seed_idx + seed_0)
             cfg.set("random_seed", seed1)
             cfg.set("intd_seed", seed2)
             cfg.set("loader_seed", seed3)

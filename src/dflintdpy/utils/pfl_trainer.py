@@ -1,3 +1,4 @@
+import copy
 import pyepo.metric
 import torch
 
@@ -19,6 +20,9 @@ class PFLTrainer:
     opt_model: torch.nn.Module
     optimizer: torch.optim.Optimizer
     loss_criterion: torch.nn.Module
+
+    # Threshold for increase in training loss (10%)
+    LOSS_INCREASE_THRESHOLD = 0.10
 
     def __init__(self,
                  pred_model: torch.nn.Module,
@@ -174,6 +178,10 @@ class PFLTrainer:
         train_loss_vector = [train_loss]
         train_regret_vector = [train_regret]
 
+        # Variable to track best validation loss for model selection
+        best_val_loss = float('inf')
+        best_model_state = None
+
         # If val_loader is provided, initialize val loss and regret vectors
         if val_loader is not None:
             test_loss, test_regret = self.evaluate(val_loader)
@@ -208,6 +216,24 @@ class PFLTrainer:
             # Append loss and regret to vectors
             train_loss_vector.append(train_loss)
             train_regret_vector.append(train_regret)
+
+            # Save best model based on validation loss
+            if val_loader is not None and train_loss < best_val_loss:
+                best_val_loss = train_loss
+                best_model_state = copy.deepcopy(self.pred_model.state_dict())
+
+            # Check for increase in training loss and 
+            # adjust learning rate if necessary
+            if (val_loader is not None and 
+                train_loss - best_val_loss > \
+                    self.LOSS_INCREASE_THRESHOLD * best_val_loss):
+                self.optimizer.param_groups[0]['lr'] *= 0.5
+                print(
+                    f"Epoch {epoch+1:02d} | " + 
+                    f"Increase in training loss detected. " + 
+                    f"Reducing learning rate to " + 
+                    f"{self.optimizer.param_groups[0]['lr']:.2e}"
+                )
             
             # Print loss every n_epochs
             if (epoch + 1) % self.n_epochs == 0:
@@ -226,6 +252,9 @@ class PFLTrainer:
                           f"| Train Loss: {train_loss:.4f} "
                           f"| Train Regret: {train_regret:.4f}"
                     )
+
+        # Load best model state if available
+        self.pred_model.load_state_dict(best_model_state)
 
         return (train_loss_vector, 
             train_regret_vector, 
