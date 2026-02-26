@@ -123,6 +123,7 @@ class AdvDataGenerator:
             self.interdictions = AdvDataGenerator.gen_interdictions(
                 cfg,
                 normalization_constant,
+                self.opt_model.num_cost,
                 **kwargs
             )
 
@@ -239,7 +240,7 @@ class AdvDataGenerator:
         Generate interdictions for SPNI (Stochastic Programming Network Interdiction).
         """
         n_samples = feats.shape[0]
-        m = costs.shape[1]
+        m = costs.shape[-1]
         
         costs_grouped = np.zeros((n_samples, self.num_scenarios, m))
         interdictions_grouped = np.zeros_like(costs_grouped)
@@ -332,6 +333,7 @@ class AdvDataGenerator:
     def gen_interdictions(
         cfg: HP,
         normalization_constant,
+        num_cost,
         *,
         intd_seed: int = 157,
         n_interdictions: int = 100) -> np.ndarray:
@@ -369,7 +371,7 @@ class AdvDataGenerator:
         _, costs = pyepo.data.shortestpath.genData(
             n_interdictions,
             cfg.get("num_features"),
-            cfg.get("grid_size"),
+            (num_cost + 1, 1),
             deg=cfg.get("deg"),
             noise_width=cfg.get("noise_width"),
             seed=intd_seed

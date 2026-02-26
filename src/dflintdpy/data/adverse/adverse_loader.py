@@ -1,4 +1,5 @@
 
+from typing import Self
 from torch.utils.data import DataLoader
 
 from dflintdpy.data.adverse.adverse_dataset import AdvDataset
@@ -49,6 +50,24 @@ class AdvLoader:
     def adverse_mode(self) -> None:
         """Sets the dataset to adverse mode."""
         self.dataset.adverse_mode()
+    
+    def get_nonadverse_loader(self) -> Self:
+        """
+        Returns a new AdvLoader instance in normal mode,
+        containing only the first (non-interdicted) scenario.
+
+        Returns
+        -------
+        AdvLoader
+            A new AdvLoader instance in normal mode.
+        """
+        nonadverse_dataset = self.dataset.get_nonadverse_dataset()
+        return AdvLoader(
+            nonadverse_dataset,
+            batch_size=self.loader.batch_size,
+            seed=self.sampler.seed,
+            shuffle=self.sampler.shuffle,
+        )
 
     # make this wrapper quack like a DataLoader
     def __iter__(self):

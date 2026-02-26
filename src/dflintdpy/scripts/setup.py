@@ -6,6 +6,7 @@ from copy import deepcopy
 from sklearn.model_selection import train_test_split
 
 from dflintdpy.data.config import HP
+from dflintdpy.data.data_gen import gen_syn_data
 from dflintdpy.models.grid import Grid
 from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 from dflintdpy.predictors.hybrid_spop_loss import HybridSPOPLoss
@@ -63,15 +64,8 @@ def gen_train_data(
 
     if not file_found:
         # Generate synthetic data for training and testing
-        features, costs = pyepo.data.shortestpath.genData(
-            cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"), 
-            cfg.get("num_features"), 
-            cfg.get("grid_size"), 
-            deg=cfg.get("deg"), 
-            noise_width=cfg.get("noise_width"), 
-            seed=cfg.get("random_seed")
-        )
-        
+        features, costs = gen_syn_data(cfg, opt_model)
+
         # Save generated data if path is provided
         if path_dir is not None:
             _save_features_costs(path_file, features, costs)
@@ -147,7 +141,9 @@ def gen_train_data(
     }, {
         "feats": X_test,
         "costs": c_test
-    }, normalization_constant
+    }, normalization_constant,{
+        "data_generator": adversarial_generator
+    }
 
 
 def _save_features_costs(file_path, features, costs):
@@ -192,17 +188,11 @@ def _load_features_costs(file_path):
 
 def gen_data(cfg: HP,
             normalization_constant,
+            opt_model: 'ShortestPathGrb' = None,
             seed: int = 31) -> dict:
 
     # Generate true network data for simulation
-    features, costs = pyepo.data.shortestpath.genData(
-        cfg.get("num_test_samples"),
-        cfg.get("num_features"),
-        cfg.get("grid_size"),
-        deg=cfg.get("deg"),
-        noise_width=cfg.get("noise_width"),
-        seed=seed
-    )
+    features, costs = gen_syn_data(cfg, opt_model=opt_model, seed=seed)
 
     # Normalize costs
     costs = costs / normalization_constant
@@ -260,7 +250,9 @@ def setup_pfl_predictor(
 
 
     # Build the model with nn.Sequential
-    po_model = get_nn(input_size, output_size)
+    po_model = get_nn(input_size, output_size) \
+        if cfg.get("pred_model") is None or cfg.get("pred_model") == "nn" \
+        else nn.Linear(input_size, output_size)
 
     # Define the loss function and optimizer
     po_criterion = nn.MSELoss()
@@ -324,7 +316,9 @@ def setup_dfl_predictor(
 
     # Build the model with nn.Sequential
     if transfer_model is None:
-        spo_model = get_nn(input_size, output_size)
+        spo_model = get_nn(input_size, output_size) \
+            if cfg.get("pred_model") is None or cfg.get("pred_model") == "nn" \
+            else nn.Linear(input_size, output_size)
     else:
         spo_model = deepcopy(transfer_model)
 

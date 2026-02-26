@@ -126,6 +126,7 @@ class Grid(Graph):
                 scale_y: float = 1.3,
                 width: float = 1.5,
                 interdictions: np.ndarray[float] | list[float] | None = None,
+                heat_map: np.ndarray | None = None,
                 **kwargs
                 ) -> None:
         """
@@ -182,7 +183,7 @@ class Grid(Graph):
                 }
             else:
                 edge_labels = {
-                    edge: f"{self.cost[idx]:.2f}"
+                    edge: f"{self.cost[idx]:.2f}" if isinstance(self.cost[idx], float) else self.cost[idx]
                     for idx, edge in enumerate(self.arcs)
                 }
             nx.draw_networkx_edge_labels(
@@ -210,6 +211,15 @@ class Grid(Graph):
             for patch, e in zip(edge_artists, self.graph.edges()):
                 new_color = "red" if e in Graph.one_hot_to_arcs(self, colored_edges) else "black"
                 patch.set_color(new_color)
+        
+        # Add heat map
+        if heat_map is not None:
+            for patch, e in zip(edge_artists, self.graph.edges()):
+                intensity = heat_map[self.arcs.index(e)]
+                if intensity > 0:
+                    patch.set_color((1.0, 0.0, 0.0, intensity))  # Red with varying alpha
+                else:
+                    patch.set_color((0.0, 0.0, 1.0, -intensity))  # Blue with varying alpha
 
         # Highlight dashed edges
         if dashed_edges is not None:

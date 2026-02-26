@@ -38,6 +38,7 @@ class HP:
     spo_epochs : int = 200 # 300
     po_lr : float = 2e-4 # 2e-3
     spo_lr : float = 3.5e-4 # 5e-3
+    pred_model : str = "linear"  # "nn" or "linear"
 
     # Deprecated parameters. TODO: Remove them in the future.
     lam = 0.0

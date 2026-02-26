@@ -11,6 +11,7 @@ import random
 from tabulate import tabulate
 
 from dflintdpy.models.grid import Grid
+from dflintdpy.models.dgrid import DGrid
 from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 from dflintdpy.scripts.compare import (compare_shortest_paths,
@@ -49,23 +50,26 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         file_path = root_dir / 'real_world_spni_data' / load_real_world_graph
         graph = csv_to_graph(file_path)
         cfg.set("grid_size", (graph.num_cost+1, 1))
+        dir = root_dir / 'store_data'
     else:
         m, n = cfg.get("grid_size")
-        graph = Grid(m, n)
+        graph = DGrid(m, n)
+        dir = None # only set to none for DGrid
+        # dir = root_dir / 'store_data'
     opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
     training_data_adverse, testing_data, normalization_constant = gen_train_data(
         cfg, 
         opt_model,
-        path_dir=root_dir / 'store_data',
+        path_dir=dir,
         interdiction_policy="adversarial",
     )
 
     training_data_random, _, _ = gen_train_data(
         cfg,
         opt_model,
-        path_dir=root_dir / 'store_data',
+        path_dir=dir,
         interdiction_policy="random",
     )
 
@@ -96,28 +100,27 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         verbose=visualize
     )
 
-    num_scenarios = cfg.get("num_scenarios")
     spo_epochs = cfg.get("spo_epochs")
-    cfg.set("num_scenarios", 1)
     cfg.set("spo_epochs", spo_epochs * 2)
 
     # Generate normalized training and testing data
-    training_data_non_adverse, _, normalization_constant = gen_train_data(
-        cfg,
-        opt_model,
-        interdiction_policy="adversarial",
-    )
+    # nonadv_training_data, _, _ = gen_train_data(cfg, opt_model)
+    nonadv_t_data = training_data_adverse["train_loader"].get_nonadverse_loader()
+    nonadv_v_data = training_data_adverse["val_loader"].get_nonadverse_loader()
+    nonadv_training_data = {
+        "train_loader": nonadv_t_data,
+        "val_loader": nonadv_v_data
+    }
 
     print(f"Training DFL prediction model.")
     spo_model_non_adverse = setup_dfl_predictor(
         cfg,
         graph,
         opt_model,
-        training_data_non_adverse,
+        nonadv_training_data,
         verbose=visualize
     )
 
-    cfg.set("num_scenarios", num_scenarios)
     cfg.set("spo_epochs", spo_epochs)
 
 
@@ -125,7 +128,12 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     ##### Prediction Algorithm Analysis #####
     #########################################
 
-    interdictions = gen_data(cfg, seed=cfg.get("intd_seed"), normalization_constant=normalization_constant)
+    interdictions = gen_data(
+        cfg, 
+        opt_model=opt_model, 
+        seed=cfg.get("intd_seed"), 
+        normalization_constant=normalization_constant
+    )
 
     if False: # Skipping this data
         # Comparison of different means of costs to show similar 

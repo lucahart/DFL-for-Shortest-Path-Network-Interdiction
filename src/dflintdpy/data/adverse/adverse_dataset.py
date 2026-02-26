@@ -1,4 +1,5 @@
 
+from typing import Self
 import torch
 import numpy as np
 from pyepo.data.dataset import optDataset
@@ -110,6 +111,25 @@ class AdvDataset(optDataset):
             The current mode ('normal' or 'adverse').
         """
         return 'adverse' if self._return_intds else 'normal'
+    
+    def get_nonadverse_dataset(self) -> Self:
+        """
+        Returns a new AdvDataset instance in normal mode,
+        containing only the first (non-interdicted) scenario.
+
+        Returns
+        -------
+        AdvDataset
+            A new AdvDataset instance in normal mode.
+        """
+
+        return AdvDataset(
+            opt_model=self.model, # refers to opt_model in parent class
+            feats=self.feats,
+            costs_grouped=self.costs[:, :1, :],
+            intds_grouped=self.intds[:, :1, :],
+            mode="normal"
+        )
     
         
 
