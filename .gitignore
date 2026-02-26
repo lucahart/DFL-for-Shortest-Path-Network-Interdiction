@@ -5,20 +5,26 @@
 __pycache__/
 # src/shortest_path_indiction.egg-info/
 *.egg-info/
+.vscode/
 
-# MacOS and IDE specific files
+# MacOS specific files
 .DS_Store
-.vscode/*
 
 # Gurobi logs
 gurobi.log
 
 # Synthetic Data
 */SyntheticPortfolioData/*
+
+# Data Storage
 *.csv
 *.npz
+*.pkl
+src/dflintdpy/scripts/BipartiteMatchingData/*
 
-# Folders for data storage
+# Text files
+*.txt
+
+# Generated Figures
 figures/*
-real_world_spni_data/*
-
+*.png
