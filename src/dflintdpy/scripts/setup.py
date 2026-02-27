@@ -12,6 +12,12 @@ from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 from dflintdpy.predictors.hybrid_spop_loss import HybridSPOPLoss
 from dflintdpy.utils.pfl_trainer import PFLTrainer
 from dflintdpy.utils.dfl_trainer import DFLTrainer
+from dflintdpy.utils.read_write import (
+    Artefacts,
+    read_cache,
+    write_data,
+    write_pred,
+)
 from dflintdpy.data.adverse.adverse_data_generator import AdvDataGenerator
 from dflintdpy.data.adverse.adverse_dataset import AdvDataset
 from dflintdpy.data.adverse.adverse_loader import AdvLoader
@@ -19,7 +25,7 @@ from dflintdpy.data.adverse.adverse_loader import AdvLoader
 def gen_train_data(
         cfg: HP,
         opt_model: 'ShortestPathGrb',
-        path_dir: str = None,
+        # path_dir: str = None,
         interdiction_policy: str = "adversarial",
 ) -> dict:
     """
@@ -30,45 +36,50 @@ def gen_train_data(
     file_found = False
 
     # Generate file path if directory is provided
-    if path_dir is not None:
-        if cfg.get("num_scenarios") is not None:
-            file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_scenarios_{scenarios}_seed_{seed}.csv".format(
-                samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
-                m=cfg.get("grid_size")[0], 
-                n=cfg.get("grid_size")[1], 
-                deg=cfg.get("deg"), 
-                noise=cfg.get("noise_width"), 
-                scenarios=cfg.get("num_scenarios"),
-                seed=cfg.get("random_seed")
-            )
-        else:
-            file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seed_{seed}.csv".format(
-                samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
-                m=cfg.get("grid_size")[0], 
-                n=cfg.get("grid_size")[1], 
-                deg=cfg.get("deg"), 
-                noise=cfg.get("noise_width"),
-                seed=cfg.get("random_seed")
-            )
+    # if data is not None:
+        # if cfg.get("num_scenarios") is not None:
+        #     file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_scenarios_{scenarios}_seed_{seed}.csv".format(
+        #         samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
+        #         m=cfg.get("grid_size")[0], 
+        #         n=cfg.get("grid_size")[1], 
+        #         deg=cfg.get("deg"), 
+        #         noise=cfg.get("noise_width"), 
+        #         scenarios=cfg.get("num_scenarios"),
+        #         seed=cfg.get("random_seed")
+        #     )
+        # else:
+        #     file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seed_{seed}.csv".format(
+        #         samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
+        #         m=cfg.get("grid_size")[0], 
+        #         n=cfg.get("grid_size")[1], 
+        #         deg=cfg.get("deg"), 
+        #         noise=cfg.get("noise_width"),
+        #         seed=cfg.get("random_seed")
+        #     )
 
-        path_file = path_dir / ("xy" + file_name_body)
+        # path_file = path_dir / ("xy" + file_name_body)
         
-        try:
-            # Load pre-generated data if available
-            features, costs = _load_features_costs(path_file)
-            print(f"Loaded existing cost and feature data from file.")
-            file_found = True
-        except (FileNotFoundError, OSError):
-            # print(f"No cached cost and feature data found.")
-            pass  # If file not found, generate new data below
+        # try:
+        #     # Load pre-generated data if available
+        #     features, costs = _load_features_costs()
+        #     print(f"Loaded existing cost and feature data from file.")
+        #     file_found = True
+        # except (FileNotFoundError, OSError):
+        #     # print(f"No cached cost and feature data found.")
+        #     pass  # If file not found, generate new data below
 
-    if not file_found:
+    # Load data from cache if available, otherwise generate new data
+    data = read_cache(cfg, Artefacts.DATA)
+    if data is None:
         # Generate synthetic data for training and testing
         features, costs = gen_syn_data(cfg, opt_model)
 
         # Save generated data if path is provided
-        if path_dir is not None:
-            _save_features_costs(path_file, features, costs)
+        write_data(cfg, features, costs)
+        print(f"Saved data to file.")
+    else:
+        features, costs = data["feats"], data["costs"]
+
 
     # Normalize costs
     normalization_constant = costs.max()
@@ -81,14 +92,6 @@ def gen_train_data(
         test_size=cfg.get("num_test_samples"), 
         random_state=cfg.get("random_seed")
     )
-    
-    # Split the training data into training and validation data
-    X_train, X_val, c_train, c_val = train_test_split(
-        X_train, 
-        c_train, 
-        test_size=cfg.get("num_val_samples"), 
-        random_state=cfg.get("random_seed")
-    )
 
     # Generate adversarial examples for the validation set
     adversarial_generator = AdvDataGenerator(
@@ -99,22 +102,24 @@ def gen_train_data(
         num_scenarios=cfg.get("num_scenarios"),
         interdiction_policy=interdiction_policy,
     )
+
     X_train, c_train, i_train = adversarial_generator.generate(
         X_train, 
         c_train,
-        file_path=(
-            path_dir / (f"i_train_{interdiction_policy}" + file_name_body)
-            if path_dir is not None else None
-        )
+        cfg=cfg
     )
-    X_val, c_val, i_val = adversarial_generator.generate(
-        X_val, 
-        c_val,
-        file_path=(
-            path_dir / (f"i_valid_{interdiction_policy}" + file_name_body)
-            if path_dir is not None else None
-        )
+    
+    # Split the training data into training and validation data
+    idxs = np.arange(X_train.shape[0])
+    X_train, X_val, idxs_train, idxs_val = train_test_split(
+        X_train, 
+        idxs, 
+        test_size=cfg.get("num_val_samples"), 
+        random_state=cfg.get("random_seed")
     )
+    c_train, c_val = c_train[idxs_train], c_train[idxs_val]
+    i_train, i_val = i_train[idxs_train], i_train[idxs_val]
+
 
     # Create data sets
     train_dataset = AdvDataset(opt_model, X_train, c_train, i_train)
@@ -146,44 +151,44 @@ def gen_train_data(
     }
 
 
-def _save_features_costs(file_path, features, costs):
-    """
-    Save features and costs to CSV files.
+# def _save_features_costs(file_path, features, costs):
+#     """
+#     Save features and costs to CSV files.
     
-    Args:
-        file_path: Base file path (without extension)
-        features: Feature array
-        costs: Cost array
-    """
-    features_path = str(file_path).replace("xy_", "features_")
-    costs_path = str(file_path).replace("xy_", "costs_")
+#     Args:
+#         file_path: Base file path (without extension)
+#         features: Feature array
+#         costs: Cost array
+#     """
+#     features_path = str(file_path).replace("xy_", "features_")
+#     costs_path = str(file_path).replace("xy_", "costs_")
     
-    np.savetxt(features_path, features, delimiter=',')
-    np.savetxt(costs_path, costs, delimiter=',')
-    print(f"Saved features to {features_path}")
-    print(f"Saved costs to {costs_path}")
+#     np.savetxt(features_path, features, delimiter=',')
+#     np.savetxt(costs_path, costs, delimiter=',')
+#     print(f"Saved features to {features_path}")
+#     print(f"Saved costs to {costs_path}")
 
 
-def _load_features_costs(file_path):
-    """
-    Load features and costs from CSV files.
+# def _load_features_costs(file_path):
+#     """
+#     Load features and costs from CSV files.
     
-    Args:
-        file_path: Base file path (without extension)
+#     Args:
+#         file_path: Base file path (without extension)
         
-    Returns:
-        tuple: (features, costs) as numpy arrays
+#     Returns:
+#         tuple: (features, costs) as numpy arrays
         
-    Raises:
-        FileNotFoundError: If either file doesn't exist
-    """
-    features_path = str(file_path).replace("xy_", "features_")
-    costs_path = str(file_path).replace("xy_", "costs_")
+#     Raises:
+#         FileNotFoundError: If either file doesn't exist
+#     """
+#     features_path = str(file_path).replace("xy_", "features_")
+#     costs_path = str(file_path).replace("xy_", "costs_")
     
-    features = np.loadtxt(features_path, delimiter=',', dtype=np.float32)
-    costs = np.loadtxt(costs_path, delimiter=',', dtype=np.float32)
+#     features = np.loadtxt(features_path, delimiter=',', dtype=np.float32)
+#     costs = np.loadtxt(costs_path, delimiter=',', dtype=np.float32)
     
-    return features, costs
+#     return features, costs
 
 
 def gen_data(cfg: HP,
@@ -204,7 +209,6 @@ def gen_data(cfg: HP,
 
 
 def get_nn(input_size, output_size):
-    return nn.Linear(input_size, output_size)
 
     hidden_size_1 =  64   # number of neurons in the hidden layer
     return nn.Sequential(
@@ -221,6 +225,7 @@ def setup_pfl_predictor(
         opt_model: 'ShortestPathGrb',
         training_data: dict,
         *,
+        cache_tag: str = "pfl",
         verbose: bool = False,
         file_name: str = None,
         train_type: str = "po",
@@ -254,6 +259,13 @@ def setup_pfl_predictor(
         if cfg.get("pred_model") is None or cfg.get("pred_model") == "nn" \
         else nn.Linear(input_size, output_size)
 
+    # Check if model has been cached already
+    state_dict = read_cache(cfg, Artefacts.PRED, artifact_tag=cache_tag)
+    if state_dict is not None:
+        po_model.load_state_dict(state_dict)
+        print(f"Loaded existing predictor model '{cache_tag}' from file.")
+        return po_model
+
     # Define the loss function and optimizer
     po_criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(po_model.parameters(), lr=lr)
@@ -285,6 +297,8 @@ def setup_pfl_predictor(
 
         print("Final regret on validation set: ", val_regret_log[-1])
 
+    write_pred(cfg, po_model.state_dict(), artifact_tag=cache_tag)
+
     return po_model
 
 
@@ -294,6 +308,7 @@ def setup_dfl_predictor(
         opt_model: 'ShortestPathGrb',
         training_data: dict,
         *,
+        cache_tag: str = "dfl",
         verbose: bool = False,
         file_name: str = None,
         transfer_model: nn.Sequential = None,
@@ -321,6 +336,13 @@ def setup_dfl_predictor(
             else nn.Linear(input_size, output_size)
     else:
         spo_model = deepcopy(transfer_model)
+
+    # Check if model has been cached already
+    state_dict = read_cache(cfg, Artefacts.PRED, artifact_tag=cache_tag)
+    if state_dict is not None:
+        spo_model.load_state_dict(state_dict)
+        print(f"Loaded existing predictor model '{cache_tag}' from file.")
+        return spo_model
 
     # Init SPO+ or hybrid SPO+ loss
     lam = cfg.get("lam")
@@ -359,5 +381,7 @@ def setup_dfl_predictor(
         )
 
         print("Final regret on validation set: ", val_regret_log[-1])
+
+    write_pred(cfg, spo_model.state_dict(), artifact_tag=cache_tag)
 
     return spo_model

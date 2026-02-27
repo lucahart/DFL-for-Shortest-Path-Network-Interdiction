@@ -41,35 +41,34 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     ##################################
     ##### Generate Network Data ######
     ##################################
-    # Retrieve root directly
-    root_dir = Path(__file__).parent.parent.parent.parent
+    # # Retrieve root directly
+    # root_dir = Path(__file__).parent.parent.parent.parent
 
     # Define a graph with appropriate dimensions and an opt_model 
-    # for solving the shortest path problem on the graph
-    if load_real_world_graph is not None:
-        file_path = root_dir / 'real_world_spni_data' / load_real_world_graph
-        graph = csv_to_graph(file_path)
-        cfg.set("grid_size", (graph.num_cost+1, 1))
-        dir = root_dir / 'store_data'
-    else:
-        m, n = cfg.get("grid_size")
-        graph = DGrid(m, n)
-        dir = None # only set to none for DGrid
-        # dir = root_dir / 'store_data'
+    # # for solving the shortest path problem on the graph
+    # if load_real_world_graph is not None:
+    #     file_path = root_dir / 'real_world_spni_data' / load_real_world_graph
+    #     graph = csv_to_graph(file_path)
+    #     cfg.set("grid_size", (graph.num_cost+1, 1))
+    #     dir = root_dir / 'store_data'
+    # else:
+    #     m, n = cfg.get("grid_size")
+    #     graph = DGrid(m, n)
+    #     dir = None # only set to none for DGrid
+    #     # dir = root_dir / 'store_data'
+    graph = Grid(*cfg.get("grid_size"))
     opt_model = ShortestPathGrb(graph)
 
     # Generate normalized training and testing data
-    training_data_adverse, testing_data, normalization_constant = gen_train_data(
+    training_data_adverse, testing_data, normalization_constant, _ = gen_train_data(
         cfg, 
         opt_model,
-        path_dir=dir,
         interdiction_policy="adversarial",
     )
 
-    training_data_random, _, _ = gen_train_data(
+    training_data_random, _, _, _ = gen_train_data(
         cfg,
         opt_model,
-        path_dir=dir,
         interdiction_policy="random",
     )
 
@@ -79,6 +78,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         training_data_adverse,
+        cache_tag="pfl",
         verbose=visualize
     )
 
@@ -88,6 +88,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         training_data_adverse,
+        cache_tag="adfl",
         verbose=visualize
     )
 
@@ -97,6 +98,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         training_data_random,
+        cache_tag="rdfl",
         verbose=visualize
     )
 
@@ -118,6 +120,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         graph,
         opt_model,
         nonadv_training_data,
+        cache_tag="dfl",
         verbose=visualize
     )
 

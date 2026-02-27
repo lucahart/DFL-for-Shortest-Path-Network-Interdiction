@@ -443,11 +443,19 @@ def _unique_hash(cfg: Any, type: str = "head") -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _write_meta(meta_path: Path, *, cfg: Any, hash_type: str, artefact: Artefacts) -> None:
+def _write_meta(
+    meta_path: Path,
+    *,
+    cfg: Any,
+    hash_type: str,
+    artefact: Artefacts,
+    artifact_tag: Optional[str] = None,
+) -> None:
     """Write sidecar metadata JSON for traceability."""
     meta = {
         "created_unix": time.time(),
         "artefact": artefact.value,
+        "artifact_tag": artifact_tag,
         "hash_type": hash_type,
         "hash": _unique_hash(cfg, type=hash_type),
         "head_hash": _unique_hash(cfg, type="head"),
@@ -480,7 +488,21 @@ def _artifact_prefix(artifact: Artefacts) -> str:
     raise ValueError(f"Unexpected artefact for prefix: {artifact}")
 
 
-def _artifact_file_paths(cfg: Any, artifact: Artefacts) -> Tuple[Path, Path]:
+def _sanitize_artifact_tag(tag: str) -> str:
+    """Make a cache tag filesystem-friendly and deterministic."""
+    tag = tag.strip().lower()
+    tag = re.sub(r"[^a-z0-9_\-]+", "_", tag)
+    tag = re.sub(r"_+", "_", tag).strip("_")
+    if not tag:
+        raise ValueError("artifact tag must contain at least one alphanumeric character")
+    return tag
+
+
+def _artifact_file_paths(
+    cfg: Any,
+    artifact: Artefacts,
+    artifact_tag: Optional[str] = None,
+) -> Tuple[Path, Path]:
     """
     Compute (data_path, meta_path) for an artefact based on cfg and artefact type.
     """
@@ -498,8 +520,15 @@ def _artifact_file_paths(cfg: Any, artifact: Artefacts) -> Tuple[Path, Path]:
     else:
         raise ValueError(f"Unexpected artefact for extension: {artifact}")
 
-    data_path = folder / f"{prefix}_{h}{ext}"
-    meta_path = folder / f"{prefix}_{h}.meta.json"
+    if artifact == Artefacts.PRED:
+        if artifact_tag is None:
+            raise ValueError("artifact_tag is required for predictor artefacts")
+        suffix = f"_{_sanitize_artifact_tag(artifact_tag)}"
+    else:
+        suffix = ""
+
+    data_path = folder / f"{prefix}{suffix}_{h}{ext}"
+    meta_path = folder / f"{prefix}{suffix}_{h}.meta.json"
     return data_path, meta_path
 
 
@@ -519,7 +548,7 @@ def _pickle_load(path: Path) -> Any:
 # 5) Public API: read/write cache for core artefacts
 # =============================================================================
 
-def read_cache(cfg: Any, artifact: Artefacts) -> Optional[Any]:
+def read_cache(cfg: Any, artifact: Artefacts, artifact_tag: Optional[str] = None) -> Optional[Any]:
     """
     Load a cached artefact given cfg and artefact type.
 
@@ -532,7 +561,7 @@ def read_cache(cfg: Any, artifact: Artefacts) -> Optional[Any]:
     if artifact == Artefacts.FIG:
         raise ValueError("Use read_fig for figures.")
 
-    data_path, _meta_path = _artifact_file_paths(cfg, artifact)
+    data_path, _meta_path = _artifact_file_paths(cfg, artifact, artifact_tag)
 
     if not data_path.exists():
         return None
@@ -596,19 +625,25 @@ def write_adv_intd(cfg: Any, intd: Any) -> Path:
     return data_path
 
 
-def write_pred(cfg: Any, pred_model: Any) -> Path:
+def write_pred(cfg: Any, pred_model: Any, artifact_tag: str) -> Path:
     """
-    Store predictor model under predictors/pred_<pred_hash>.pkl.
+    Store predictor model under predictors/pred_<tag>_<pred_hash>.pkl.
 
     Note: If pred_model contains GPU tensors, open file portability can suffer.
           Consider saving state_dicts instead (PyTorch) and reloading separately.
     """
-    data_path, meta_path = _artifact_file_paths(cfg, Artefacts.PRED)
+    data_path, meta_path = _artifact_file_paths(cfg, Artefacts.PRED, artifact_tag)
     if data_path.exists():
         raise FileExistsError(f"Predictor already exists: {data_path.name}")
 
     _pickle_dump(data_path, pred_model)
-    _write_meta(meta_path, cfg=cfg, hash_type="pred", artefact=Artefacts.PRED)
+    _write_meta(
+        meta_path,
+        cfg=cfg,
+        hash_type="pred",
+        artefact=Artefacts.PRED,
+        artifact_tag=artifact_tag,
+    )
     return data_path
 
 

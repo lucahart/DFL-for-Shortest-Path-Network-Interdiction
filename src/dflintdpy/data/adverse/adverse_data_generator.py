@@ -8,6 +8,12 @@ from dflintdpy.data.config import HP
 from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 from dflintdpy.solvers.symmetric_interdictor import SymmetricInterdictor
 from dflintdpy.utils.versatile_utils import print_progress
+from dflintdpy.utils.read_write import (
+    Artefacts,
+    read_cache, 
+    write_adv_intd, 
+    write_rnd_intd,
+)
 
 class AdvDataGenerator:
     """
@@ -143,16 +149,21 @@ class AdvDataGenerator:
                 budget=opt_model.c.sum()*0.3
             )
 
-    def _load_interdictions_from_cache(self, file_path, costs, feats):
+    def _load_interdictions_from_cache(self, cfg, costs, feats):
         """
         Load cached interdiction data from CSV file.
         
         Returns:
             tuple: (feats, costs_grouped, interdictions_grouped) if successful, None otherwise
         """
+        # Attempt to read cached interdiction data
+        intd = read_cache(cfg, Artefacts.INTD_ADV if self.interdiction_policy == "adversarial" else Artefacts.INTD_RND)
+
+        if intd is None:
+            print(f"No cached interdiction data found. Generating new data.")
+            return None
+
         try:
-            intd = pd.read_csv(file_path, header=None).values.astype(np.float32)
-            
             n_samples = feats.shape[0]
             m = costs.shape[1]
             
@@ -177,25 +188,32 @@ class AdvDataGenerator:
             print("Loaded existing interdiction data from file.")
             return feats, costs_grouped, interdictions_grouped
         except Exception as e:
-            print(f"Could not load cache (will generate new data): {e}")
+            print(f"No cached interdiction data found. Generating new data.")
             return None
+        
 
-    def _save_interdictions_to_cache(self, file_path, interdictions_grouped):
+    def _save_interdictions_to_cache(self, cfg, interdictions_grouped):
         """
         Save interdiction data to CSV file.
         """
         if self.adverse_problem == "BPPO":
             # BPPO: Save only scenario 1 (single interdiction per sample)
+            raise NotImplementedError("BPPO caching not implemented yet.")
             np.savetxt(file_path, interdictions_grouped[:, 1, :], delimiter=',')
         elif self.adverse_problem == "SPNI":
             # SPNI: Save all scenarios (excluding scenario 0)
             # Reshape from (n_samples, num_scenarios-1, m) to (n_samples * (num_scenarios-1), m)
-            n_samples = interdictions_grouped.shape[0]
+            # n_samples = interdictions_grouped.shape[0]
             m = interdictions_grouped.shape[2]
             intd_flat = interdictions_grouped[:, 1:, :].reshape(-1, m)
-            np.savetxt(file_path, intd_flat, delimiter=',')
+            if self.interdiction_policy == "adversarial":
+                write_adv_intd(cfg, intd_flat)
+            elif self.interdiction_policy == "random":
+                write_rnd_intd(cfg, intd_flat)
+            else:
+                raise ValueError(f"Unknown interdiction policy: {self.interdiction_policy}")
         
-        print(f"Saved interdiction data to {file_path}")
+        print(f"Saved interdiction data to file.")
 
     def _generate_bppo_interdictions(self, feats, costs, versatile=False):
         """
@@ -294,22 +312,22 @@ class AdvDataGenerator:
         
         return feats, costs_grouped, interdictions_grouped
 
-    def generate(self, feats, costs, file_path=None, versatile=False):
+    def generate(self, feats, costs, cfg=None, versatile=False):
         """
         Main function to generate adversarial examples with caching support.
         
         Args:
             feats: Feature array
             costs: Cost array
-            file_path: Optional path to cache file
+            cfg: Optional configuration object
             versatile: Verbose mode flag
             
         Returns:
             tuple: (feats, costs_grouped, interdictions_grouped)
         """
-        # Try to load from cache if file path is provided
-        if file_path is not None:
-            cached_result = self._load_interdictions_from_cache(file_path, costs, feats)
+        # Try to load from cache if configuration is provided
+        if cfg is not None:
+            cached_result = self._load_interdictions_from_cache(cfg, costs, feats)
             if cached_result is not None:
                 return cached_result
         
@@ -323,9 +341,9 @@ class AdvDataGenerator:
         
         feats, costs_grouped, interdictions_grouped = result
         
-        # Save to cache if file path is provided
-        if file_path is not None:
-            self._save_interdictions_to_cache(file_path, interdictions_grouped)
+        # Save to cache if configuration is provided
+        if cfg is not None:
+            self._save_interdictions_to_cache(cfg, interdictions_grouped)
         
         return feats, costs_grouped, interdictions_grouped
 

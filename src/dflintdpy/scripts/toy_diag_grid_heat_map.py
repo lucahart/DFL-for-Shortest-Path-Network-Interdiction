@@ -138,6 +138,7 @@ def train_dfl_on_shortest_path(cfg):
         dgrid,
         opt_model,
         nonadv_train_loaders,
+        cache_tag="spo_nonadv",
         versatile=False
     )
     # _create_predictor_heat_map(cfg, opt_model, spo_predictor, test_data)
@@ -148,6 +149,7 @@ def train_dfl_on_shortest_path(cfg):
         dgrid,
         opt_model,
         train_loaders,
+        cache_tag="spo_adv",
         versatile=False
     )
     # _create_predictor_heat_map(cfg, opt_model, aspo_predictor, test_data)
