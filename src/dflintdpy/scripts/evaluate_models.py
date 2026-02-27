@@ -421,6 +421,16 @@ def summarize_results(all_results: List[Dict]) -> Dict:
     # Compute statistics
     summary = {
         'num_samples': num_samples,
+        'all_data': {
+            'np_t': objectives_no_pricing['true'],
+            'np_dfl': objectives_no_pricing['dfl'],
+            'np_pfl': objectives_no_pricing['pfl'],
+            'np_adfl': objectives_no_pricing['adfl'],
+            'p_t': objectives_fast['true'],
+            'p_dfl': objectives_fast['dfl'],
+            'p_pfl': objectives_fast['pfl'],
+            'p_adfl': objectives_fast['adfl']
+        },
         'predictions' : {
             'mean': {
                 model: {

@@ -20,6 +20,7 @@ from dflintdpy.solvers.fast_solvers.fast_pricing_solver import FastBilevelPricin
 from dflintdpy.scripts.read_synthetic_data import read_synthetic_data
 from dflintdpy.scripts.setup import gen_train_data
 from dflintdpy.scripts.evaluate_models import evaluate_multiple_samples, summarize_results, print_summary
+from dflintdpy.utils.read_write_results import save_results_to_csv
 
 # Try to import optional dependencies
 try:
@@ -220,6 +221,14 @@ def simple_dfp_example(N = 1000, noise=1, deg=16, batch_size=32):
     # Get summary statistics
     summary = summarize_results(all_results)
     print_summary(summary)
+
+    output_path = Path(__file__).parent.parent.parent.parent / 'results' /\
+        "results_BPPO_N_{N}_noise_{noise}_deg_{deg}.csv"\
+        .format(N=N,
+                noise=noise,
+                deg=deg,
+        )
+    save_results_to_csv(summary, output_path=output_path)
     
     pass
 
