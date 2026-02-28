@@ -86,7 +86,9 @@ def compare_sym_intd(
         idx = None, 
         adfl_predictor = None,
         rand_adfl_predictor = None,
-        mixed_dfl_predictor = None,
+        mixed_dfl_predictor = None,  # backward-compat alias for mixed-random
+        mixed_rand_dfl_predictor = None,
+        mixed_adv_dfl_predictor = None,
     ):
     """
     Compare the performance of the PO and SPO models using symmetric shortest path interdiction.
@@ -102,7 +104,11 @@ def compare_sym_intd(
     dfl_objs = []
     adfl_objs = []
     rand_adfl_objs = []
-    mixed_dfl_objs = []
+    mixed_rand_dfl_objs = []
+    mixed_adv_dfl_objs = []
+    # Backward compatibility: treat legacy mixed_dfl_predictor as mixed-random.
+    if mixed_dfl_predictor is not None and mixed_rand_dfl_predictor is None:
+        mixed_rand_dfl_predictor = mixed_dfl_predictor
     # Print that the simulation is starting
     print(f"Running symmetric simulations with {num_test_samples} samples...")
 
@@ -124,8 +130,11 @@ def compare_sym_intd(
         if rand_adfl_predictor is not None:
             rand_adfl_cost = rand_adfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
                 .detach().numpy() * normalization_constant
-        if mixed_dfl_predictor is not None:
-            mixed_dfl_cost = mixed_dfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
+        if mixed_rand_dfl_predictor is not None:
+            mixed_rand_dfl_cost = mixed_rand_dfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
+                .detach().numpy() * normalization_constant
+        if mixed_adv_dfl_predictor is not None:
+            mixed_adv_dfl_cost = mixed_adv_dfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
                 .detach().numpy() * normalization_constant
 
         # Solutions without information asymmetry
@@ -157,9 +166,12 @@ def compare_sym_intd(
         if rand_adfl_predictor is not None:
             opt_model.setObj(rand_adfl_cost + x_intd * interdiction)
             y_rand_adv_spo, _ = opt_model.solve()
-        if mixed_dfl_predictor is not None:
-            opt_model.setObj(mixed_dfl_cost + x_intd * interdiction)
-            y_mixed_spo, _ = opt_model.solve()
+        if mixed_rand_dfl_predictor is not None:
+            opt_model.setObj(mixed_rand_dfl_cost + x_intd * interdiction)
+            y_mixed_rand_spo, _ = opt_model.solve()
+        if mixed_adv_dfl_predictor is not None:
+            opt_model.setObj(mixed_adv_dfl_cost + x_intd * interdiction)
+            y_mixed_adv_spo, _ = opt_model.solve()
 
         # Set true cost to evaluate objectives
         opt_model.setObj(cost + x_intd * interdiction)
@@ -172,8 +184,10 @@ def compare_sym_intd(
             adfl_objs.append(opt_model._graph(y_adv_spo))
         if rand_adfl_predictor is not None:
             rand_adfl_objs.append(opt_model._graph(y_rand_adv_spo))
-        if mixed_dfl_predictor is not None:
-            mixed_dfl_objs.append(opt_model._graph(y_mixed_spo))
+        if mixed_rand_dfl_predictor is not None:
+            mixed_rand_dfl_objs.append(opt_model._graph(y_mixed_rand_spo))
+        if mixed_adv_dfl_predictor is not None:
+            mixed_adv_dfl_objs.append(opt_model._graph(y_mixed_adv_spo))
         print_progress(i, num_test_samples)
 
         if rand_adfl_predictor is not None and \
@@ -190,9 +204,13 @@ def compare_sym_intd(
         results["adv_spo_objective"] = np.array(adfl_objs)
     if rand_adfl_predictor is not None:
         results["rand_adv_spo_objective"] = np.array(rand_adfl_objs)
-    if mixed_dfl_predictor is not None:
-        # Keep both keys for backward compatibility with existing consumers.
-        results["mixed_adv_spo_objective"] = np.array(mixed_dfl_objs)
+    if mixed_rand_dfl_predictor is not None:
+        mixed_rand_objs = np.array(mixed_rand_dfl_objs)
+        results["mixed_rand_spo_objective"] = mixed_rand_objs
+        results["mixed_adv_spo_objective"] = mixed_rand_objs
+        results["mixed_dfl_objective"] = mixed_rand_objs
+    if mixed_adv_dfl_predictor is not None:
+        results["mixed_adverse_spo_objective"] = np.array(mixed_adv_dfl_objs)
     return results
 
 
@@ -346,5 +364,3 @@ def compare_wrong_asym_intd(
     #     "estimated_objective": np.array(est_objs),
     # }
     return np.array(est_objs)
-
-

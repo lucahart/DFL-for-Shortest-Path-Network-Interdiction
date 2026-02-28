@@ -8,19 +8,21 @@ from dflintdpy.data.config import HP
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
 
 
-METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "DFL+Mixed", "A-DFL"]
+METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "DFL+MixedRand", "DFL+MixedAdv", "A-DFL"]
 METHOD_KEYS = {
     "PO": ("o_p", "s_p"),
     "DFL": ("o_s", "s_s"),
     "DFL+Rand": ("o_r", "s_r"),
-    "DFL+Mixed": ("o_m", "s_m"),
+    "DFL+MixedRand": ("o_mr", "s_mr"),
+    "DFL+MixedAdv": ("o_ma", "s_ma"),
     "A-DFL": ("o_a", "s_a"),
 }
 METHOD_COLORS = {
     "PO": "#FF6B6B",
     "DFL": "#4ECDC4",
     "DFL+Rand": "#FFA552",
-    "DFL+Mixed": "#8AB17D",
+    "DFL+MixedRand": "#8AB17D",
+    "DFL+MixedAdv": "#2A9D8F",
     "A-DFL": "#45B7D1",
 }
 
@@ -75,6 +77,7 @@ def run_sweep(cfg: HP, scenarios: list[int], num_seeds: int) -> tuple[dict, dict
 
         for seed_idx in range(num_seeds):
             seed1, seed2, seed3 = _seed_triplet(seed_idx + seed_0)
+            # cfg.set("seed", seed_idx + seed_0)
             cfg.set("random_seed", seed1)
             cfg.set("intd_seed", seed2)
             cfg.set("loader_seed", seed3)
@@ -99,7 +102,7 @@ def run_sweep(cfg: HP, scenarios: list[int], num_seeds: int) -> tuple[dict, dict
                 sample_stats[scenario]["unintd"][method].extend(no_sample.tolist())
                 sample_stats[scenario]["intd"][method].extend(sym_sample.tolist())
 
-            print(f"  Seed {seed_idx + 1:02d}/{num_seeds} done.")
+            print(f"  Seed {seed_idx + 1:02d}/{num_seeds} done. \n")
 
     return sim_stats, sample_stats
 
@@ -169,7 +172,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Sweep num_scenarios and plot percentage cost increase vs oracle "
-            "for PO/DFL/DFL+Rand/DFL+Mixed/A-DFL."
+            "for PO/DFL/DFL+Rand/DFL+MixedRand/DFL+MixedAdv/A-DFL."
         )
     )
     parser.add_argument(

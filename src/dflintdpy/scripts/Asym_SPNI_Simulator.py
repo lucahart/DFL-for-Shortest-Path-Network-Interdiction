@@ -74,7 +74,8 @@ intd_mean = []
 po_mean = []
 spo_mean = []
 rand_spo_mean = []
-mixed_spo_mean = []
+mixed_rand_spo_mean = []
+mixed_adv_spo_mean = []
 adv_spo_mean = []
 test_std = []
 train_std = []
@@ -82,7 +83,8 @@ intd_std = []
 po_std = []
 spo_std = []
 rand_spo_std = []
-mixed_spo_std = []
+mixed_rand_spo_std = []
+mixed_adv_spo_std = []
 adv_spo_std = []
 for result in results:
         test_mean.append(result['prediction_mean_std']['test_mean'])
@@ -91,7 +93,8 @@ for result in results:
         po_mean.append(result['prediction_mean_std']['po_mean'])
         spo_mean.append(result['prediction_mean_std']['spo_mean'])
         rand_spo_mean.append(result['prediction_mean_std']['rand_spo_mean'])
-        mixed_spo_mean.append(result['prediction_mean_std']['mixed_spo_mean'])
+        mixed_rand_spo_mean.append(result['prediction_mean_std'].get('mixed_rand_spo_mean', result['prediction_mean_std'].get('mixed_spo_mean', np.nan)))
+        mixed_adv_spo_mean.append(result['prediction_mean_std'].get('mixed_adv_spo_mean', np.nan))
         adv_spo_mean.append(result['prediction_mean_std']['adv_spo_mean'])
         test_std.append(result['prediction_mean_std']['test_std'])
         train_std.append(result['prediction_mean_std']['train_std'])
@@ -99,7 +102,8 @@ for result in results:
         po_std.append(result['prediction_mean_std']['po_std'])
         spo_std.append(result['prediction_mean_std']['spo_std'])
         rand_spo_std.append(result['prediction_mean_std']['rand_spo_std'])
-        mixed_spo_std.append(result['prediction_mean_std']['mixed_spo_std'])
+        mixed_rand_spo_std.append(result['prediction_mean_std'].get('mixed_rand_spo_std', result['prediction_mean_std'].get('mixed_spo_std', np.nan)))
+        mixed_adv_spo_std.append(result['prediction_mean_std'].get('mixed_adv_spo_std', np.nan))
         adv_spo_std.append(result['prediction_mean_std']['adv_spo_std'])
 
 # Combine metrics
@@ -114,6 +118,9 @@ metric_8 = []
 metric_9 = []
 metric_10 = []
 metric_11 = []
+metric_12 = []
+metric_13 = []
+metric_14 = []
 for result in results:
     metric_1.append(result['metrics']['metric_1'])
     metric_2.append(result['metrics']['metric_2'])
@@ -126,6 +133,9 @@ for result in results:
     metric_9.append(result['metrics']['metric_9'])
     metric_10.append(result['metrics']['metric_10'])
     metric_11.append(result['metrics']['metric_11'])
+    metric_12.append(result['metrics'].get('metric_12', np.nan))
+    metric_13.append(result['metrics'].get('metric_13', np.nan))
+    metric_14.append(result['metrics'].get('metric_14', np.nan))
 
 # Combine table 1
 t1_o_n_mean = []
@@ -152,11 +162,17 @@ t1_r_s_std = []
 t1_r_a_mean = []
 t1_r_a_std = []
 
-t1_m_n_mean = []
-t1_m_s_mean = []
-t1_m_s_std = []
-t1_m_a_mean = []
-t1_m_a_std = []
+t1_mr_n_mean = []
+t1_mr_s_mean = []
+t1_mr_s_std = []
+t1_mr_a_mean = []
+t1_mr_a_std = []
+
+t1_ma_n_mean = []
+t1_ma_s_mean = []
+t1_ma_s_std = []
+t1_ma_a_mean = []
+t1_ma_a_std = []
 
 t1_a_n_mean = []
 t1_a_s_mean = []
@@ -188,11 +204,17 @@ for result in results:
     t1_r_a_mean.append(result['table_1']['t1_r_a_mean'])
     t1_r_a_std.append(result['table_1']['t1_r_a_std'])
 
-    t1_m_n_mean.append(result['table_1']['t1_m_n_mean'])
-    t1_m_s_mean.append(result['table_1']['t1_m_s_mean'])
-    t1_m_s_std.append(result['table_1']['t1_m_s_std'])
-    t1_m_a_mean.append(result['table_1']['t1_m_a_mean'])
-    t1_m_a_std.append(result['table_1']['t1_m_a_std'])
+    t1_mr_n_mean.append(result['table_1'].get('t1_mr_n_mean', result['table_1'].get('t1_m_n_mean', np.nan)))
+    t1_mr_s_mean.append(result['table_1'].get('t1_mr_s_mean', result['table_1'].get('t1_m_s_mean', np.nan)))
+    t1_mr_s_std.append(result['table_1'].get('t1_mr_s_std', result['table_1'].get('t1_m_s_std', np.nan)))
+    t1_mr_a_mean.append(result['table_1'].get('t1_mr_a_mean', result['table_1'].get('t1_m_a_mean', np.nan)))
+    t1_mr_a_std.append(result['table_1'].get('t1_mr_a_std', result['table_1'].get('t1_m_a_std', np.nan)))
+
+    t1_ma_n_mean.append(result['table_1'].get('t1_ma_n_mean', np.nan))
+    t1_ma_s_mean.append(result['table_1'].get('t1_ma_s_mean', np.nan))
+    t1_ma_s_std.append(result['table_1'].get('t1_ma_s_std', np.nan))
+    t1_ma_a_mean.append(result['table_1'].get('t1_ma_a_mean', np.nan))
+    t1_ma_a_std.append(result['table_1'].get('t1_ma_a_std', np.nan))
 
     t1_a_n_mean.append(result['table_1']['t1_a_n_mean'])
     t1_a_s_mean.append(result['table_1']['t1_a_s_mean'])
@@ -245,7 +267,8 @@ print(f"\tIntd:     {np.array(intd_mean).mean():.4f} +/- {np.array(intd_mean).st
 print(f"\tPO:       {np.array(po_mean).mean():.4f} +/- {np.array(po_mean).std():.4f}")
 print(f"\tSPO+:     {np.array(spo_mean).mean():.4f} +/- {np.array(spo_mean).std():.4f}")
 print(f"\tSPO+ rnd: {np.array(rand_spo_mean).mean():.4f} +/- {np.array(rand_spo_mean).std():.4f}")
-print(f"\tSPO+ mxd: {np.array(mixed_spo_mean).mean():.4f} +/- {np.array(mixed_spo_mean).std():.4f}")
+print(f"\tSPO+ mr:  {np.array(mixed_rand_spo_mean).mean():.4f} +/- {np.array(mixed_rand_spo_mean).std():.4f}")
+print(f"\tSPO+ ma:  {np.array(mixed_adv_spo_mean).mean():.4f} +/- {np.array(mixed_adv_spo_mean).std():.4f}")
 print(f"\tSPO+ adv: {np.array(adv_spo_mean).mean():.4f}")
 
 print(f"Std value comparison:")
@@ -255,19 +278,23 @@ print(f"\tIntd:     {np.array(intd_mean).std():.4f} +/- {np.array(intd_std).mean
 print(f"\tPO:       {np.array(po_mean).std():.4f} +/- {np.array(po_std).mean():.4f}")
 print(f"\tSPO+:     {np.array(spo_mean).std():.4f} +/- {np.array(spo_std).mean():.4f}")
 print(f"\tSPO+ rnd: {np.array(rand_spo_mean).std():.4f} +/- {np.array(rand_spo_std).mean():.4f}")
-print(f"\tSPO+ mxd: {np.array(mixed_spo_mean).std():.4f} +/- {np.array(mixed_spo_std).mean():.4f}")
+print(f"\tSPO+ mr:  {np.array(mixed_rand_spo_mean).std():.4f} +/- {np.array(mixed_rand_spo_std).mean():.4f}")
+print(f"\tSPO+ ma:  {np.array(mixed_adv_spo_mean).std():.4f} +/- {np.array(mixed_adv_spo_std).mean():.4f}")
 print(f"\tSPO+ adv: {np.array(adv_spo_mean).std():.4f} +/- {np.array(adv_spo_std).mean():.4f}")
 
 # Print metrics
 print(f"DFL no intd. improvement = {np.array(metric_1).mean():.4f}")
 print(f"DFL+Rnd no intd. improvement = {np.array(metric_2).mean():.4f}")
-print(f"Mixed DFL no intd. improvement = {np.array(metric_9).mean():.4f}")
+print(f"Mixed-Rnd DFL no intd. improvement = {np.array(metric_9).mean():.4f}")
+print(f"Mixed-Adv DFL no intd. improvement = {np.array(metric_12).mean():.4f}")
 print(f"Adv. DFL no intd. improvement = {np.array(metric_3).mean():.4f}")
 print(f"DFL+Rnd sym. improvement = {np.array(metric_4).mean():.4f}")
-print(f"Mixed DFL sym. improvement = {np.array(metric_10).mean():.4f}")
+print(f"Mixed-Rnd DFL sym. improvement = {np.array(metric_10).mean():.4f}")
+print(f"Mixed-Adv DFL sym. improvement = {np.array(metric_13).mean():.4f}")
 print(f"Adv. DFL sym. improvement = {np.array(metric_5).mean():.4f}")
 print(f"DFL+Rnd asym. improvement = {np.array(metric_6).mean():.4f}")
-print(f"Mixed DFL asym. improvement = {np.array(metric_11).mean():.4f}")
+print(f"Mixed-Rnd DFL asym. improvement = {np.array(metric_11).mean():.4f}")
+print(f"Mixed-Adv DFL asym. improvement = {np.array(metric_14).mean():.4f}")
 print(f"Adv. DFL asym. improvement = {np.array(metric_7).mean():.4f}")
 if compute_asym_intd_2:
     print(f"PO Asym. + Adv. Evader > Sym Asym. = {np.array(metric_8).mean():.4f}")
@@ -296,10 +323,15 @@ rows = [
         f"{np.array(t1_r_s_mean).mean():.4f} +/- {np.array(t1_r_s_mean).std():.4f}",
         f"{np.array(t1_r_a_mean).mean():.4f} +/- {np.array(t1_r_a_mean).std():.4f}",
     ], [
-        "SPO mxd",
-        f"{np.array(t1_m_n_mean).mean():.4f} +/- {np.array(t1_m_n_mean).std():.4f}",
-        f"{np.array(t1_m_s_mean).mean():.4f} +/- {np.array(t1_m_s_mean).std():.4f}",
-        f"{np.array(t1_m_a_mean).mean():.4f} +/- {np.array(t1_m_a_mean).std():.4f}",
+        "SPO mxd-rnd",
+        f"{np.array(t1_mr_n_mean).mean():.4f} +/- {np.array(t1_mr_n_mean).std():.4f}",
+        f"{np.array(t1_mr_s_mean).mean():.4f} +/- {np.array(t1_mr_s_mean).std():.4f}",
+        f"{np.array(t1_mr_a_mean).mean():.4f} +/- {np.array(t1_mr_a_mean).std():.4f}",
+    ], [
+        "SPO mxd-adv",
+        f"{np.array(t1_ma_n_mean).mean():.4f} +/- {np.array(t1_ma_n_mean).std():.4f}",
+        f"{np.array(t1_ma_s_mean).mean():.4f} +/- {np.array(t1_ma_s_mean).std():.4f}",
+        f"{np.array(t1_ma_a_mean).mean():.4f} +/- {np.array(t1_ma_a_mean).std():.4f}",
     ], [
         "SPO adv", 
         f"{np.array(t1_a_n_mean).mean():.4f} +/- {np.array(t1_a_n_mean).std():.4f}", 

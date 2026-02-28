@@ -56,6 +56,7 @@ import json
 import os
 import pickle
 import re
+import shutil
 import time
 from enum import Enum
 from pathlib import Path
@@ -782,3 +783,371 @@ def read_fig(cfg: Any, fig_type: Union[str, Sequence[str]] = "all") -> Union[Dic
     # Sequence of fig types
     out = {str(ft): _collect_one(str(ft)) for ft in fig_type}
     return out
+
+
+# =============================================================================
+# 7) Seed-repair utility for predictor/dataset cache files
+# =============================================================================
+
+def _seed_triplet_from_sweep_seed(seed: int) -> Tuple[int, int, int]:
+    """
+    Reproduce the simulator's seed expansion:
+      np.random.seed(seed); np.random.randint(0, 150, 3)
+    """
+    local_np = np
+    if local_np is None:
+        try:
+            import numpy as local_np  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("NumPy is required to reproduce sweep seed triplets.") from exc
+    rng = local_np.random.RandomState(int(seed))
+    vals = rng.randint(0, 150, 3).tolist()
+    return int(vals[0]), int(vals[1]), int(vals[2])
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    """Best-effort conversion to int; return None if conversion fails."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _file_sha256(path: Path) -> str:
+    """Compute SHA-256 digest for conflict checks when target files already exist."""
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _append_repair_history(meta: Dict[str, Any], repair_event: Dict[str, Any]) -> None:
+    """Append a repair event while preserving any existing metadata fields."""
+    hist = meta.get("seed_repair_history")
+    if isinstance(hist, list):
+        hist.append(repair_event)
+    elif hist is None:
+        meta["seed_repair_history"] = [repair_event]
+    else:
+        meta["seed_repair_history"] = [hist, repair_event]
+
+
+def _seed_lookup(candidate_seeds: Sequence[int]) -> Tuple[
+    Dict[Tuple[int, int, int], List[int]],
+    Dict[Tuple[int, int], List[int]],
+]:
+    """
+    Build lookup tables:
+      - full triplet (random, intd, loader) -> candidate seeds
+      - data pair   (random, loader)        -> candidate seeds
+    """
+    triplet_map: Dict[Tuple[int, int, int], List[int]] = {}
+    pair_map: Dict[Tuple[int, int], List[int]] = {}
+    for seed in candidate_seeds:
+        random_seed, intd_seed, loader_seed = _seed_triplet_from_sweep_seed(seed)
+        triplet_map.setdefault((random_seed, intd_seed, loader_seed), []).append(seed)
+        pair_map.setdefault((random_seed, loader_seed), []).append(seed)
+    return triplet_map, pair_map
+
+
+def repair_seed_sweep_hashes(
+    *,
+    seed_0: int,
+    num_seeds: int,
+    candidate_seeds: Optional[Sequence[int]] = None,
+    root_dir: Optional[Union[str, Path]] = None,
+    include_datasets: bool = True,
+    include_predictors: bool = True,
+    dry_run: bool = True,
+    backup_originals: bool = True,
+    backup_dir: Optional[Union[str, Path]] = None,
+) -> Dict[str, Any]:
+    """
+    Repair cached dataset/predictor artefacts where `seed` is incorrect but
+    `random_seed` / `intd_seed` / `loader_seed` are correct.
+
+    Method
+    ------
+    1) Build candidate seeds from either:
+       - explicit `candidate_seeds`, OR
+       - the sweep range: seed_idx + seed_0 for seed_idx in [0, num_seeds)
+    2) Parse each `.meta.json` in datasets/predictors.
+    3) Infer the expected sweep seed by matching:
+       - predictors: (random_seed, intd_seed, loader_seed)
+       - datasets:   (random_seed, loader_seed)
+    4) Recompute the correct hash after replacing `seed`.
+    5) Materialize corrected files first; then archive originals to backup.
+
+    Safety
+    ------
+    - No destructive overwrite: existing target files are checked for content
+      conflicts before writing.
+    - If `backup_originals=True` and `dry_run=False`, originals are moved to a
+      timestamped backup folder only after corrected files are in place.
+    """
+    if candidate_seeds is None:
+        if num_seeds <= 0:
+            raise ValueError("num_seeds must be > 0 when candidate_seeds is not provided.")
+        candidate_seeds = [int(seed_0) + i for i in range(int(num_seeds))]
+    else:
+        candidate_seeds = [int(s) for s in candidate_seeds]
+
+    # Deduplicate while preserving deterministic order.
+    candidate_seeds = sorted(set(candidate_seeds))
+    if not candidate_seeds:
+        raise ValueError("No candidate seeds provided for repair.")
+
+    root = Path(root_dir).expanduser().resolve() if root_dir is not None else _root_path()
+    dataset_dir = root / "datasets"
+    predictor_dir = root / "predictors"
+
+    meta_files: List[Path] = []
+    if include_datasets and dataset_dir.exists():
+        meta_files.extend(sorted(dataset_dir.glob("*.meta.json")))
+    if include_predictors and predictor_dir.exists():
+        meta_files.extend(sorted(predictor_dir.glob("*.meta.json")))
+
+    triplet_map, pair_map = _seed_lookup(candidate_seeds)
+    lookup_key_counts = {
+        "triplet_ambiguous": int(sum(1 for vals in triplet_map.values() if len(vals) > 1)),
+        "pair_ambiguous": int(sum(1 for vals in pair_map.values() if len(vals) > 1)),
+    }
+
+    run_backup_dir: Optional[Path] = None
+    if not dry_run and backup_originals:
+        if backup_dir is None:
+            run_backup_dir = root / f"seed_repair_backup_{int(time.time())}"
+        else:
+            run_backup_dir = Path(backup_dir).expanduser().resolve()
+        run_backup_dir.mkdir(parents=True, exist_ok=True)
+
+    report_entries: List[Dict[str, Any]] = []
+    counts: Dict[str, int] = {}
+
+    def _record(entry: Dict[str, Any]) -> None:
+        status = str(entry.get("status", "unknown"))
+        counts[status] = counts.get(status, 0) + 1
+        report_entries.append(entry)
+
+    for meta_path in meta_files:
+        entry: Dict[str, Any] = {"meta_path": str(meta_path)}
+
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            entry.update({"status": "skip_bad_json", "reason": str(exc)})
+            _record(entry)
+            continue
+
+        artefact_raw = str(meta.get("artefact", "")).upper()
+        if artefact_raw not in {"DATA", "PRED"}:
+            entry.update({"status": "skip_non_target", "reason": f"artefact={artefact_raw}"})
+            _record(entry)
+            continue
+
+        hash_type = str(meta.get("hash_type", "")).lower()
+        if hash_type not in {"data", "pred"}:
+            entry.update({"status": "skip_bad_hash_type", "reason": f"hash_type={hash_type}"})
+            _record(entry)
+            continue
+
+        subset = meta.get("canonical_cfg_subset")
+        if not isinstance(subset, dict):
+            entry.update({"status": "skip_bad_subset", "reason": "canonical_cfg_subset missing or not dict"})
+            _record(entry)
+            continue
+
+        random_seed = _safe_int(subset.get("random_seed"))
+        loader_seed = _safe_int(subset.get("loader_seed"))
+        intd_seed = _safe_int(subset.get("intd_seed"))
+        current_seed = _safe_int(subset.get("seed"))
+
+        if random_seed is None or loader_seed is None:
+            entry.update({
+                "status": "skip_missing_required_seeds",
+                "reason": "random_seed/loader_seed missing",
+            })
+            _record(entry)
+            continue
+
+        # Predictors use full triplet; datasets use pair (intd_seed is not part of DATA hash).
+        candidate_matches: List[int]
+        if artefact_raw == "PRED":
+            if intd_seed is None:
+                entry.update({
+                    "status": "skip_missing_required_seeds",
+                    "reason": "intd_seed missing for predictor",
+                })
+                _record(entry)
+                continue
+            candidate_matches = triplet_map.get((random_seed, intd_seed, loader_seed), [])
+            match_scope = "triplet"
+        else:
+            if intd_seed is not None:
+                candidate_matches = triplet_map.get((random_seed, intd_seed, loader_seed), [])
+                match_scope = "triplet"
+            else:
+                candidate_matches = pair_map.get((random_seed, loader_seed), [])
+                match_scope = "pair"
+
+        if len(candidate_matches) == 0:
+            entry.update({
+                "status": "skip_no_seed_match",
+                "reason": f"no {match_scope} match in candidate seed set",
+                "current_seed": current_seed,
+                "random_seed": random_seed,
+                "intd_seed": intd_seed,
+                "loader_seed": loader_seed,
+            })
+            _record(entry)
+            continue
+        if len(candidate_matches) > 1:
+            entry.update({
+                "status": "skip_ambiguous_seed_match",
+                "reason": f"multiple {match_scope} matches",
+                "matches": candidate_matches,
+            })
+            _record(entry)
+            continue
+
+        inferred_seed = candidate_matches[0]
+        if current_seed == inferred_seed:
+            entry.update({"status": "unchanged", "seed": current_seed})
+            _record(entry)
+            continue
+
+        fixed_subset = dict(subset)
+        fixed_subset["seed"] = inferred_seed
+        try:
+            fixed_hash = _unique_hash(fixed_subset, type=hash_type)
+        except Exception as exc:
+            entry.update({"status": "skip_hash_error", "reason": str(exc)})
+            _record(entry)
+            continue
+
+        old_hash_from_meta = str(meta.get("hash", ""))
+        meta_stem = meta_path.name.removesuffix(".meta.json")
+        if "_" not in meta_stem:
+            entry.update({"status": "skip_bad_filename", "reason": "cannot split filename hash"})
+            _record(entry)
+            continue
+        filename_prefix, filename_hash = meta_stem.rsplit("_", 1)
+        if not filename_hash:
+            entry.update({"status": "skip_bad_filename", "reason": "empty filename hash"})
+            _record(entry)
+            continue
+
+        if artefact_raw == "DATA":
+            ext = ARTEFACT_EXTENSION[Artefacts.DATA]
+        else:
+            ext = ARTEFACT_EXTENSION[Artefacts.PRED]
+
+        old_data_path = meta_path.with_name(f"{filename_prefix}_{filename_hash}{ext}")
+        new_meta_path = meta_path.with_name(f"{filename_prefix}_{fixed_hash}.meta.json")
+        new_data_path = old_data_path.with_name(f"{filename_prefix}_{fixed_hash}{ext}")
+
+        fixed_meta = dict(meta)
+        fixed_meta["hash"] = fixed_hash
+        # Keep subset canonical and deterministic.
+        subset_keys = DATA_KEYS if hash_type == "data" else PRED_KEYS
+        fixed_meta["canonical_cfg_subset"] = _canonical_subset(fixed_subset, subset_keys)
+        _append_repair_history(
+            fixed_meta,
+            {
+                "repaired_unix": time.time(),
+                "old_seed": current_seed,
+                "new_seed": inferred_seed,
+                "old_hash": old_hash_from_meta,
+                "new_hash": fixed_hash,
+                "match_scope": match_scope,
+                "preserved_head_hash": meta.get("head_hash"),
+            },
+        )
+
+        entry.update(
+            {
+                "status": "would_repair" if dry_run else "repaired",
+                "old_seed": current_seed,
+                "new_seed": inferred_seed,
+                "old_hash_meta": old_hash_from_meta,
+                "old_hash_filename": filename_hash,
+                "new_hash": fixed_hash,
+                "old_meta_path": str(meta_path),
+                "new_meta_path": str(new_meta_path),
+                "old_data_path": str(old_data_path),
+                "new_data_path": str(new_data_path),
+            }
+        )
+
+        if dry_run:
+            _record(entry)
+            continue
+
+        # Conflict checks for target paths.
+        conflict_reason: Optional[str] = None
+        if new_data_path.exists() and old_data_path.exists():
+            if _file_sha256(new_data_path) != _file_sha256(old_data_path):
+                conflict_reason = "target data file exists with different content"
+        if new_meta_path.exists():
+            try:
+                existing_meta = json.loads(new_meta_path.read_text(encoding="utf-8"))
+                if existing_meta != fixed_meta:
+                    conflict_reason = "target meta file exists with different content"
+            except Exception:
+                conflict_reason = "target meta file exists but cannot be parsed"
+
+        if conflict_reason is not None:
+            entry["status"] = "skip_conflict"
+            entry["reason"] = conflict_reason
+            _record(entry)
+            continue
+
+        # Materialize corrected files first.
+        try:
+            if old_data_path.exists() and old_data_path != new_data_path and not new_data_path.exists():
+                shutil.copy2(old_data_path, new_data_path)
+
+            if new_meta_path != meta_path:
+                tmp_meta = new_meta_path.with_suffix(new_meta_path.suffix + ".tmp")
+                tmp_meta.write_text(json.dumps(fixed_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+                tmp_meta.replace(new_meta_path)
+            else:
+                meta_path.write_text(json.dumps(fixed_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            entry["status"] = "skip_write_error"
+            entry["reason"] = str(exc)
+            _record(entry)
+            continue
+
+        # Archive originals only after corrected artefacts exist.
+        if backup_originals and run_backup_dir is not None:
+            try:
+                if old_data_path.exists() and old_data_path != new_data_path:
+                    data_backup = run_backup_dir / old_data_path.relative_to(root)
+                    data_backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(old_data_path), str(data_backup))
+                    entry["backup_data_path"] = str(data_backup)
+
+                if meta_path.exists() and meta_path != new_meta_path:
+                    meta_backup = run_backup_dir / meta_path.relative_to(root)
+                    meta_backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(meta_path), str(meta_backup))
+                    entry["backup_meta_path"] = str(meta_backup)
+            except Exception as exc:
+                # Corrected files already exist; keep that success but report backup issue.
+                entry["backup_error"] = str(exc)
+
+        _record(entry)
+
+    return {
+        "root_dir": str(root),
+        "dry_run": dry_run,
+        "candidate_seeds": list(candidate_seeds),
+        "lookup_key_counts": lookup_key_counts,
+        "backup_dir": str(run_backup_dir) if run_backup_dir is not None else None,
+        "counts": counts,
+        "entries": report_entries,
+    }

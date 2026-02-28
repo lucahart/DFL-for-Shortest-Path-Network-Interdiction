@@ -171,6 +171,14 @@ def _get_or_nan(data, key, ref_key):
     return np.full_like(np.asarray(data[ref_key], dtype=float), np.nan, dtype=float)
 
 
+def _get_first_or_nan(data, keys, ref_key):
+    """Return first available key in `keys`, else NaN array matching ref_key."""
+    for key in keys:
+        if key in data:
+            return data[key]
+    return np.full_like(np.asarray(data[ref_key], dtype=float), np.nan, dtype=float)
+
+
 def compute_percentage_increases_from_samples(all_data):
     """Compute per-sample percentage increases for boxplots."""
     calculations = {}
@@ -178,13 +186,15 @@ def compute_percentage_increases_from_samples(all_data):
     calculations['no_intd_p'] = _safe_percentage(all_data['o_p'], all_data['o_o'])
     calculations['no_intd_s'] = _safe_percentage(all_data['o_s'], all_data['o_o'])
     calculations['no_intd_r'] = _safe_percentage(all_data['o_r'], all_data['o_o'])
-    calculations['no_intd_m'] = _safe_percentage(_get_or_nan(all_data, 'o_m', 'o_o'), all_data['o_o'])
+    calculations['no_intd_mr'] = _safe_percentage(_get_first_or_nan(all_data, ['o_mr', 'o_m'], 'o_o'), all_data['o_o'])
+    calculations['no_intd_ma'] = _safe_percentage(_get_or_nan(all_data, 'o_ma', 'o_o'), all_data['o_o'])
     calculations['no_intd_a'] = _safe_percentage(all_data['o_a'], all_data['o_o'])
 
     calculations['sym_intd_p'] = _safe_percentage(all_data['s_p'], all_data['s_o'])
     calculations['sym_intd_s'] = _safe_percentage(all_data['s_s'], all_data['s_o'])
     calculations['sym_intd_r'] = _safe_percentage(all_data['s_r'], all_data['s_o'])
-    calculations['sym_intd_m'] = _safe_percentage(_get_or_nan(all_data, 's_m', 's_o'), all_data['s_o'])
+    calculations['sym_intd_mr'] = _safe_percentage(_get_first_or_nan(all_data, ['s_mr', 's_m'], 's_o'), all_data['s_o'])
+    calculations['sym_intd_ma'] = _safe_percentage(_get_or_nan(all_data, 's_ma', 's_o'), all_data['s_o'])
     calculations['sym_intd_a'] = _safe_percentage(all_data['s_a'], all_data['s_o'])
     
     # calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
@@ -194,7 +204,8 @@ def compute_percentage_increases_from_samples(all_data):
     calculations['asym_intd_p'] = _safe_percentage(all_data['a_p'], all_data['a_o'])
     calculations['asym_intd_s'] = _safe_percentage(all_data['a_s'], all_data['a_o'])
     calculations['asym_intd_r'] = _safe_percentage(all_data['a_r'], all_data['a_o'])
-    calculations['asym_intd_m'] = _safe_percentage(_get_or_nan(all_data, 'a_m', 'a_o'), all_data['a_o'])
+    calculations['asym_intd_mr'] = _safe_percentage(_get_first_or_nan(all_data, ['a_mr', 'a_m'], 'a_o'), all_data['a_o'])
+    calculations['asym_intd_ma'] = _safe_percentage(_get_or_nan(all_data, 'a_ma', 'a_o'), all_data['a_o'])
     calculations['asym_intd_a'] = _safe_percentage(all_data['a_a'], all_data['a_o'])
 
     return calculations
@@ -207,13 +218,15 @@ def compute_percentage_increases_from_simulations(simulations):
         calculations['no_intd_p'].append(_safe_percentage_sum(sim_data['o_p'], sim_data['o_o']))
         calculations['no_intd_s'].append(_safe_percentage_sum(sim_data['o_s'], sim_data['o_o']))
         calculations['no_intd_r'].append(_safe_percentage_sum(sim_data['o_r'], sim_data['o_o']))
-        calculations['no_intd_m'].append(_safe_percentage_sum(_get_or_nan(sim_data, 'o_m', 'o_o'), sim_data['o_o']))
+        calculations['no_intd_mr'].append(_safe_percentage_sum(_get_first_or_nan(sim_data, ['o_mr', 'o_m'], 'o_o'), sim_data['o_o']))
+        calculations['no_intd_ma'].append(_safe_percentage_sum(_get_or_nan(sim_data, 'o_ma', 'o_o'), sim_data['o_o']))
         calculations['no_intd_a'].append(_safe_percentage_sum(sim_data['o_a'], sim_data['o_o']))
 
         calculations['sym_intd_p'].append(_safe_percentage_sum(sim_data['s_p'], sim_data['s_o']))
         calculations['sym_intd_s'].append(_safe_percentage_sum(sim_data['s_s'], sim_data['s_o']))
         calculations['sym_intd_r'].append(_safe_percentage_sum(sim_data['s_r'], sim_data['s_o']))
-        calculations['sym_intd_m'].append(_safe_percentage_sum(_get_or_nan(sim_data, 's_m', 's_o'), sim_data['s_o']))
+        calculations['sym_intd_mr'].append(_safe_percentage_sum(_get_first_or_nan(sim_data, ['s_mr', 's_m'], 's_o'), sim_data['s_o']))
+        calculations['sym_intd_ma'].append(_safe_percentage_sum(_get_or_nan(sim_data, 's_ma', 's_o'), sim_data['s_o']))
         calculations['sym_intd_a'].append(_safe_percentage_sum(sim_data['s_a'], sim_data['s_o']))
 
         # calculations['asym_intd_p'].append(
@@ -228,7 +241,8 @@ def compute_percentage_increases_from_simulations(simulations):
         calculations['asym_intd_p'].append(_safe_percentage_sum(sim_data['a_p'], sim_data['a_o']))
         calculations['asym_intd_s'].append(_safe_percentage_sum(sim_data['a_s'], sim_data['a_o']))
         calculations['asym_intd_r'].append(_safe_percentage_sum(sim_data['a_r'], sim_data['a_o']))
-        calculations['asym_intd_m'].append(_safe_percentage_sum(_get_or_nan(sim_data, 'a_m', 'a_o'), sim_data['a_o']))
+        calculations['asym_intd_mr'].append(_safe_percentage_sum(_get_first_or_nan(sim_data, ['a_mr', 'a_m'], 'a_o'), sim_data['a_o']))
+        calculations['asym_intd_ma'].append(_safe_percentage_sum(_get_or_nan(sim_data, 'a_ma', 'a_o'), sim_data['a_o']))
         calculations['asym_intd_a'].append(_safe_percentage_sum(sim_data['a_a'], sim_data['a_o']))
 
     return dict(calculations)
@@ -236,24 +250,24 @@ def compute_percentage_increases_from_simulations(simulations):
 def create_boxplots_from_calculations(calculations, save_path=None):
     """Create boxplots from precomputed calculations."""
     data_to_plot = [
-        calculations['no_intd_p'], calculations['no_intd_s'], calculations['no_intd_r'], calculations['no_intd_m'], calculations['no_intd_a'],
-        calculations['sym_intd_p'], calculations['sym_intd_s'], calculations['sym_intd_r'], calculations['sym_intd_m'], calculations['sym_intd_a'],
-        calculations['asym_intd_p'], calculations['asym_intd_s'], calculations['asym_intd_r'], calculations['asym_intd_m'], calculations['asym_intd_a']
+        calculations['no_intd_p'], calculations['no_intd_s'], calculations['no_intd_r'], calculations['no_intd_mr'], calculations['no_intd_ma'], calculations['no_intd_a'],
+        calculations['sym_intd_p'], calculations['sym_intd_s'], calculations['sym_intd_r'], calculations['sym_intd_mr'], calculations['sym_intd_ma'], calculations['sym_intd_a'],
+        calculations['asym_intd_p'], calculations['asym_intd_s'], calculations['asym_intd_r'], calculations['asym_intd_mr'], calculations['asym_intd_ma'], calculations['asym_intd_a']
     ]
     
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    positions = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17]
+    positions = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20]
     bp = ax.boxplot(data_to_plot, positions=positions, widths=0.6, patch_artist=True,
                      showfliers=False, flierprops=dict(marker='o', markersize=3, alpha=0.5))
     
-    colors = ['#FF6B6B', '#4ECDC4', '#FFA552', '#8AB17D', '#45B7D1'] * 3
+    colors = ['#FF6B6B', '#4ECDC4', '#FFA552', '#8AB17D', '#2A9D8F', '#45B7D1'] * 3
     for patch, color in zip(bp['boxes'], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
     
-    ax.set_xticks([3, 9, 15])
-    ax.set_xlim(0, 18)
+    ax.set_xticks([3.5, 10.5, 17.5])
+    ax.set_xlim(0, 21)
     ax.set_xticklabels(['no intd', 'sym intd', 'asym intd'], fontsize=20)
 
     ax.set_ylabel('Percentage cost increase vs. oracle (%)', fontsize=22)
@@ -266,7 +280,8 @@ def create_boxplots_from_calculations(calculations, save_path=None):
         Patch(facecolor='#FF6B6B', alpha=0.7, label='PFL'),
         Patch(facecolor='#4ECDC4', alpha=0.7, label='DFL'),
         Patch(facecolor='#FFA552', alpha=0.7, label='DFL+Rand'),
-        Patch(facecolor='#8AB17D', alpha=0.7, label='DFL+Mixed'),
+        Patch(facecolor='#8AB17D', alpha=0.7, label='DFL+MixedRand'),
+        Patch(facecolor='#2A9D8F', alpha=0.7, label='DFL+MixedAdv'),
         Patch(facecolor='#45B7D1', alpha=0.7, label='A-DFL')
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=20)

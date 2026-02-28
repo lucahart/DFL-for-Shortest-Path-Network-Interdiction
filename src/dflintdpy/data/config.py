@@ -5,8 +5,8 @@ from typing import Any, Tuple
 @dataclass
 class HP:
     # Hyperparameters
-    num_seeds : int = 5 # number of simulations to run and random seed sets to use
-    seed_sweep_offset : int = 100 # Offset to ensure different random seeds for different runs
+    num_seeds : int = 10 # number of simulations to run and random seed sets to use
+    seed_sweep_offset : int = 105 # Offset to ensure different random seeds for different runs
 
     # Data parameters
     num_features : int = 5
