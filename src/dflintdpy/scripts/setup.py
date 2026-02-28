@@ -33,40 +33,6 @@ def gen_train_data(
     ``interdiction_policy`` controls whether scenario generation uses
     adversarial or random interdictions.
     """
-    file_found = False
-
-    # Generate file path if directory is provided
-    # if data is not None:
-        # if cfg.get("num_scenarios") is not None:
-        #     file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_scenarios_{scenarios}_seed_{seed}.csv".format(
-        #         samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
-        #         m=cfg.get("grid_size")[0], 
-        #         n=cfg.get("grid_size")[1], 
-        #         deg=cfg.get("deg"), 
-        #         noise=cfg.get("noise_width"), 
-        #         scenarios=cfg.get("num_scenarios"),
-        #         seed=cfg.get("random_seed")
-        #     )
-        # else:
-        #     file_name_body = "_samples_{samples}_m_{m}_n_{n}_deg_{deg}_noise_{noise}_seed_{seed}.csv".format(
-        #         samples=cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"),
-        #         m=cfg.get("grid_size")[0], 
-        #         n=cfg.get("grid_size")[1], 
-        #         deg=cfg.get("deg"), 
-        #         noise=cfg.get("noise_width"),
-        #         seed=cfg.get("random_seed")
-        #     )
-
-        # path_file = path_dir / ("xy" + file_name_body)
-        
-        # try:
-        #     # Load pre-generated data if available
-        #     features, costs = _load_features_costs()
-        #     print(f"Loaded existing cost and feature data from file.")
-        #     file_found = True
-        # except (FileNotFoundError, OSError):
-        #     # print(f"No cached cost and feature data found.")
-        #     pass  # If file not found, generate new data below
 
     # Load data from cache if available, otherwise generate new data
     data = read_cache(cfg, Artefacts.DATA)
@@ -101,6 +67,7 @@ def gen_train_data(
         normalization_constant=normalization_constant,
         num_scenarios=cfg.get("num_scenarios"),
         interdiction_policy=interdiction_policy,
+        # gen_intd_seed=cfg.get("gen_intd_seed"), # 157 if not specified otherwise
     )
 
     X_train, c_train, i_train = adversarial_generator.generate(
@@ -149,46 +116,6 @@ def gen_train_data(
     }, normalization_constant,{
         "data_generator": adversarial_generator
     }
-
-
-# def _save_features_costs(file_path, features, costs):
-#     """
-#     Save features and costs to CSV files.
-    
-#     Args:
-#         file_path: Base file path (without extension)
-#         features: Feature array
-#         costs: Cost array
-#     """
-#     features_path = str(file_path).replace("xy_", "features_")
-#     costs_path = str(file_path).replace("xy_", "costs_")
-    
-#     np.savetxt(features_path, features, delimiter=',')
-#     np.savetxt(costs_path, costs, delimiter=',')
-#     print(f"Saved features to {features_path}")
-#     print(f"Saved costs to {costs_path}")
-
-
-# def _load_features_costs(file_path):
-#     """
-#     Load features and costs from CSV files.
-    
-#     Args:
-#         file_path: Base file path (without extension)
-        
-#     Returns:
-#         tuple: (features, costs) as numpy arrays
-        
-#     Raises:
-#         FileNotFoundError: If either file doesn't exist
-#     """
-#     features_path = str(file_path).replace("xy_", "features_")
-#     costs_path = str(file_path).replace("xy_", "costs_")
-    
-#     features = np.loadtxt(features_path, delimiter=',', dtype=np.float32)
-#     costs = np.loadtxt(costs_path, delimiter=',', dtype=np.float32)
-    
-#     return features, costs
 
 
 def gen_data(cfg: HP,
@@ -298,6 +225,7 @@ def setup_pfl_predictor(
         print("Final regret on validation set: ", val_regret_log[-1])
 
     write_pred(cfg, po_model.state_dict(), artifact_tag=cache_tag)
+    print(f"Saved predictor model '{cache_tag}' to file.")
 
     return po_model
 
@@ -312,6 +240,7 @@ def setup_dfl_predictor(
         verbose: bool = False,
         file_name: str = None,
         transfer_model: nn.Sequential = None,
+        dfl_variant: str = "a-dfl",
         **kwargs
         ):
     """
@@ -360,6 +289,7 @@ def setup_dfl_predictor(
         opt_model=opt_model, 
         optimizer=optimizer, 
         loss_fn=loss_fn,
+        dfl_variant=dfl_variant,
     )
 
     # Train the model
@@ -383,5 +313,6 @@ def setup_dfl_predictor(
         print("Final regret on validation set: ", val_regret_log[-1])
 
     write_pred(cfg, spo_model.state_dict(), artifact_tag=cache_tag)
+    print(f"Saved predictor model '{cache_tag}' to file.")
 
     return spo_model

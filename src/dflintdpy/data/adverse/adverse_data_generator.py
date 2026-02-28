@@ -77,7 +77,7 @@ class AdvDataGenerator:
             - eps : float
                 Epsilon for convergence criterion.
             # For AdverseDataGenerator:
-            - intd_seed : int
+            - gen_intd_seed : int
                 Seed for random number generation.
             - n_interdictions : int
                 Number of interdictions to generate and choose from.
@@ -353,7 +353,7 @@ class AdvDataGenerator:
         normalization_constant,
         num_cost,
         *,
-        intd_seed: int = 157,
+        gen_intd_seed: int = 157,
         n_interdictions: int = 100) -> np.ndarray:
         """
         Generate adversarial interdictions for data generation. 
@@ -373,7 +373,7 @@ class AdvDataGenerator:
                 The width of the noise to add to the costs.
         normalization_constant : float
             The constant used to normalize the costs.
-        intd_seed : int, Optional
+        gen_intd_seed : int, Optional
             The seed for random number generation.
         n_interdictions : int, Optional
             The number of interdictions to generate.
@@ -392,7 +392,7 @@ class AdvDataGenerator:
             (num_cost + 1, 1),
             deg=cfg.get("deg"),
             noise_width=cfg.get("noise_width"),
-            seed=intd_seed
+            seed=gen_intd_seed
         )
 
         # Normalize costs

@@ -41,21 +41,6 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     ##################################
     ##### Generate Network Data ######
     ##################################
-    # # Retrieve root directly
-    # root_dir = Path(__file__).parent.parent.parent.parent
-
-    # Define a graph with appropriate dimensions and an opt_model 
-    # # for solving the shortest path problem on the graph
-    # if load_real_world_graph is not None:
-    #     file_path = root_dir / 'real_world_spni_data' / load_real_world_graph
-    #     graph = csv_to_graph(file_path)
-    #     cfg.set("grid_size", (graph.num_cost+1, 1))
-    #     dir = root_dir / 'store_data'
-    # else:
-    #     m, n = cfg.get("grid_size")
-    #     graph = DGrid(m, n)
-    #     dir = None # only set to none for DGrid
-    #     # dir = root_dir / 'store_data'
     graph = Grid(*cfg.get("grid_size"))
     opt_model = ShortestPathGrb(graph)
 
@@ -99,6 +84,28 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         opt_model,
         training_data_random,
         cache_tag="rdfl",
+        verbose=visualize
+    )
+
+    print(f"Training MA-DFL prediction model.")
+    spo_model_mixed = setup_dfl_predictor(
+        cfg,
+        graph,
+        opt_model,
+        training_data_adverse,
+        cache_tag="madfl",
+        dfl_variant="mixed",
+        verbose=visualize
+    )
+
+    print(f"Training MR-DFL prediction model.")
+    spo_model_mixed = setup_dfl_predictor(
+        cfg,
+        graph,
+        opt_model,
+        training_data_random,
+        cache_tag="mrdfl",
+        dfl_variant="mixed",
         verbose=visualize
     )
 
@@ -147,6 +154,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         print(f"\tPO:       {po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
         print(f"\tSPO+:     {spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
         print(f"\tSPO+ rnd: {spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
+        print(f"\tSPO+ mxd: {spo_model_mixed(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
         print(f"\tSPO+ adv: {spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item():.7f}")
 
         print(f"Std value comparison:")
@@ -156,10 +164,11 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         print(f"\tPO:       {po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
         print(f"\tSPO+:     {spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
         print(f"\tSPO+ rnd: {spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
+        print(f"\tSPO+ mxd: {spo_model_mixed(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
         print(f"\tSPO+ adv: {spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item():.7f}")
 
     ################################################
-    ##### Compare Shortest Paths of PO and SPO #####
+    ##### Compare Uninterdicted Shortest Paths #####
     ################################################
 
     true_objs, po_objs, spo_objs, adv_spo_objs = compare_shortest_paths(
@@ -167,6 +176,9 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     )
     _, _, _, rand_spo_objs = compare_shortest_paths(
         cfg, opt_model, po_model, spo_model_non_adverse, testing_data, spo_model_random
+    )
+    _, _, _, mixed_spo_objs = compare_shortest_paths(
+        cfg, opt_model, po_model, spo_model_non_adverse, testing_data, spo_model_mixed
     )
 
 
@@ -182,7 +194,8 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         interdictions, 
         normalization_constant, 
         adfl_predictor=spo_model_adversarial,
-        rand_adfl_predictor=spo_model_random
+        rand_adfl_predictor=spo_model_random,
+        mixed_dfl_predictor=spo_model_mixed,
     )
 
     ####################################
@@ -224,6 +237,15 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             spo_model_random
         )
 
+        mixed_spo_pred_asym_intd_I = compare_asym_intd(
+            cfg,
+            opt_model,
+            testing_data,
+            interdictions,
+            normalization_constant,
+            spo_model_mixed
+        )
+
         adv_spo_pred_asym_intd_I = compare_asym_intd(
             cfg, 
             opt_model,
@@ -237,6 +259,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         po_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
         spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
         rand_spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        mixed_spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
         adv_spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
 
     ############################################################
@@ -314,13 +337,19 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     spo_mean = np.array(spo_objs).mean() * normalization_constant
     rand_spo_mean = np.array(rand_spo_objs).mean() * normalization_constant
     adv_spo_mean = np.array(adv_spo_objs).mean() * normalization_constant
+    mixed_spo_mean = np.array(mixed_spo_objs).mean() * normalization_constant
 
     print(f"DFL no intd. improvement = {po_mean - spo_mean:.2f}")
     print(f"DFL+Rnd no intd. improvement = {po_mean - rand_spo_mean:.2f}")
+    print(f"Mixed DFL no intd. improvement = {po_mean - mixed_spo_mean:.2f}")
     print(f"Adv. DFL no intd. improvement = {po_mean - adv_spo_mean:.2f}")
     print(
         f"DFL+Rnd sym. improvement = "
         f"{all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['rand_adv_spo_objective'].mean():.2f}"
+    )
+    print(
+        f"Mixed DFL sym. improvement = "
+        f"{all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['mixed_adv_spo_objective'].mean():.2f}"
     )
     print(
         f"Adv. DFL sym. improvement = "
@@ -328,6 +357,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     )
     if compute_asym_intd:
         print(f"DFL+Rnd asym. improvement = {po_pred_asym_intd_I.mean() - rand_spo_pred_asym_intd_I.mean():.2f}")
+        print(f"Mixed DFL asym. improvement = {po_pred_asym_intd_I.mean() - mixed_spo_pred_asym_intd_I.mean():.2f}")
         print(f"Adv. DFL asym. improvement = {po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean():.2f}")
     if compute_asym_intd_2:
         print(
@@ -341,12 +371,13 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     spo_mean = np.array(spo_objs).mean() * normalization_constant
     rand_spo_mean = np.array(rand_spo_objs).mean() * normalization_constant
     adv_spo_mean = np.array(adv_spo_objs).mean() * normalization_constant
+    mixed_spo_mean = np.array(mixed_spo_objs).mean() * normalization_constant
     true_std = np.array(true_objs).std() * normalization_constant
     po_std = np.array(po_objs).std() * normalization_constant
     spo_std = np.array(spo_objs).std() * normalization_constant
     rand_spo_std = np.array(rand_spo_objs).std() * normalization_constant
     adv_spo_std = np.array(adv_spo_objs).std() * normalization_constant
-
+    mixed_spo_std = np.array(mixed_spo_objs).std() * normalization_constant
     # Print the results in a table format
     table_headers = ["Predictor", "No Interdictor", "Sym. Interdictor", "Asym. Interdictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
 
@@ -380,6 +411,11 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             f"{rand_spo_mean:.4f} +/- {rand_spo_std:.4f}", 
             f"{all_pred_sym_intd['rand_adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['rand_adv_spo_objective'].std():.4f}", 
             f"{rand_spo_pred_asym_intd_I.mean():.4f} +/- {rand_spo_pred_asym_intd_I.std():.4f}", 
+        ], [
+            "SPO mxd", 
+            f"{mixed_spo_mean:.4f} +/- {mixed_spo_std:.4f}", 
+            f"{all_pred_sym_intd['mixed_adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['mixed_adv_spo_objective'].std():.4f}", 
+            f"{mixed_spo_pred_asym_intd_I.mean():.4f} +/- {mixed_spo_pred_asym_intd_I.std():.4f}", 
         ], [
             "SPO adv", 
             f"{adv_spo_mean:.4f} +/- {adv_spo_std:.4f}", 
@@ -447,16 +483,19 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         'o_p': np.array(po_objs) * normalization_constant, 
         'o_s': np.array(spo_objs) * normalization_constant, 
         'o_r': np.array(rand_spo_objs) * normalization_constant,
+        'o_m': np.array(mixed_spo_objs) * normalization_constant,
         'o_a': np.array(adv_spo_objs) * normalization_constant, 
         's_o': all_pred_sym_intd['true_objective'],
         's_p': all_pred_sym_intd['po_objective'],
         's_s': all_pred_sym_intd['spo_objective'],
         's_r': all_pred_sym_intd['rand_adv_spo_objective'],
+        's_m': all_pred_sym_intd['mixed_adv_spo_objective'],
         's_a': all_pred_sym_intd['adv_spo_objective'],
         'a_o': no_pred_asym_intd,  
         'a_p': po_pred_asym_intd_I, 
         'a_s': spo_pred_asym_intd_I, 
         'a_r': rand_spo_pred_asym_intd_I,
+        'a_m': mixed_spo_pred_asym_intd_I,
         'a_a': adv_spo_pred_asym_intd_I,
     }
     if compute_asym_intd_2:
@@ -476,6 +515,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         "po_mean" : po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item(),
         "spo_mean" : spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item(),
         "rand_spo_mean" : spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item(),
+        "mixed_spo_mean" : spo_model_mixed(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item(),
         "adv_spo_mean" : spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).mean().item(),
         "test_std" : testing_data['costs'].std(),
         "train_std" : training_data_adverse['train_loader'].dataset.costs.std(),
@@ -483,6 +523,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         "po_std" : po_model(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item(),
         "spo_std" : spo_model_non_adverse(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item(),
         "rand_spo_std" : spo_model_random(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item(),
+        "mixed_spo_std" : spo_model_mixed(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item(),
         "adv_spo_std" : spo_model_adversarial(torch.tensor(testing_data['feats'], dtype=torch.float32)).std().item()
     }
 
@@ -494,6 +535,9 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         "metric_5" : all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean(),
         "metric_6" : po_pred_asym_intd_I.mean() - rand_spo_pred_asym_intd_I.mean(),
         "metric_7" : po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean(),
+        "metric_9" : po_mean - mixed_spo_mean,
+        "metric_10" : all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['mixed_adv_spo_objective'].mean(),
+        "metric_11" : po_pred_asym_intd_I.mean() - mixed_spo_pred_asym_intd_I.mean(),
         "metric_8" : (
             true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean()
             if compute_asym_intd_2 else None
@@ -524,6 +568,12 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         "t1_r_s_std" : all_pred_sym_intd['rand_adv_spo_objective'].std(),
         "t1_r_a_mean" : rand_spo_pred_asym_intd_I.mean(),
         "t1_r_a_std" : rand_spo_pred_asym_intd_I.std(),
+
+        "t1_m_n_mean" : mixed_spo_mean,
+        "t1_m_s_mean" : all_pred_sym_intd['mixed_adv_spo_objective'].mean(),
+        "t1_m_s_std" : all_pred_sym_intd['mixed_adv_spo_objective'].std(),
+        "t1_m_a_mean" : mixed_spo_pred_asym_intd_I.mean(),
+        "t1_m_a_std" : mixed_spo_pred_asym_intd_I.std(),
 
         "t1_a_n_mean" : adv_spo_mean,
         "t1_a_s_mean" : all_pred_sym_intd['adv_spo_objective'].mean(),

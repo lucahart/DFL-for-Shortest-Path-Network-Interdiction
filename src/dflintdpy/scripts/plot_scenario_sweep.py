@@ -8,17 +8,19 @@ from dflintdpy.data.config import HP
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
 
 
-METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "A-DFL"]
+METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "DFL+Mixed", "A-DFL"]
 METHOD_KEYS = {
     "PO": ("o_p", "s_p"),
     "DFL": ("o_s", "s_s"),
     "DFL+Rand": ("o_r", "s_r"),
+    "DFL+Mixed": ("o_m", "s_m"),
     "A-DFL": ("o_a", "s_a"),
 }
 METHOD_COLORS = {
     "PO": "#FF6B6B",
     "DFL": "#4ECDC4",
     "DFL+Rand": "#FFA552",
+    "DFL+Mixed": "#8AB17D",
     "A-DFL": "#45B7D1",
 }
 
@@ -167,7 +169,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Sweep num_scenarios and plot percentage cost increase vs oracle "
-            "for PO/DFL/DFL+Rand/A-DFL."
+            "for PO/DFL/DFL+Rand/DFL+Mixed/A-DFL."
         )
     )
     parser.add_argument(

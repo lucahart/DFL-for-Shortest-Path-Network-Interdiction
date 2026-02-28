@@ -11,7 +11,7 @@ class HP:
     # Data parameters
     num_features : int = 5
     num_train_samples : int = 1000
-    num_val_samples : int = 100
+    num_val_samples : int = 250
     num_test_samples : int = 1000
 
     grid_size : Tuple[int, int] = (5, 5)
