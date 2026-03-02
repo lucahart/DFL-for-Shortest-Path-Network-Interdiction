@@ -10,6 +10,8 @@ from dflintdpy.solvers.symmetric_interdictor import SymmetricInterdictor
 from dflintdpy.utils.versatile_utils import print_progress
 from dflintdpy.utils.read_write import (
     Artefacts,
+    CacheReplaceOptions,
+    get_cache_replace_options,
     read_cache, 
     write_adv_intd, 
     write_rnd_intd,
@@ -46,6 +48,7 @@ class AdvDataGenerator:
                  seed: int = 0,
                  adverse_problem: str = "SPNI",
                  interdiction_policy: str = "adversarial",
+                 cache_options: CacheReplaceOptions | None = None,
                  **kwargs):
         """
         Initialize the AdverseDataGenerator.
@@ -104,6 +107,7 @@ class AdvDataGenerator:
                 f"Unknown interdiction policy: {interdiction_policy}"
             )
         self.interdiction_policy = interdiction_policy
+        self._cache_options = cache_options or get_cache_replace_options()
 
         if self.adverse_problem == "SPNI":
             # Check correctness of num_scenarios
@@ -156,8 +160,14 @@ class AdvDataGenerator:
         Returns:
             tuple: (feats, costs_grouped, interdictions_grouped) if successful, None otherwise
         """
+        target_artifact = (
+            Artefacts.INTD_ADV if self.interdiction_policy == "adversarial" else Artefacts.INTD_RND
+        )
+        if self._cache_options.for_artifact(target_artifact):
+            return None
+
         # Attempt to read cached interdiction data
-        intd = read_cache(cfg, Artefacts.INTD_ADV if self.interdiction_policy == "adversarial" else Artefacts.INTD_RND)
+        intd = read_cache(cfg, target_artifact)
 
         if intd is None:
             print(f"No cached interdiction data found. Generating new data.")
@@ -207,9 +217,19 @@ class AdvDataGenerator:
             m = interdictions_grouped.shape[2]
             intd_flat = interdictions_grouped[:, 1:, :].reshape(-1, m)
             if self.interdiction_policy == "adversarial":
-                write_adv_intd(cfg, intd_flat)
+                write_adv_intd(
+                    cfg,
+                    intd_flat,
+                    replace=self._cache_options.for_artifact(Artefacts.INTD_ADV),
+                    archive_replaced=self._cache_options.archive_replaced,
+                )
             elif self.interdiction_policy == "random":
-                write_rnd_intd(cfg, intd_flat)
+                write_rnd_intd(
+                    cfg,
+                    intd_flat,
+                    replace=self._cache_options.for_artifact(Artefacts.INTD_RND),
+                    archive_replaced=self._cache_options.archive_replaced,
+                )
             else:
                 raise ValueError(f"Unknown interdiction policy: {self.interdiction_policy}")
         

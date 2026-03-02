@@ -24,7 +24,7 @@ class HP:
 
     # Interdiction parameters
     budget : int = 10
-    num_scenarios : int = 3
+    num_scenarios : int = 5
 
     benders_max_count : int = 100
     benders_eps : float = 1e-3

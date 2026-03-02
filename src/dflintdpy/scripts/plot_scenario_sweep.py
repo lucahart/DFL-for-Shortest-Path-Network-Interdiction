@@ -5,7 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from dflintdpy.data.config import HP
+from dflintdpy.utils.read_write import set_cache_replace_options
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
+from dflintdpy.utils.read_write import set_cache_replace_options
 
 
 METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "DFL+MixedRand", "DFL+MixedAdv", "A-DFL"]
@@ -25,6 +27,16 @@ METHOD_COLORS = {
     "DFL+MixedAdv": "#2A9D8F",
     "A-DFL": "#45B7D1",
 }
+SCENARIOS_DEFAULT = "1,2,3,5"
+set_cache_replace_options(
+    replace_pred=False,
+    replace_data=False,
+    replace_intd_adv=False,
+    replace_intd_rnd=False,
+    replace_result=False,
+    replace_fig=False,
+    archive_replaced=True,
+)
 
 
 def _parse_scenarios(raw: str) -> list[int]:
@@ -77,7 +89,7 @@ def run_sweep(cfg: HP, scenarios: list[int], num_seeds: int) -> tuple[dict, dict
 
         for seed_idx in range(num_seeds):
             seed1, seed2, seed3 = _seed_triplet(seed_idx + seed_0)
-            # cfg.set("seed", seed_idx + seed_0)
+            cfg.set("seed", seed_idx + seed_0)
             cfg.set("random_seed", seed1)
             cfg.set("intd_seed", seed2)
             cfg.set("loader_seed", seed3)
@@ -168,6 +180,15 @@ def plot_stats(stats: dict, scenarios: list[int], output_path: Path, title: str,
 def main() -> None:
     root_dir = Path(__file__).parent.parent.parent.parent
     cfg = HP()
+    set_cache_replace_options(
+        replace_pred=True,
+        replace_data=False,
+        replace_intd_adv=False,
+        replace_intd_rnd=False,
+        replace_result=False,
+        replace_fig=False,
+        archive_replaced=True,
+    )
 
     parser = argparse.ArgumentParser(
         description=(
@@ -178,7 +199,7 @@ def main() -> None:
     parser.add_argument(
         "--scenarios",
         type=str,
-        default="1,2,3,5,8,10",
+        default=SCENARIOS_DEFAULT,
         help="Comma-separated scenario counts.",
     )
     parser.add_argument(

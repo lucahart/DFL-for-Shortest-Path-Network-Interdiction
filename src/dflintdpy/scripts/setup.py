@@ -1,3 +1,5 @@
+
+import random
 import pyepo
 import torch
 import numpy as np
@@ -14,6 +16,8 @@ from dflintdpy.utils.pfl_trainer import PFLTrainer
 from dflintdpy.utils.dfl_trainer import DFLTrainer
 from dflintdpy.utils.read_write import (
     Artefacts,
+    CacheReplaceOptions,
+    get_cache_replace_options,
     read_cache,
     write_data,
     write_pred,
@@ -22,11 +26,19 @@ from dflintdpy.data.adverse.adverse_data_generator import AdvDataGenerator
 from dflintdpy.data.adverse.adverse_dataset import AdvDataset
 from dflintdpy.data.adverse.adverse_loader import AdvLoader
 
+def set_seed(cfg: HP) -> None:    # Set the random seed for reproducibility
+    np.random.seed(cfg.get("random_seed"))
+    random.seed(cfg.get("random_seed"))
+    torch.manual_seed(cfg.get("random_seed"))
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(cfg.get("random_seed"))
+
 def gen_train_data(
         cfg: HP,
         opt_model: 'ShortestPathGrb',
         # path_dir: str = None,
         interdiction_policy: str = "adversarial",
+        cache_options: CacheReplaceOptions | None = None,
 ) -> dict:
     """
     Sets up the graph and data loaders for the shortest path problem.
@@ -34,14 +46,17 @@ def gen_train_data(
     adversarial or random interdictions.
     """
 
-    # Load data from cache if available, otherwise generate new data
-    data = read_cache(cfg, Artefacts.DATA)
+    cache_options = cache_options or get_cache_replace_options()
+    replace_data = cache_options.for_artifact(Artefacts.DATA)
+
+    # Load data from cache if available and not forced to replace.
+    data = None if replace_data else read_cache(cfg, Artefacts.DATA)
     if data is None:
         # Generate synthetic data for training and testing
         features, costs = gen_syn_data(cfg, opt_model)
 
         # Save generated data if path is provided
-        write_data(cfg, features, costs)
+        write_data(cfg, features, costs, replace=replace_data)
         print(f"Saved data to file.")
     else:
         features, costs = data["feats"], data["costs"]
@@ -67,6 +82,7 @@ def gen_train_data(
         normalization_constant=normalization_constant,
         num_scenarios=cfg.get("num_scenarios"),
         interdiction_policy=interdiction_policy,
+        cache_options=cache_options,
         # gen_intd_seed=cfg.get("gen_intd_seed"), # 157 if not specified otherwise
     )
 
@@ -156,6 +172,7 @@ def setup_pfl_predictor(
         verbose: bool = False,
         file_name: str = None,
         train_type: str = "po",
+        cache_options: CacheReplaceOptions | None = None,
         **kwargs
         ):
     
@@ -186,8 +203,11 @@ def setup_pfl_predictor(
         if cfg.get("pred_model") is None or cfg.get("pred_model") == "nn" \
         else nn.Linear(input_size, output_size)
 
-    # Check if model has been cached already
-    state_dict = read_cache(cfg, Artefacts.PRED, artifact_tag=cache_tag)
+    cache_options = cache_options or get_cache_replace_options()
+    replace_pred = cache_options.for_artifact(Artefacts.PRED)
+
+    # Check if model has been cached already unless replacement is forced.
+    state_dict = None if replace_pred else read_cache(cfg, Artefacts.PRED, artifact_tag=cache_tag)
     if state_dict is not None:
         po_model.load_state_dict(state_dict)
         print(f"Loaded existing predictor model '{cache_tag}' from file.")
@@ -224,7 +244,7 @@ def setup_pfl_predictor(
 
         print("Final regret on validation set: ", val_regret_log[-1])
 
-    write_pred(cfg, po_model.state_dict(), artifact_tag=cache_tag)
+    write_pred(cfg, po_model.state_dict(), artifact_tag=cache_tag, replace=replace_pred)
     print(f"Saved predictor model '{cache_tag}' to file.")
 
     return po_model
@@ -241,6 +261,7 @@ def setup_dfl_predictor(
         file_name: str = None,
         transfer_model: nn.Sequential = None,
         dfl_variant: str = "a-dfl",
+        cache_options: CacheReplaceOptions | None = None,
         **kwargs
         ):
     """
@@ -258,6 +279,9 @@ def setup_dfl_predictor(
     input_size  =  cfg.get("num_features")   # e.g. number of features in your cost‐vector
     output_size =  graph.num_cost   # e.g. # of target outputs, or number of classes
 
+    # Set the random seed for reproducibility
+    set_seed(cfg)
+
     # Build the model with nn.Sequential
     if transfer_model is None:
         spo_model = get_nn(input_size, output_size) \
@@ -266,8 +290,11 @@ def setup_dfl_predictor(
     else:
         spo_model = deepcopy(transfer_model)
 
-    # Check if model has been cached already
-    state_dict = read_cache(cfg, Artefacts.PRED, artifact_tag=cache_tag)
+    cache_options = cache_options or get_cache_replace_options()
+    replace_pred = cache_options.for_artifact(Artefacts.PRED)
+
+    # Check if model has been cached already unless replacement is forced.
+    state_dict = None if replace_pred else read_cache(cfg, Artefacts.PRED, artifact_tag=cache_tag)
     if state_dict is not None:
         spo_model.load_state_dict(state_dict)
         print(f"Loaded existing predictor model '{cache_tag}' from file.")
@@ -312,7 +339,7 @@ def setup_dfl_predictor(
 
         print("Final regret on validation set: ", val_regret_log[-1])
 
-    write_pred(cfg, spo_model.state_dict(), artifact_tag=cache_tag)
+    write_pred(cfg, spo_model.state_dict(), artifact_tag=cache_tag, replace=replace_pred)
     print(f"Saved predictor model '{cache_tag}' to file.")
 
     return spo_model

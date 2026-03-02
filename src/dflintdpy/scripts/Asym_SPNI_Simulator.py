@@ -4,10 +4,20 @@ from tabulate import tabulate
 
 from dflintdpy.data.config import HP
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
+from dflintdpy.utils.read_write import set_cache_replace_options
 from dflintdpy.utils.read_write_results import save_results_to_csv
 
 # Initialize the configuration class
 cfg = HP()
+set_cache_replace_options(
+    replace_pred=False,
+    replace_data=False,
+    replace_intd_adv=False,
+    replace_intd_rnd=False,
+    replace_result=False,
+    replace_fig=False,
+    archive_replaced=True,
+)
 num_seeds = cfg.get("num_seeds")
 seed_0 = cfg.get("seed_sweep_offset")
 compute_asym_intd_2 = False # Matrix comparison with lack of evader knowledge (table 2)

@@ -186,6 +186,63 @@ ARTEFACT_EXTENSION: Dict[Artefacts, str] = {
 }
 
 
+@dataclasses.dataclass
+class CacheReplaceOptions:
+    """
+    Central overwrite policy for cache writers/readers.
+
+    Set once via `set_cache_replace_options(...)`, then pass around (or rely on
+    module-global defaults) from training/data setup functions.
+    """
+    replace_data: bool = False
+    replace_intd_rnd: bool = False
+    replace_intd_adv: bool = False
+    replace_pred: bool = False
+    replace_result: bool = False
+    replace_fig: bool = False
+    archive_replaced: bool = True
+
+    def for_artifact(self, artefact: Artefacts) -> bool:
+        if artefact == Artefacts.DATA:
+            return self.replace_data
+        if artefact == Artefacts.INTD_RND:
+            return self.replace_intd_rnd
+        if artefact == Artefacts.INTD_ADV:
+            return self.replace_intd_adv
+        if artefact == Artefacts.PRED:
+            return self.replace_pred
+        if artefact == Artefacts.RESULT:
+            return self.replace_result
+        if artefact == Artefacts.FIG:
+            return self.replace_fig
+        return False
+
+
+_GLOBAL_CACHE_REPLACE_OPTIONS = CacheReplaceOptions()
+
+
+def get_cache_replace_options() -> CacheReplaceOptions:
+    """Return a copy of current global cache replace options."""
+    return dataclasses.replace(_GLOBAL_CACHE_REPLACE_OPTIONS)
+
+
+def set_cache_replace_options(**kwargs: Any) -> CacheReplaceOptions:
+    """
+    Update module-global cache replace options.
+
+    Example:
+      set_cache_replace_options(replace_data=True, replace_pred=True)
+    """
+    global _GLOBAL_CACHE_REPLACE_OPTIONS
+    updated = dataclasses.replace(_GLOBAL_CACHE_REPLACE_OPTIONS)
+    for key, value in kwargs.items():
+        if not hasattr(updated, key):
+            raise ValueError(f"Unknown cache replace option: {key}")
+        setattr(updated, key, bool(value))
+    _GLOBAL_CACHE_REPLACE_OPTIONS = updated
+    return get_cache_replace_options()
+
+
 # =============================================================================
 # 3) Core canonicalization & hashing helpers
 # =============================================================================
@@ -545,6 +602,92 @@ def _pickle_load(path: Path) -> Any:
         return pickle.load(f)
 
 
+def _next_archive_hash(base_hash: str) -> str:
+    """Derive a unique archival hash from the previous hash and current time."""
+    raw = f"{base_hash}|replaced|{time.time_ns()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _archive_existing_artifact(
+    data_path: Path,
+    meta_path: Path,
+    *,
+    reason: str,
+    enabled: bool = True,
+) -> Optional[Dict[str, str]]:
+    """
+    Archive an existing artefact before overwrite.
+
+    The archived copy gets a new unique hash and an `update_tag` so it remains
+    retrievable later while freeing the original hash path for the replacement.
+    """
+    if not enabled:
+        # No archival requested, caller may overwrite directly.
+        return None
+
+    data_exists = data_path.exists()
+    meta_exists = meta_path.exists()
+    if not data_exists and not meta_exists:
+        return None
+
+    base_stem = data_path.stem if data_exists else meta_path.name.removesuffix(".meta.json")
+    if "_" not in base_stem:
+        raise ValueError(f"Cannot archive malformed artefact filename: {base_stem}")
+    prefix, old_hash = base_stem.rsplit("_", 1)
+
+    archive_hash = _next_archive_hash(old_hash)
+    archived_data_path = data_path.with_name(f"{prefix}_{archive_hash}{data_path.suffix}")
+    archived_meta_path = meta_path.with_name(f"{prefix}_{archive_hash}.meta.json")
+
+    # In the unlikely case of collision, refresh hash.
+    while archived_data_path.exists() or archived_meta_path.exists():
+        archive_hash = _next_archive_hash(old_hash)
+        archived_data_path = data_path.with_name(f"{prefix}_{archive_hash}{data_path.suffix}")
+        archived_meta_path = meta_path.with_name(f"{prefix}_{archive_hash}.meta.json")
+
+    # Move data payload first so the bytes are preserved regardless of meta parsing.
+    if data_exists:
+        data_path.replace(archived_data_path)
+
+    archived_meta_obj: Dict[str, Any]
+    if meta_exists:
+        try:
+            archived_meta_obj = json.loads(meta_path.read_text(encoding="utf-8"))
+            if not isinstance(archived_meta_obj, dict):
+                archived_meta_obj = {"raw_meta": archived_meta_obj}
+        except Exception:
+            archived_meta_obj = {"raw_meta_text": meta_path.read_text(encoding="utf-8", errors="replace")}
+        finally:
+            try:
+                meta_path.unlink(missing_ok=True)
+            except TypeError:
+                if meta_path.exists():
+                    meta_path.unlink()
+    else:
+        archived_meta_obj = {}
+
+    update_tag = f"replaced_{int(time.time())}"
+    archived_meta_obj["hash"] = archive_hash
+    archived_meta_obj["archived_from_hash"] = old_hash
+    archived_meta_obj["update_tag"] = update_tag
+    archived_meta_obj["archived_unix"] = time.time()
+    archived_meta_obj["archive_reason"] = reason
+    archived_meta_obj["archived_from_data_path"] = data_path.name
+    archived_meta_obj["archived_from_meta_path"] = meta_path.name
+
+    archived_meta_path.write_text(
+        json.dumps(archived_meta_obj, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    return {
+        "archived_hash": archive_hash,
+        "archived_data_path": str(archived_data_path),
+        "archived_meta_path": str(archived_meta_path),
+        "update_tag": update_tag,
+    }
+
+
 # =============================================================================
 # 5) Public API: read/write cache for core artefacts
 # =============================================================================
@@ -580,7 +723,14 @@ def read_cache(cfg: Any, artifact: Artefacts, artifact_tag: Optional[str] = None
         raise ValueError(f"Unsupported artefact extension: {ARTEFACT_EXTENSION[artifact]}")
 
 
-def write_data(cfg: Any, feats: Any, costs: Any) -> Path:
+def write_data(
+    cfg: Any,
+    feats: Any,
+    costs: Any,
+    *,
+    replace: bool = False,
+    archive_replaced: Optional[bool] = None,
+) -> Path:
     """
     Store dataset (features, costs) under datasets/data_<data_hash>.npz.
 
@@ -591,8 +741,17 @@ def write_data(cfg: Any, feats: Any, costs: Any) -> Path:
         raise RuntimeError("NumPy is required to write .npz dataset files.")
 
     data_path, meta_path = _artifact_file_paths(cfg, Artefacts.DATA)
-    if data_path.exists():
-        raise FileExistsError(f"Dataset already exists: {data_path.name}")
+    if data_path.exists() or meta_path.exists():
+        if not replace:
+            raise FileExistsError(f"Dataset already exists: {data_path.name}")
+        if archive_replaced is None:
+            archive_replaced = get_cache_replace_options().archive_replaced
+        _archive_existing_artifact(
+            data_path,
+            meta_path,
+            reason="replace=True in write_data",
+            enabled=bool(archive_replaced),
+        )
 
     # Store as compressed .npz
     np.savez_compressed(data_path, feats=np.asarray(feats), costs=np.asarray(costs))
@@ -600,33 +759,70 @@ def write_data(cfg: Any, feats: Any, costs: Any) -> Path:
     return data_path
 
 
-def write_rnd_intd(cfg: Any, intd: Any) -> Path:
+def write_rnd_intd(
+    cfg: Any,
+    intd: Any,
+    *,
+    replace: bool = False,
+    archive_replaced: Optional[bool] = None,
+) -> Path:
     """
     Store random interdictions under interdictions/rnd_<intd_hash>.pkl.
     """
     data_path, meta_path = _artifact_file_paths(cfg, Artefacts.INTD_RND)
-    if data_path.exists():
-        raise FileExistsError(f"Random interdictions already exist: {data_path.name}")
+    if data_path.exists() or meta_path.exists():
+        if not replace:
+            raise FileExistsError(f"Random interdictions already exist: {data_path.name}")
+        if archive_replaced is None:
+            archive_replaced = get_cache_replace_options().archive_replaced
+        _archive_existing_artifact(
+            data_path,
+            meta_path,
+            reason="replace=True in write_rnd_intd",
+            enabled=bool(archive_replaced),
+        )
 
     _pickle_dump(data_path, intd)
     _write_meta(meta_path, cfg=cfg, hash_type="intd", artefact=Artefacts.INTD_RND)
     return data_path
 
 
-def write_adv_intd(cfg: Any, intd: Any) -> Path:
+def write_adv_intd(
+    cfg: Any,
+    intd: Any,
+    *,
+    replace: bool = False,
+    archive_replaced: Optional[bool] = None,
+) -> Path:
     """
     Store adversarial interdictions under interdictions/adv_<intd_hash>.pkl.
     """
     data_path, meta_path = _artifact_file_paths(cfg, Artefacts.INTD_ADV)
-    if data_path.exists():
-        raise FileExistsError(f"Adversarial interdictions already exist: {data_path.name}")
+    if data_path.exists() or meta_path.exists():
+        if not replace:
+            raise FileExistsError(f"Adversarial interdictions already exist: {data_path.name}")
+        if archive_replaced is None:
+            archive_replaced = get_cache_replace_options().archive_replaced
+        _archive_existing_artifact(
+            data_path,
+            meta_path,
+            reason="replace=True in write_adv_intd",
+            enabled=bool(archive_replaced),
+        )
 
     _pickle_dump(data_path, intd)
     _write_meta(meta_path, cfg=cfg, hash_type="intd", artefact=Artefacts.INTD_ADV)
     return data_path
 
 
-def write_pred(cfg: Any, pred_model: Any, artifact_tag: str) -> Path:
+def write_pred(
+    cfg: Any,
+    pred_model: Any,
+    artifact_tag: str,
+    *,
+    replace: bool = False,
+    archive_replaced: Optional[bool] = None,
+) -> Path:
     """
     Store predictor model under predictors/pred_<tag>_<pred_hash>.pkl.
 
@@ -634,8 +830,17 @@ def write_pred(cfg: Any, pred_model: Any, artifact_tag: str) -> Path:
           Consider saving state_dicts instead (PyTorch) and reloading separately.
     """
     data_path, meta_path = _artifact_file_paths(cfg, Artefacts.PRED, artifact_tag)
-    if data_path.exists():
-        raise FileExistsError(f"Predictor already exists: {data_path.name}")
+    if data_path.exists() or meta_path.exists():
+        if not replace:
+            raise FileExistsError(f"Predictor already exists: {data_path.name}")
+        if archive_replaced is None:
+            archive_replaced = get_cache_replace_options().archive_replaced
+        _archive_existing_artifact(
+            data_path,
+            meta_path,
+            reason="replace=True in write_pred",
+            enabled=bool(archive_replaced),
+        )
 
     _pickle_dump(data_path, pred_model)
     _write_meta(
@@ -648,13 +853,28 @@ def write_pred(cfg: Any, pred_model: Any, artifact_tag: str) -> Path:
     return data_path
 
 
-def write_results(cfg: Any, results: Any) -> Path:
+def write_results(
+    cfg: Any,
+    results: Any,
+    *,
+    replace: bool = False,
+    archive_replaced: Optional[bool] = None,
+) -> Path:
     """
     Store results under results/result_<result_hash>.pkl.
     """
     data_path, meta_path = _artifact_file_paths(cfg, Artefacts.RESULT)
-    if data_path.exists():
-        raise FileExistsError(f"Results already exist: {data_path.name}")
+    if data_path.exists() or meta_path.exists():
+        if not replace:
+            raise FileExistsError(f"Results already exist: {data_path.name}")
+        if archive_replaced is None:
+            archive_replaced = get_cache_replace_options().archive_replaced
+        _archive_existing_artifact(
+            data_path,
+            meta_path,
+            reason="replace=True in write_results",
+            enabled=bool(archive_replaced),
+        )
 
     _pickle_dump(data_path, results)
     _write_meta(meta_path, cfg=cfg, hash_type="result", artefact=Artefacts.RESULT)
@@ -676,7 +896,13 @@ def _sanitize_fig_type(fig_type: str) -> str:
     return fig_type or "figure"
 
 
-def write_fig(cfg: Any, fig: Any) -> Path:
+def write_fig(
+    cfg: Any,
+    fig: Any,
+    *,
+    replace: bool = False,
+    archive_replaced: Optional[bool] = None,
+) -> Path:
     """
     Store a figure under figures/<fig_type>_<result_hash>.png.
 
@@ -712,8 +938,17 @@ def write_fig(cfg: Any, fig: Any) -> Path:
     if hasattr(fig, "savefig"):
         out_path = folder / f"{fig_type}_{result_hash}" + ARTEFACT_EXTENSION[Artefacts.FIG]
         meta_path = folder / f"{fig_type}_{result_hash}.meta.json"
-        if out_path.exists():
-            raise FileExistsError(f"Figure already exists: {out_path.name}")
+        if out_path.exists() or meta_path.exists():
+            if not replace:
+                raise FileExistsError(f"Figure already exists: {out_path.name}")
+            if archive_replaced is None:
+                archive_replaced = get_cache_replace_options().archive_replaced
+            _archive_existing_artifact(
+                out_path,
+                meta_path,
+                reason="replace=True in write_fig",
+                enabled=bool(archive_replaced),
+            )
 
         # Save with tight layout; you can add dpi if you want larger images.
         fig.savefig(out_path, bbox_inches="tight")
@@ -723,8 +958,17 @@ def write_fig(cfg: Any, fig: Any) -> Path:
     # Fallback: pickle unknown figure object
     out_path = folder / f"{fig_type}_{result_hash}.pkl"
     meta_path = folder / f"{fig_type}_{result_hash}.meta.json"
-    if out_path.exists():
-        raise FileExistsError(f"Figure object already exists: {out_path.name}")
+    if out_path.exists() or meta_path.exists():
+        if not replace:
+            raise FileExistsError(f"Figure object already exists: {out_path.name}")
+        if archive_replaced is None:
+            archive_replaced = get_cache_replace_options().archive_replaced
+        _archive_existing_artifact(
+            out_path,
+            meta_path,
+            reason="replace=True in write_fig",
+            enabled=bool(archive_replaced),
+        )
 
     _pickle_dump(out_path, fig)
     _write_meta(meta_path, cfg=cfg, hash_type="result", artefact=Artefacts.FIG)

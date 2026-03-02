@@ -366,8 +366,8 @@ if __name__ == "__main__":
         # degrees=[4],
         noise_values=[0.5],
         train_values=[1000],
-        # valid_values=[50],
-        # num_seeds_values=[5]
+        valid_values=[250],
+        num_seeds_values=[5]
     )
     
     if not loaded_data:
