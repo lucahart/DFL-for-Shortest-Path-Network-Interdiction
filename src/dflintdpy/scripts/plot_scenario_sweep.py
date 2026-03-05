@@ -7,27 +7,22 @@ import numpy as np
 from dflintdpy.data.config import HP
 from dflintdpy.utils.read_write import set_cache_replace_options
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
-from dflintdpy.utils.read_write import set_cache_replace_options
 
 
-METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "DFL+MixedRand", "DFL+MixedAdv", "A-DFL"]
+METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "A-DFL"]
 METHOD_KEYS = {
     "PO": ("o_p", "s_p"),
     "DFL": ("o_s", "s_s"),
     "DFL+Rand": ("o_r", "s_r"),
-    "DFL+MixedRand": ("o_mr", "s_mr"),
-    "DFL+MixedAdv": ("o_ma", "s_ma"),
     "A-DFL": ("o_a", "s_a"),
 }
 METHOD_COLORS = {
     "PO": "#FF6B6B",
     "DFL": "#4ECDC4",
     "DFL+Rand": "#FFA552",
-    "DFL+MixedRand": "#8AB17D",
-    "DFL+MixedAdv": "#2A9D8F",
     "A-DFL": "#45B7D1",
 }
-SCENARIOS_DEFAULT = "1,2,3,5"
+SCENARIOS_DEFAULT = "2,3"
 set_cache_replace_options(
     replace_pred=False,
     replace_data=False,
@@ -193,7 +188,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Sweep num_scenarios and plot percentage cost increase vs oracle "
-            "for PO/DFL/DFL+Rand/DFL+MixedRand/DFL+MixedAdv/A-DFL."
+            "for PO/DFL/DFL+Rand/A-DFL."
         )
     )
     parser.add_argument(
