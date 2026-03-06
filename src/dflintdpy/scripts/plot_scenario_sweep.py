@@ -10,11 +10,11 @@ from dflintdpy.scripts.asym_spni_single_sim import single_sim
 
 
 METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "A-DFL"]
-METHOD_KEYS = {
-    "PO": ("o_p", "s_p"),
-    "DFL": ("o_s", "s_s"),
-    "DFL+Rand": ("o_r", "s_r"),
-    "A-DFL": ("o_a", "s_a"),
+METHOD_SUFFIX = {
+    "PO": "p",
+    "DFL": "s",
+    "DFL+Rand": "r",
+    "A-DFL": "a",
 }
 METHOD_COLORS = {
     "PO": "#FF6B6B",
@@ -22,7 +22,17 @@ METHOD_COLORS = {
     "DFL+Rand": "#FFA552",
     "A-DFL": "#45B7D1",
 }
-SCENARIOS_DEFAULT = "2,3"
+CONDITION_PREFIX_ORACLE = {
+    "unintd": ("o", "o_o"),
+    "intd": ("s", "s_o"),
+    "asym": ("a", "a_o"),
+}
+CONDITION_TITLES = {
+    "unintd": "Uninterdicted",
+    "intd": "Symmetric Interdiction",
+    "asym": "Asymmetric Interdiction",
+}
+SCENARIOS_DEFAULT = "2,3,5"
 set_cache_replace_options(
     replace_pred=False,
     replace_data=False,
@@ -61,12 +71,13 @@ def _safe_pct_sum(num: np.ndarray, den: np.ndarray) -> float:
 
 
 def _init_storage(scenarios: list[int]) -> tuple[dict, dict]:
+    conditions = list(CONDITION_PREFIX_ORACLE.keys())
     sim = {
-        s: {"unintd": {m: [] for m in METHOD_ORDER}, "intd": {m: [] for m in METHOD_ORDER}}
+        s: {c: {m: [] for m in METHOD_ORDER} for c in conditions}
         for s in scenarios
     }
     sample = {
-        s: {"unintd": {m: [] for m in METHOD_ORDER}, "intd": {m: [] for m in METHOD_ORDER}}
+        s: {c: {m: [] for m in METHOD_ORDER} for c in conditions}
         for s in scenarios
     }
     return sim, sample
@@ -92,22 +103,19 @@ def run_sweep(cfg: HP, scenarios: list[int], num_seeds: int) -> tuple[dict, dict
             _, _, _, _, all_data = single_sim(
                 cfg,
                 visualize=False,
-                compute_asym_intd=False,
+                compute_asym_intd=True,
                 compute_asym_intd_2=False,
             )
 
             for method in METHOD_ORDER:
-                no_key, sym_key = METHOD_KEYS[method]
+                suffix = METHOD_SUFFIX[method]
+                for condition, (prefix, oracle_key) in CONDITION_PREFIX_ORACLE.items():
+                    pred_key = f"{prefix}_{suffix}"
+                    sim_val = _safe_pct_sum(all_data[pred_key], all_data[oracle_key])
+                    sim_stats[scenario][condition][method].append(sim_val)
 
-                no_sim = _safe_pct_sum(all_data[no_key], all_data["o_o"])
-                sym_sim = _safe_pct_sum(all_data[sym_key], all_data["s_o"])
-                sim_stats[scenario]["unintd"][method].append(no_sim)
-                sim_stats[scenario]["intd"][method].append(sym_sim)
-
-                no_sample = _safe_pct(np.asarray(all_data[no_key]), np.asarray(all_data["o_o"]))
-                sym_sample = _safe_pct(np.asarray(all_data[sym_key]), np.asarray(all_data["s_o"]))
-                sample_stats[scenario]["unintd"][method].extend(no_sample.tolist())
-                sample_stats[scenario]["intd"][method].extend(sym_sample.tolist())
+                    sample_val = _safe_pct(np.asarray(all_data[pred_key]), np.asarray(all_data[oracle_key]))
+                    sample_stats[scenario][condition][method].extend(sample_val.tolist())
 
             print(f"  Seed {seed_idx + 1:02d}/{num_seeds} done. \n")
 
@@ -124,38 +132,36 @@ def _collect_mean_std(stats: dict, scenarios: list[int], condition: str, method:
     return np.asarray(means), np.asarray(stds)
 
 
-def plot_stats(stats: dict, scenarios: list[int], output_path: Path, title: str, show: bool) -> None:
+def plot_stats(
+    stats: dict,
+    scenarios: list[int],
+    output_path: Path,
+    title: str,
+    show: bool,
+    conditions: list[str],
+) -> None:
     x = np.asarray(scenarios, dtype=int)
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharex=True)
+    fig, axes = plt.subplots(1, len(conditions), figsize=(7 * len(conditions), 5), sharex=True)
+    if len(conditions) == 1:
+        axes = [axes]
 
     for method in METHOD_ORDER:
-        mean_u, std_u = _collect_mean_std(stats, scenarios, "unintd", method)
-        mean_i, std_i = _collect_mean_std(stats, scenarios, "intd", method)
+        for idx, condition in enumerate(conditions):
+            mean_c, std_c = _collect_mean_std(stats, scenarios, condition, method)
+            axes[idx].errorbar(
+                x,
+                mean_c,
+                yerr=std_c,
+                marker="o",
+                capsize=4,
+                linewidth=1.8,
+                color=METHOD_COLORS[method],
+                label=method,
+            )
 
-        axes[0].errorbar(
-            x,
-            mean_u,
-            yerr=std_u,
-            marker="o",
-            capsize=4,
-            linewidth=1.8,
-            color=METHOD_COLORS[method],
-            label=method,
-        )
-        axes[1].errorbar(
-            x,
-            mean_i,
-            yerr=std_i,
-            marker="o",
-            capsize=4,
-            linewidth=1.8,
-            color=METHOD_COLORS[method],
-            label=method,
-        )
-
-    axes[0].set_title("Uninterdicted")
-    axes[1].set_title("Symmetric Interdiction")
-    for ax in axes:
+    for idx, condition in enumerate(conditions):
+        ax = axes[idx]
+        ax.set_title(CONDITION_TITLES[condition])
         ax.set_xlabel("Number of Adverse Scenarios")
         ax.set_ylabel("Percentage cost increase vs oracle (%)")
         ax.grid(alpha=0.3, linestyle="--")
@@ -220,6 +226,12 @@ def main() -> None:
         action="store_true",
         help="Show figures after saving.",
     )
+    parser.add_argument(
+        "--output-asym-sim",
+        type=str,
+        default=str(root_dir / "figures" / "scenario_sweep_asym_pct_by_simulation.png"),
+        help="Output path for asymmetric-interdiction per-simulation figure.",
+    )
     args = parser.parse_args()
 
     scenarios = _parse_scenarios(args.scenarios)
@@ -231,6 +243,7 @@ def main() -> None:
         output_path=Path(args.output_sim),
         title="Percentage Increase vs Oracle (Mean+Std over Simulations)",
         show=args.show,
+        conditions=["unintd", "intd"],
     )
     plot_stats(
         sample_stats,
@@ -238,6 +251,15 @@ def main() -> None:
         output_path=Path(args.output_sample),
         title="Percentage Increase vs Oracle (Mean+Std over Samples)",
         show=args.show,
+        conditions=["unintd", "intd"],
+    )
+    plot_stats(
+        sim_stats,
+        scenarios,
+        output_path=Path(args.output_asym_sim),
+        title="Asymmetric Interdiction: Percentage Increase vs Oracle (Mean+Std over Simulations)",
+        show=args.show,
+        conditions=["asym"],
     )
     pass
 

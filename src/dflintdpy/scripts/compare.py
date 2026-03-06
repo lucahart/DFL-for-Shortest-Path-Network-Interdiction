@@ -4,7 +4,6 @@ import pyepo
 import torch
 import numpy as np
 
-from dflintdpy.models.graph import Graph
 from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 from dflintdpy.solvers.asymmetric_interdictor import AsymmetricInterdictor
 from dflintdpy.solvers.symmetric_interdictor import SymmetricInterdictor
@@ -24,7 +23,6 @@ def compare_shortest_paths(cfg,
 
     # Retrieve configuration parameters
     data_samples = cfg.get("num_test_samples") # number of training data
-    m, n = cfg.get("grid_size")
 
     # Initialize lists to store results
     true_objs = []
@@ -86,7 +84,6 @@ def compare_sym_intd(
         idx = None, 
         adfl_predictor = None,
         rand_adfl_predictor = None,
-        mixed_dfl_predictor = None,  # backward-compat alias for mixed-random
         mixed_rand_dfl_predictor = None,
         mixed_adv_dfl_predictor = None,
     ):
@@ -106,9 +103,6 @@ def compare_sym_intd(
     rand_adfl_objs = []
     mixed_rand_dfl_objs = []
     mixed_adv_dfl_objs = []
-    # Backward compatibility: treat legacy mixed_dfl_predictor as mixed-random.
-    if mixed_dfl_predictor is not None and mixed_rand_dfl_predictor is None:
-        mixed_rand_dfl_predictor = mixed_dfl_predictor
     # Print that the simulation is starting
     print(f"Running symmetric simulations with {num_test_samples} samples...")
 
@@ -118,6 +112,9 @@ def compare_sym_intd(
         feature = test_data["feats"][i]
         cost = test_data["costs"][i] * normalization_constant
         interdiction = interdictions["costs"][i] * normalization_constant
+        
+        # true_graph = Grid(m, n, cost)
+        opt_model.setObj(cost)
 
         # Update the estimated costs
         pfl_cost = pfl_predictor(torch.tensor(feature, dtype=torch.float32)) \
@@ -207,8 +204,6 @@ def compare_sym_intd(
     if mixed_rand_dfl_predictor is not None:
         mixed_rand_objs = np.array(mixed_rand_dfl_objs)
         results["mixed_rand_spo_objective"] = mixed_rand_objs
-        results["mixed_adv_spo_objective"] = mixed_rand_objs
-        results["mixed_dfl_objective"] = mixed_rand_objs
     if mixed_adv_dfl_predictor is not None:
         results["mixed_adverse_spo_objective"] = np.array(mixed_adv_dfl_objs)
     return results

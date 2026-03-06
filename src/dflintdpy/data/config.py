@@ -24,7 +24,7 @@ class HP:
 
     # Interdiction parameters
     budget : int = 15
-    num_scenarios : int = 2
+    num_scenarios : int = 3
 
     benders_max_count : int = 100
     benders_eps : float = 1e-3
@@ -36,8 +36,8 @@ class HP:
     batch_size : int = 32
     po_epochs : int = 400
     spo_epochs : int = 200 # 300
-    po_lr : float = 2e-4 # 2e-3
-    spo_lr : float = 3.5e-4 # 5e-3
+    po_lr : float = 1e-3 # 2e-4 # 2e-3
+    spo_lr : float = 1e-3 # 3.5e-4 # 5e-3
     pred_model : str = "linear"  # "nn" or "linear"
 
     # Deprecated parameters. TODO: Remove them in the future.
