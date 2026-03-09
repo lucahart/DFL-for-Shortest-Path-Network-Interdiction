@@ -107,14 +107,31 @@ INTD_KEYS: Set[str] = {
     "intd_seed",
 }
 
-PRED_KEYS: Set[str] = {
+PRED_BASE_KEYS: Set[str] = {
     *DATA_KEYS,  # predictor training depends on data generation
-    *INTD_KEYS,  # predictor training can depend on interdiction generation
     "batch_size",
     "po_epochs",
     "spo_epochs",
     "po_lr",
     "spo_lr",
+    "hidden_size_1",
+}
+
+# Interdiction-specific keys that can be excluded for non-interdiction predictors.
+PRED_INTD_EXTRA_KEYS: Set[str] = INTD_KEYS.difference(DATA_KEYS)
+
+# Default predictor hash keys (keeps previous behavior for most predictor tags).
+PRED_KEYS: Set[str] = {
+    *PRED_BASE_KEYS,
+    *PRED_INTD_EXTRA_KEYS,
+}
+
+# Predictor-tag overrides for cache hashing.
+# - "pfl" and "dfl" should not depend on interdiction-specific cfg.
+# - other tags (e.g., adfl/rdfl/madfl/mrdfl) use default PRED_KEYS.
+PRED_TAG_KEY_OVERRIDES: Dict[str, Set[str]] = {
+    "pfl": set(PRED_BASE_KEYS),
+    "dfl": set(PRED_BASE_KEYS),
 }
 
 RESULT_KEYS: Set[str] = {
@@ -456,6 +473,35 @@ def _canonical_subset(cfg: Any, keys: Optional[Set[str]]) -> Dict[str, Any]:
     return {k: subset[k] for k in sorted(subset.keys())}
 
 
+def _hash_from_subset(subset: Dict[str, Any]) -> str:
+    """Create deterministic SHA-256 hash from a canonical cfg subset."""
+    payload = json.dumps(subset, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _pred_keys_for_tag(artifact_tag: Optional[str]) -> Set[str]:
+    """
+    Return predictor-hash keys for a cache tag.
+
+    Unknown tags default to full `PRED_KEYS` (includes interdiction keys).
+    """
+    if artifact_tag is None:
+        return set(PRED_KEYS)
+    tag = _sanitize_artifact_tag(str(artifact_tag))
+    return set(PRED_TAG_KEY_OVERRIDES.get(tag, PRED_KEYS))
+
+
+def _unique_pred_hash(cfg: Any, artifact_tag: Optional[str]) -> str:
+    """Compute predictor hash with tag-specific key selection."""
+    subset = _canonical_subset(cfg, keys=_pred_keys_for_tag(artifact_tag))
+    if len(subset) == 0:
+        raise ValueError(
+            "Predictor hash has empty intersection with cfg keys. "
+            "Check predictor key sets and cfg structure."
+        )
+    return _hash_from_subset(subset)
+
+
 def _unique_hash(cfg: Any, type: str = "head") -> str:
     """
     Compute a deterministic hash for cfg.
@@ -495,10 +541,7 @@ def _unique_hash(cfg: Any, type: str = "head") -> str:
             "Check your *_KEYS sets and cfg structure."
         )
 
-    # Deterministic JSON string: sorted keys + compact separators
-    payload = json.dumps(subset, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    # Use SHA-256: collisions are negligible for caching
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return _hash_from_subset(subset)
 
 
 def _write_meta(
@@ -510,19 +553,28 @@ def _write_meta(
     artifact_tag: Optional[str] = None,
 ) -> None:
     """Write sidecar metadata JSON for traceability."""
+    if hash_type == "pred":
+        subset_keys = _pred_keys_for_tag(artifact_tag)
+        canonical_subset = _canonical_subset(cfg, keys=subset_keys)
+        hash_value = _hash_from_subset(canonical_subset)
+    else:
+        subset_keys = None if hash_type == "head" else {
+            "data": DATA_KEYS,
+            "intd": INTD_KEYS,
+            "pred": PRED_KEYS,
+            "result": RESULT_KEYS,
+        }[hash_type]
+        canonical_subset = _canonical_subset(cfg, keys=subset_keys)
+        hash_value = _hash_from_subset(canonical_subset)
+
     meta = {
         "created_unix": time.time(),
         "artefact": artefact.value,
         "artifact_tag": artifact_tag,
         "hash_type": hash_type,
-        "hash": _unique_hash(cfg, type=hash_type),
+        "hash": hash_value,
         "head_hash": _unique_hash(cfg, type="head"),
-        "canonical_cfg_subset": _canonical_subset(cfg, keys=None if hash_type == "head" else {
-            "data": DATA_KEYS,
-            "intd": INTD_KEYS,
-            "pred": PRED_KEYS,
-            "result": RESULT_KEYS,
-        }[hash_type]),
+        "canonical_cfg_subset": canonical_subset,
     }
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -567,8 +619,6 @@ def _artifact_file_paths(
     if artifact == Artefacts.FIG:
         raise ValueError("Figures are handled by write_fig/read_fig separately.")
 
-    hash_type = ARTEFACT_TYPE[artifact]
-    h = _unique_hash(cfg, type=hash_type)
     folder = _get_path(artifact)
     prefix = _artifact_prefix(artifact)
 
@@ -581,9 +631,13 @@ def _artifact_file_paths(
     if artifact == Artefacts.PRED:
         if artifact_tag is None:
             raise ValueError("artifact_tag is required for predictor artefacts")
-        suffix = f"_{_sanitize_artifact_tag(artifact_tag)}"
+        tag = _sanitize_artifact_tag(artifact_tag)
+        suffix = f"_{tag}"
+        h = _unique_pred_hash(cfg, artifact_tag=tag)
     else:
         suffix = ""
+        hash_type = ARTEFACT_TYPE[artifact]
+        h = _unique_hash(cfg, type=hash_type)
 
     data_path = folder / f"{prefix}{suffix}_{h}{ext}"
     meta_path = folder / f"{prefix}{suffix}_{h}.meta.json"
@@ -1265,8 +1319,12 @@ def repair_seed_sweep_hashes(
 
         fixed_subset = dict(subset)
         fixed_subset["seed"] = inferred_seed
+        meta_artifact_tag = meta.get("artifact_tag")
         try:
-            fixed_hash = _unique_hash(fixed_subset, type=hash_type)
+            if hash_type == "pred":
+                fixed_hash = _unique_pred_hash(fixed_subset, artifact_tag=meta_artifact_tag)
+            else:
+                fixed_hash = _unique_hash(fixed_subset, type=hash_type)
         except Exception as exc:
             entry.update({"status": "skip_hash_error", "reason": str(exc)})
             _record(entry)
@@ -1296,7 +1354,7 @@ def repair_seed_sweep_hashes(
         fixed_meta = dict(meta)
         fixed_meta["hash"] = fixed_hash
         # Keep subset canonical and deterministic.
-        subset_keys = DATA_KEYS if hash_type == "data" else PRED_KEYS
+        subset_keys = DATA_KEYS if hash_type == "data" else _pred_keys_for_tag(meta_artifact_tag)
         fixed_meta["canonical_cfg_subset"] = _canonical_subset(fixed_subset, subset_keys)
         _append_repair_history(
             fixed_meta,

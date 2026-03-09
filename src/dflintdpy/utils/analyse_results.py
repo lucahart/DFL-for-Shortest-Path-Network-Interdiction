@@ -119,21 +119,6 @@ def load_data(
         filepath = os.path.join(directory, file_info[0]['filename'])
         simulations = load_results_from_csv(filepath)
         loaded_data[(train, valid, test, mn, deg, noise, num_seeds)] = simulations
-        
-        # print(
-        #     "Loaded: train={train}, valid={valid}, test={test}, (m,n)={mn}, "
-        #     "deg={deg}, noise={noise}, num_seeds={num_seeds} from {filename}"
-        #     .format(
-        #         train=train,
-        #         valid=valid,
-        #         test=test,
-        #         mn=mn,
-        #         deg=deg,
-        #         noise=noise,
-        #         num_seeds=num_seeds,
-        #         filename=file_info[0]['filename']
-        #     )
-        # )
     
     return loaded_data
 
@@ -177,15 +162,11 @@ def compute_percentage_increases_from_samples(all_data):
     calculations['sym_intd_s'] = _safe_percentage(all_data['s_s'], all_data['s_o'])
     calculations['sym_intd_r'] = _safe_percentage(all_data['s_r'], all_data['s_o'])
     calculations['sym_intd_a'] = _safe_percentage(all_data['s_a'], all_data['s_o'])
-    
-    # calculations['asym_intd_p'] = (all_data['a_p'] - all_data['a_o']) / all_data['a_o'] * 100
-    # calculations['asym_intd_s'] = (all_data['a_s'] - all_data['a_o']) / all_data['a_o'] * 100
-    # calculations['asym_intd_a'] = (all_data['a_a'] - all_data['a_o']) / all_data['a_o'] * 100
 
-    calculations['asym_intd_p'] = _safe_percentage(all_data['a_p'], all_data['a_o'])
-    calculations['asym_intd_s'] = _safe_percentage(all_data['a_s'], all_data['a_o'])
-    calculations['asym_intd_r'] = _safe_percentage(all_data['a_r'], all_data['a_o'])
-    calculations['asym_intd_a'] = _safe_percentage(all_data['a_a'], all_data['a_o'])
+    calculations['asym_intd_p'] = _safe_percentage(all_data['a_p'], all_data['a_p_o'])
+    calculations['asym_intd_s'] = _safe_percentage(all_data['a_s'], all_data['a_s_o'])
+    calculations['asym_intd_r'] = _safe_percentage(all_data['a_r'], all_data['a_r_o'])
+    calculations['asym_intd_a'] = _safe_percentage(all_data['a_a'], all_data['a_a_o'])
 
     return calculations
 
@@ -204,19 +185,10 @@ def compute_percentage_increases_from_simulations(simulations):
         calculations['sym_intd_r'].append(_safe_percentage_sum(sim_data['s_r'], sim_data['s_o']))
         calculations['sym_intd_a'].append(_safe_percentage_sum(sim_data['s_a'], sim_data['s_o']))
 
-        # calculations['asym_intd_p'].append(
-        #     np.sum(sim_data['a_p'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
-        # )
-        # calculations['asym_intd_s'].append(
-        #     np.sum(sim_data['a_s'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
-        # )
-        # calculations['asym_intd_a'].append(
-        #     np.sum(sim_data['a_a'] - sim_data['a_o']) / np.sum(sim_data['a_o']) * 100
-        # )
-        calculations['asym_intd_p'].append(_safe_percentage_sum(sim_data['a_p'], sim_data['a_o']))
-        calculations['asym_intd_s'].append(_safe_percentage_sum(sim_data['a_s'], sim_data['a_o']))
-        calculations['asym_intd_r'].append(_safe_percentage_sum(sim_data['a_r'], sim_data['a_o']))
-        calculations['asym_intd_a'].append(_safe_percentage_sum(sim_data['a_a'], sim_data['a_o']))
+        calculations['asym_intd_p'].append(_safe_percentage_sum(sim_data['a_p'], sim_data['a_p_o']))
+        calculations['asym_intd_s'].append(_safe_percentage_sum(sim_data['a_s'], sim_data['a_s_o']))
+        calculations['asym_intd_r'].append(_safe_percentage_sum(sim_data['a_r'], sim_data['a_r_o']))
+        calculations['asym_intd_a'].append(_safe_percentage_sum(sim_data['a_a'], sim_data['a_a_o']))
 
     return dict(calculations)
 
@@ -252,7 +224,7 @@ def create_boxplots_from_calculations(calculations, save_path=None):
     legend_elements = [
         Patch(facecolor='#FF6B6B', alpha=0.7, label='PFL'),
         Patch(facecolor='#4ECDC4', alpha=0.7, label='DFL'),
-        Patch(facecolor='#FFA552', alpha=0.7, label='DFL+Rand'),
+        Patch(facecolor='#FFA552', alpha=0.7, label='R-DFL'),
         Patch(facecolor='#45B7D1', alpha=0.7, label='A-DFL')
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=20)
@@ -311,8 +283,7 @@ def print_available_combinations(directory='.'):
     print("\n")
     return combinations
 
-# Main execution
-if __name__ == "__main__":
+def analyze_results():
     import sys
     
     # Directory containing the CSV files (default: current directory)
@@ -333,8 +304,7 @@ if __name__ == "__main__":
     
     # Step 2: Load all data (or specify filters)
     loaded_data = load_data(
-        data_directory, 
-        # degrees=[4],
+        data_directory,
         noise_values=[0.5],
         train_values=[1000],
         valid_values=[250],
@@ -390,3 +360,7 @@ if __name__ == "__main__":
     
     print("\nAnalysis complete!")
     print(f"Total combinations analyzed: {len(loaded_data)}")
+
+# Main execution
+if __name__ == "__main__":
+    analyze_results()

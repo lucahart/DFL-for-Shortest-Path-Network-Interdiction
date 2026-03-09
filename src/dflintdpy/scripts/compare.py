@@ -189,7 +189,7 @@ def compare_sym_intd(
 
         if rand_adfl_predictor is not None and \
            true_objs[-1] > rand_adfl_objs[-1] + 1e-3:
-            print(f"Warning: PO objective {pfl_objs[-1]:.4f} is better than true objective {true_objs[-1]:.4f} at sample {i}.")
+            print(f"Warning: PO objective {rand_adfl_objs[-1]:.4f} is better than true objective {true_objs[-1]:.4f} at sample {i}.")
 
     # Evaluate performance
     results = {
@@ -230,6 +230,7 @@ def compare_asym_intd(
 
     # Prepare lists to store results
     est_objs = []
+    true_objs = []
 
     # Iterate through each data sample
     for i in range(num_test_samples):
@@ -263,27 +264,22 @@ def compare_asym_intd(
         if x_intd is None:
             continue
 
-        # # True shortest path after interdiction
-        # opt_model.setObj(cost + x_intd * interdiction)
-        # y_true, _ = opt_model.solve()
+        # True shortest path after interdiction
+        opt_model.setObj(cost + x_intd * interdiction)
+        y_true, _ = opt_model.solve()
 
         # Estimated shortest path after interdiction
         opt_model.setObj(pred_cost + x_intd * interdiction)
         y_est, _ = opt_model.solve()
 
         # Store the results
-        # true_objs.append(true_graph(y_true, interdictions=x_intd * interdiction))
+        true_objs.append(true_graph(y_true, interdictions=x_intd * interdiction))
         est_objs.append(true_graph(y_est, interdictions=x_intd * interdiction))
 
         # Print progress
         print_progress(i, num_test_samples)
 
-    # Evaluate performance
-    # return {
-    #     "true_objective": np.array(true_objs),
-    #     "estimated_objective": np.array(est_objs),
-    # }
-    return np.array(est_objs)
+    return np.array(est_objs), np.array(true_objs)
 
 
 def compare_wrong_asym_intd(

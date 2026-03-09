@@ -70,7 +70,8 @@ def load_results_from_csv(input_path: str) -> List[Dict[str, Any]]:
     data_keys = [
         'o_o', 'o_p', 'o_s', 'o_r', 'o_mr', 'o_ma', 'o_m', 'o_a',
         's_o', 's_p', 's_s', 's_r', 's_mr', 's_ma', 's_m', 's_a',
-        'a_o', 'a_p', 'a_s', 'a_r', 'a_mr', 'a_ma', 'a_m', 'a_a'
+        'a_o', 'a_p', 'a_s', 'a_r', 'a_mr', 'a_ma', 'a_m', 'a_a',
+        'a_p_o', 'a_s_o', 'a_r_o', 'a_a_o',
     ]
     
     for sim_idx in sorted(df['simulation_index'].unique()):

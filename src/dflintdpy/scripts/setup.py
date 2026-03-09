@@ -51,7 +51,7 @@ def gen_train_data(
 
     # Load data from cache if available and not forced to replace.
     data = None if replace_data else read_cache(cfg, Artefacts.DATA)
-    if data is None:
+    if data is None: # TODO: num_seeds is not in the data information. What is loaded and how does it handle that the data is missing?
         # Generate synthetic data for training and testing
         features, costs = gen_syn_data(cfg, opt_model)
 

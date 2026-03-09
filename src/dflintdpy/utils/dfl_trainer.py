@@ -154,7 +154,7 @@ class DFLTrainer:
                     )
                 except Exception:
                     print("Warning: Loss computation error during training. Skipping sample.")
-                continue
+                continue # TODO: If we continue here, we won't use the new gradient. I should remove it anyways.
 
             # TODO: Get rid of these aggregations...
             if loss_flat.dim() == 0:

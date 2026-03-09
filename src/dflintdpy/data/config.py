@@ -5,7 +5,7 @@ from typing import Any, Tuple
 @dataclass
 class HP:
     # Hyperparameters
-    num_seeds : int = 5 # number of simulations to run and random seed sets to use
+    num_seeds : int = 15 # number of simulations to run and random seed sets to use
     seed_sweep_offset : int = 100 # Offset to ensure different random seeds for different runs
 
     # Data parameters
@@ -23,7 +23,7 @@ class HP:
     loader_seed : int = 17
 
     # Interdiction parameters
-    budget : int = 15
+    budget : int = 5
     num_scenarios : int = 3
 
     benders_max_count : int = 100

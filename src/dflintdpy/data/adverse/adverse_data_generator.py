@@ -109,23 +109,27 @@ class AdvDataGenerator:
         self.interdiction_policy = interdiction_policy
         self._cache_options = cache_options or get_cache_replace_options()
 
+        if kwargs.get("n_training_interdictions"):
+            self.n_training_intds = kwargs["n_training_interdictions"]
+        else:
+            self.n_training_intds = 100
+
         if self.adverse_problem == "SPNI":
             # Check correctness of num_scenarios
-            n_intds = kwargs.get("n_interdictions")
-            if n_intds is not None and n_intds <= num_scenarios - 1:
+            if self.n_training_intds <= num_scenarios - 1:
                 # If there are more scenarios than interdictions, 
                 # reduce num_scenarios to n_intds + 1
-                Warning(f"Warning: Number of interdictions ({n_intds}) is less" +
+                Warning(f"Warning: Number of interdictions ({self.n_training_intds}) is less" +
                         f" than the number of scenarios ({num_scenarios - 1})." +
-                        f" Setting num_scenarios to {n_intds + 1}.")
-                self.num_scenarios = n_intds + 1
-            elif n_intds is None and num_scenarios > 100 + 1:
-                # If n_interdictions is not specified it defaults to 100,
-                # so that the num_scenarios <= 101.
-                Warning(f"Warning: Number of scenarios ({num_scenarios - 1})" + 
-                    f" is greater than the default number of" + 
-                    f" interdictions (100). Setting num_scenarios to 101.")
-                self.num_scenarios = 101
+                        f" Setting num_scenarios to {self.n_training_intds + 1}.")
+                self.num_scenarios = self.n_training_intds + 1
+            # elif self.n_training_intds is None and num_scenarios > 100 + 1:
+            #     # If n_interdictions is not specified it defaults to 100,
+            #     # so that the num_scenarios <= 101.
+            #     Warning(f"Warning: Number of scenarios ({num_scenarios - 1})" + 
+            #         f" is greater than the default number of" + 
+            #         f" interdictions (100). Setting num_scenarios to 101.")
+            #     self.num_scenarios = 101
             else:
                 self.num_scenarios = num_scenarios
 
@@ -134,6 +138,7 @@ class AdvDataGenerator:
                 cfg,
                 normalization_constant,
                 self.opt_model.num_cost,
+                n_interdictions=self.n_training_intds,
                 **kwargs
             )
 
@@ -167,7 +172,7 @@ class AdvDataGenerator:
             return None
 
         # Attempt to read cached interdiction data
-        intd = read_cache(cfg, target_artifact)
+        intd = read_cache(cfg, target_artifact) # TODO: Are intds different by scenario and data sample?
 
         if intd is None:
             print(f"No cached interdiction data found. Generating new data.")

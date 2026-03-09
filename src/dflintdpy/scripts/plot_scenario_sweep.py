@@ -9,17 +9,17 @@ from dflintdpy.utils.read_write import set_cache_replace_options
 from dflintdpy.scripts.asym_spni_single_sim import single_sim
 
 
-METHOD_ORDER = ["PO", "DFL", "DFL+Rand", "A-DFL"]
+METHOD_ORDER = ["PO", "DFL", "R-DFL", "A-DFL"]
 METHOD_SUFFIX = {
     "PO": "p",
     "DFL": "s",
-    "DFL+Rand": "r",
+    "R-DFL": "r",
     "A-DFL": "a",
 }
 METHOD_COLORS = {
     "PO": "#FF6B6B",
     "DFL": "#4ECDC4",
-    "DFL+Rand": "#FFA552",
+    "R-DFL": "#FFA552",
     "A-DFL": "#45B7D1",
 }
 CONDITION_PREFIX_ORACLE = {
@@ -182,7 +182,7 @@ def main() -> None:
     root_dir = Path(__file__).parent.parent.parent.parent
     cfg = HP()
     set_cache_replace_options(
-        replace_pred=True,
+        replace_pred=False,
         replace_data=False,
         replace_intd_adv=False,
         replace_intd_rnd=False,
@@ -241,15 +241,7 @@ def main() -> None:
         sim_stats,
         scenarios,
         output_path=Path(args.output_sim),
-        title="Percentage Increase vs Oracle (Mean+Std over Simulations)",
-        show=args.show,
-        conditions=["unintd", "intd"],
-    )
-    plot_stats(
-        sample_stats,
-        scenarios,
-        output_path=Path(args.output_sample),
-        title="Percentage Increase vs Oracle (Mean+Std over Samples)",
+        title="Percentage Increase vs Oracle (Symmetric Simulations)",
         show=args.show,
         conditions=["unintd", "intd"],
     )
@@ -257,10 +249,26 @@ def main() -> None:
         sim_stats,
         scenarios,
         output_path=Path(args.output_asym_sim),
-        title="Asymmetric Interdiction: Percentage Increase vs Oracle (Mean+Std over Simulations)",
+        title="Percentage Increase vs Oracle (Asymmetric Simulations)",
         show=args.show,
         conditions=["asym"],
     )
+    # plot_stats(
+    #     sample_stats,
+    #     scenarios,
+    #     output_path=Path(args.output_sample),
+    #     title="Percentage Increase vs Oracle (Mean+Std over Samples)",
+    #     show=args.show,
+    #     conditions=["unintd", "intd"],
+    # )
+    # plot_stats(
+    #     sim_stats,
+    #     scenarios,
+    #     output_path=Path(args.output_asym_sim),
+    #     title="Asymmetric Interdiction: Percentage Increase vs Oracle (Mean+Std over Simulations)",
+    #     show=args.show,
+    #     conditions=["asym"],
+    # )
     pass
 
 

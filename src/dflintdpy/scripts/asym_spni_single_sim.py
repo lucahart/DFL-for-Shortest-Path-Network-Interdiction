@@ -74,7 +74,8 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         opt_model,
         training_data_adverse,
         cache_tag="adfl",
-        verbose=visualize
+        verbose=visualize,
+        dfl_variant="a-dfl"
     )
 
     print(f"Training R-DFL prediction model.")
@@ -84,7 +85,8 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         opt_model,
         training_data_random,
         cache_tag="rdfl",
-        verbose=visualize
+        verbose=visualize,
+        dfl_variant="a-dfl"
     )
 
     # spo_epochs = cfg.get("spo_epochs")
@@ -154,7 +156,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     ##### Asymmetric Interdictions #####
     ####################################
     if compute_asym_intd:
-        no_pred_asym_intd = compare_asym_intd(
+        no_pred_asym_intd, no_pred_asym_intd_oracle = compare_asym_intd(
             cfg, 
             opt_model,
             testing_data, 
@@ -162,7 +164,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             normalization_constant
         )
 
-        po_pred_asym_intd_I = compare_asym_intd(
+        po_pred_asym_intd_I, po_pred_asym_intd_I_oracle = compare_asym_intd(
             cfg, 
             opt_model,
             testing_data, 
@@ -171,7 +173,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             po_model
         )
 
-        spo_pred_asym_intd_I = compare_asym_intd(
+        spo_pred_asym_intd_I, spo_pred_asym_intd_I_oracle = compare_asym_intd(
             cfg, 
             opt_model,
             testing_data, 
@@ -180,7 +182,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             spo_model_non_adverse
         )
 
-        rand_spo_pred_asym_intd_I = compare_asym_intd(
+        rand_spo_pred_asym_intd_I, rand_spo_pred_asym_intd_I_oracle = compare_asym_intd(
             cfg,
             opt_model,
             testing_data,
@@ -189,7 +191,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             spo_model_random
         )
 
-        adv_spo_pred_asym_intd_I = compare_asym_intd(
+        adv_spo_pred_asym_intd_I, adv_spo_pred_asym_intd_I_oracle = compare_asym_intd(
             cfg, 
             opt_model,
             testing_data, 
@@ -274,31 +276,11 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     ##### Improvement Metrics and Results #####
     ###########################################
 
-    true_mean = np.array(true_objs).mean() * normalization_constant
-    po_mean = np.array(po_objs).mean() * normalization_constant
-    spo_mean = np.array(spo_objs).mean() * normalization_constant
-    rand_spo_mean = np.array(rand_spo_objs).mean() * normalization_constant
-    adv_spo_mean = np.array(adv_spo_objs).mean() * normalization_constant
-
-    # print(f"DFL no intd. improvement = {po_mean - spo_mean:.2f}")
-    # print(f"DFL+Rnd no intd. improvement = {po_mean - rand_spo_mean:.2f}")
-    # print(f"Adv. DFL no intd. improvement = {po_mean - adv_spo_mean:.2f}")
-    # print(
-    #     f"DFL+Rnd sym. improvement = "
-    #     f"{all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['rand_adv_spo_objective'].mean():.2f}"
-    # )
-    # print(
-    #     f"Adv. DFL sym. improvement = "
-    #     f"{all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}"
-    # )
-    # if compute_asym_intd:
-    #     print(f"DFL+Rnd asym. improvement = {po_pred_asym_intd_I.mean() - rand_spo_pred_asym_intd_I.mean():.2f}")
-    #     print(f"Adv. DFL asym. improvement = {po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean():.2f}")
-    # if compute_asym_intd_2:
-    #     print(
-    #         "PO Asym. + Adv. Evader > Sym Asym. = "
-    #         f"{true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean():.2f}"
-    #     )
+    # true_mean = np.array(true_objs).mean() * normalization_constant
+    # po_mean = np.array(po_objs).mean() * normalization_constant
+    # spo_mean = np.array(spo_objs).mean() * normalization_constant
+    # rand_spo_mean = np.array(rand_spo_objs).mean() * normalization_constant
+    # adv_spo_mean = np.array(adv_spo_objs).mean() * normalization_constant
 
     # Prepare no-interdiction results for printing
     true_mean = np.array(true_objs).mean() * normalization_constant
@@ -312,7 +294,7 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     rand_spo_std = np.array(rand_spo_objs).std() * normalization_constant
     adv_spo_std = np.array(adv_spo_objs).std() * normalization_constant
     # Print the results in a table format
-    table_headers = ["Predictor", "No Interdictor", "Sym. Interdictor", "Asym. Interdictor", "Asym. Intd. Assumes PO", "Asym. Intd. Assumes SPO", "Asym. Intd Assumes Adv. SPO"]
+    table_headers = ["Predictor", "No Interdictor", "Sym. Interdictor", "Asym. Interdictor"]
 
     rows = [
         [
@@ -320,25 +302,16 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             f"{true_mean:.4f} +/- {true_std:.4f}", 
             f"{all_pred_sym_intd['true_objective'].mean():.4f} +/- {all_pred_sym_intd['true_objective'].std():.4f}", 
             f"{no_pred_asym_intd.mean():.4f} +/- {no_pred_asym_intd.std():.4f}", 
-            # "N/A", 
-            # "N/A",
-            # "N/A"
         ], [
             "PO", 
             f"{po_mean:.4f} +/- {po_std:.4f}",  
             f"{all_pred_sym_intd['po_objective'].mean():.4f} +/- {all_pred_sym_intd['po_objective'].std():.4f}", 
             f"{po_pred_asym_intd_I.mean():.4f} +/- {po_pred_asym_intd_I.std():.4f}", 
-            # "", 
-            # f"{true_po_false_nonadv_asym_intd.mean():.4f} +/- {true_po_false_nonadv_asym_intd.std():.4f}",
-            # f"{true_po_false_spo_asym_intd.mean():.4f} +/- {true_po_false_spo_asym_intd.std():.4f}"
         ], [
             "SPO", 
             f"{spo_mean:.4f} +/- {spo_std:.4f}", 
             f"{all_pred_sym_intd['spo_objective'].mean():.4f} +/- {all_pred_sym_intd['spo_objective'].std():.4f}", 
             f"{spo_pred_asym_intd_I.mean():.4f} +/- {spo_pred_asym_intd_I.std():.4f}", 
-            # f"{true_nonadv_false_po_asym_intd.mean():.4f} +/- {true_nonadv_false_po_asym_intd.std():.4f}",
-            # "",
-            # f"{true_nonadv_false_adv_asym_intd.mean():.4f} +/- {true_nonadv_false_adv_asym_intd.std():.4f}", 
         ], [
             "SPO rnd", 
             f"{rand_spo_mean:.4f} +/- {rand_spo_std:.4f}", 
@@ -349,9 +322,6 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             f"{adv_spo_mean:.4f} +/- {adv_spo_std:.4f}", 
             f"{all_pred_sym_intd['adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['adv_spo_objective'].std():.4f}", 
             f"{adv_spo_pred_asym_intd_I.mean():.4f} +/- {adv_spo_pred_asym_intd_I.std():.4f}", 
-            # f"{true_spo_false_po_asym_intd.mean():.4f} +/- {true_spo_false_po_asym_intd.std():.4f}", 
-            # f"{true_adv_false_nonadv_asym_intd.mean():.4f} +/- {true_adv_false_nonadv_asym_intd.std():.4f}",
-            # ""
         ]
     ]
     print(tabulate(rows, headers=table_headers, tablefmt="github"))
@@ -417,11 +387,15 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         's_s': all_pred_sym_intd['spo_objective'],
         's_r': all_pred_sym_intd['rand_adv_spo_objective'],
         's_a': all_pred_sym_intd['adv_spo_objective'],
-        'a_o': no_pred_asym_intd,  
+        'a_o': no_pred_asym_intd,
         'a_p': po_pred_asym_intd_I, 
+        'a_p_o': po_pred_asym_intd_I_oracle,
         'a_s': spo_pred_asym_intd_I, 
+        'a_s_o': spo_pred_asym_intd_I_oracle,
         'a_r': rand_spo_pred_asym_intd_I,
+        'a_r_o': rand_spo_pred_asym_intd_I_oracle,
         'a_a': adv_spo_pred_asym_intd_I,
+        'a_a_o': adv_spo_pred_asym_intd_I_oracle
     }
     if compute_asym_intd_2:
         all_data.update({
