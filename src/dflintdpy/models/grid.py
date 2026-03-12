@@ -31,8 +31,10 @@ class Grid(Graph):
         n : int
             Number of columns.
         cost : ndarray, length m*(n-1) + (m-1)*n
-            Edge‐weights, first all horizontal edges (left -> right, row by row),
-            then all vertical edges (top -> bottom, column by column).
+            Edge‐weights, for each row of nodes:
+                first horizontal edges (left -> right),
+                then vertical edges (top -> bottom).
+                then repeat for next row of nodes, etc.
         """
 
         # Store grid dimensions
@@ -73,7 +75,7 @@ class Grid(Graph):
                     shortest_path_nodes: list[int]
                     ) -> Tuple[np.ndarray[float], float]:
         """
-        Converts a list of arcs to a one-hot encoded tensor.
+        Converts a list of arcs to a one-hot encoded array.
 
         Parameters
         ----------
@@ -90,6 +92,17 @@ class Grid(Graph):
 
         # This is an implementation of the arcs_one_hot function exploiting the
         # grid structure of the graph to reduce the number of loops.
+
+        # Check if the nodes are within the valid range
+        if any((node < 0 or node >= self.m * self.n) for node in shortest_path_nodes):
+            raise ValueError(f"Node indices in shortest_path_nodes "\
+                             f"must be between 0 and {self.m * self.n - 1}.")
+        
+        # Paths on the grid must always traverse m+n-1 nodes (including source and sink)
+        if len(shortest_path_nodes) != self.m + self.n - 1:
+            raise ValueError(f"shortest_path_nodes must have length "\
+                             f"{self.m + self.n - 1} for a valid path "\
+                             f"from source to sink in the grid.")
 
         # Find the arc indices using the grid structure
         arc_indices = []
@@ -110,7 +123,7 @@ class Grid(Graph):
             arc_indices.append(idx)
             objective += self.cost[idx]
 
-        # Create a one-hot encoded tensor for the arcs
+        # Create a one-hot encoded array for the arcs
         one_hot_vector = np.zeros(len(self.arcs), dtype=np.float32)
         one_hot_vector[arc_indices] = 1.0
 
