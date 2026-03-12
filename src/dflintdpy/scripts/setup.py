@@ -83,7 +83,7 @@ def gen_train_data(
         num_scenarios=cfg.get("num_scenarios"),
         interdiction_policy=interdiction_policy,
         cache_options=cache_options,
-        # gen_intd_seed=cfg.get("gen_intd_seed"), # 157 if not specified otherwise
+        gen_intd_seed=cfg.get("intd_seed"), # 157 if not specified otherwise
     )
 
     X_train, c_train, i_train = adversarial_generator.generate(

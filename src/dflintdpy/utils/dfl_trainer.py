@@ -82,6 +82,41 @@ class DFLTrainer:
         self.cvar_alpha = cvar_alpha
         self.dfl_variant = dfl_variant
 
+    @staticmethod
+    def _flatten_scenarios(
+        pred: torch.Tensor,
+        costs: torch.Tensor,
+        sols: torch.Tensor,
+        objs: torch.Tensor,
+        dfl_variant: str,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+        """
+        Select scenarios according to the DFL variant and flatten batch/scenario
+        axes for loss computation.
+        """
+        B, K = costs.shape[:2]
+
+        if K == 1 or dfl_variant == "mixed":
+            pred_sel = pred
+            costs_sel = costs
+            sols_sel = sols
+            objs_sel = objs
+            K_eff = K
+        else:
+            # A-DFL uses only interdicted scenarios (drop scenario 0 per sample).
+            pred_sel = pred[:, 1:, ...]
+            costs_sel = costs[:, 1:, ...]
+            sols_sel = sols[:, 1:, ...]
+            objs_sel = objs[:, 1:, ...]
+            K_eff = K - 1
+
+        p = pred_sel.reshape(B * K_eff, *pred_sel.shape[2:])
+        c = costs_sel.reshape(B * K_eff, *costs_sel.shape[2:])
+        s = sols_sel.reshape(B * K_eff, *sols_sel.shape[2:])
+        o = objs_sel.reshape(B * K_eff, *objs_sel.shape[2:])
+        return p, c, s, o, K_eff
+
+
     def train_epoch(self,
                     loader: DataLoader
                     ) -> float:
@@ -118,59 +153,24 @@ class DFLTrainer:
             pred = self.pred_model(feats).unsqueeze(1) + intds
             B, K = costs.shape[:2] # batch size and number of scenarios per instance
 
-            try:
-                if K == 1 or self.dfl_variant == "mixed":
-                    # Mixed DFL (Uses unintd & intd scenarios together for training)
-                    p = pred.view(B * K, *pred.shape[2:]) # reshape to (B*K, ...)
-                    c = costs.view(B * K, *costs.shape[2:])
-                    s = sols.view(B * K, *sols.shape[2:])
-                    o = objs.view(B * K, *objs.shape[2:])
-                else:
-                    # A-DFL (Uses only intd scenarios for training)
-                        p = pred.view(B * K, *pred.shape[2:])[B:,...] # reshape to (B*(K-1), ...)
-                        c = costs.view(B * K, *costs.shape[2:])[B:,...]
-                        s = sols.view(B * K, *sols.shape[2:])[B:,...]
-                        o = objs.view(B * K, *objs.shape[2:])[B:,...]
 
-                loss_flat = type(self).compute_loss(
-                    self.loss_criterion,
-                    p,
-                    c,
-                    s,
-                    o,
-                    method_name=self.method_name,
-                )
-            except Exception:
-                try:
-                    delta = 2*p - c
-                    c[delta<0] += delta[delta<0]
-                    loss_flat = type(self).compute_loss(
-                        self.loss_criterion,
-                        p,
-                        c,
-                        s,
-                        o,
-                        method_name=self.method_name,
-                    )
-                except Exception:
-                    print("Warning: Loss computation error during training. Skipping sample.")
-                continue # TODO: If we continue here, we won't use the new gradient. I should remove it anyways.
+            p, c, s, o, K_eff = type(self)._flatten_scenarios(
+                pred,
+                costs,
+                sols,
+                objs,
+                self.dfl_variant,
+            )
 
-            # TODO: Get rid of these aggregations...
-            if loss_flat.dim() == 0:
-                loss_per_scen = loss_flat.repeat(B, K)
-            else:
-                loss_per_scen = loss_flat.view(B, K, -1).mean(-1)
-            if self.aggregate == "mean":
-                loss = loss_per_scen.mean(dim=1).mean()
-            elif self.aggregate == "worst":
-                loss = loss_per_scen.max(dim=1).values.mean()
-            elif self.aggregate == "cvar":
-                k_tail = max(1, min(K, int((1 - self.cvar_alpha) * K)))
-                topk = loss_per_scen.topk(k_tail, dim=1).values
-                loss = topk.mean(dim=1).mean()
-            else:
-                raise ValueError(f"Unknown aggregate: {self.aggregate}")
+            # Compute flattened loss and aggregate across scenarios.
+            loss = type(self).compute_loss(
+                self.loss_criterion,
+                p,
+                c,
+                s,
+                o,
+                method_name=self.method_name,
+            )
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -179,6 +179,7 @@ class DFLTrainer:
             running_loss += loss.item() * B
 
         return running_loss / len(loader.dataset)
+
 
     def evaluate(self, loader: DataLoader) -> Tuple[float, float]:
         """
@@ -212,66 +213,34 @@ class DFLTrainer:
                 pred = self.pred_model(feats).unsqueeze(1) + intds
                 B, K = costs.shape[:2]
 
-                try:
-                    if K == 1 or self.dfl_variant == "mixed":
-                        # Mixed DFL (Uses unintd & intd scenarios together for training)
-                        p = pred.view(B * K, *pred.shape[2:]) # reshape to (B*K, ...)
-                        c = costs.view(B * K, *costs.shape[2:])
-                        s = sols.view(B * K, *sols.shape[2:])
-                        o = objs.view(B * K, *objs.shape[2:])
-                    else:
-                        # A-DFL (Uses only intd scenarios for training)
-                        p = pred.view(B * K, *pred.shape[2:])[B:,...] # reshape to (B*(K-1), ...)
-                        c = costs.view(B * K, *costs.shape[2:])[B:,...]
-                        s = sols.view(B * K, *sols.shape[2:])[B:,...]
-                        o = objs.view(B * K, *objs.shape[2:])[B:,...]
+                # Flatten scenarios for loss computation
+                p, c, s, o, K_eff = type(self)._flatten_scenarios(
+                    pred,
+                    costs,
+                    sols,
+                    objs,
+                    self.dfl_variant,
+                )
 
-                    loss_flat = type(self).compute_loss(
-                        self.loss_criterion,
-                        p,
-                        c,
-                        s,
-                        o,
-                        method_name=self.method_name,
-                    )
-                except Exception:
-                    try:
-                        delta = 2*p - c
-                        c[delta<0] += delta[delta<0]
-                        loss_flat = type(self).compute_loss(
-                            self.loss_criterion,
-                            p,
-                            c,
-                            s,
-                            o,
-                            method_name=self.method_name,
-                        )
-                    except Exception:
-                        print("Warning: Loss computation error during evaluation. Skipping sample.")
-                        continue
-
-                if loss_flat.dim() == 0:
-                    loss_per_scen = loss_flat.repeat(B, K)
-                else:
-                    loss_per_scen = loss_flat.view(B, K, -1).mean(-1)
-                if self.aggregate == "mean":
-                    loss = loss_per_scen.mean(dim=1).mean()
-                elif self.aggregate == "worst":
-                    loss = loss_per_scen.max(dim=1).values.mean()
-                elif self.aggregate == "cvar":
-                    k_tail = max(1, min(K, int((1 - self.cvar_alpha) * K)))
-                    topk = loss_per_scen.topk(k_tail, dim=1).values
-                    loss = topk.mean(dim=1).mean()
-                else:
-                    raise ValueError(f"Unknown aggregate: {self.aggregate}")
+                # Compute flattened loss and aggregate across scenarios.
+                loss = type(self).compute_loss(
+                    self.loss_criterion,
+                    p,
+                    c,
+                    s,
+                    o,
+                    method_name=self.method_name,
+                )
 
                 total_loss += loss.item() * B
+
         # Compute regret
         loader.normal_mode() # evaluate regret only on original samples
         regret = pyepo.metric.regret(self.pred_model, self.opt_model, loader)
         loader.adverse_mode() # reset to adverse mode
 
         return total_loss / len(loader.dataset), regret
+
 
     def fit(self,
             train_loader: DataLoader,
@@ -458,22 +427,6 @@ class DFLTrainer:
             return loss_criterion(costs_pred, costs, objs)
         elif method_name in ["pg", "ltr"]:
             return loss_criterion(costs_pred, costs)
-    
-    # @staticmethod
-    # def lambda_schedule(cfg, epoch):
-    #     # Example: warm start with strong anchor, then linear decay
-    #     if epoch < cfg.get("spo_po_epochs"):
-    #         return 1.0             # train without SPO for first epochs
-    #     else:
-    #         return cfg.get("lam")  # use constant lambda afterwards
-    #     # if epoch < 33:
-    #     #     return 0.7             # strong anchor for 3 epochs
-    #     # elif epoch < 45:
-    #     #     # decay to 0.1 by epoch 45
-    #     #     t = (epoch - 33) / (45 - 33)
-    #     #     return (1 - t) * 0.7 + t * 0.1
-    #     # else:
-    #     #     return 0.05            # long tail
 
 
     @staticmethod

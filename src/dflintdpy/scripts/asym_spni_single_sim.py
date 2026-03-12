@@ -201,10 +201,15 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         )
     else:
         no_pred_asym_intd = np.zeros((cfg.get("num_test_samples"),))
+        no_pred_asym_intd_oracle = np.zeros((cfg.get("num_test_samples"),))
         po_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        po_pred_asym_intd_I_oracle = np.zeros((cfg.get("num_test_samples"),))
         spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        spo_pred_asym_intd_I_oracle = np.zeros((cfg.get("num_test_samples"),))
         rand_spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        rand_spo_pred_asym_intd_I_oracle = np.zeros((cfg.get("num_test_samples"),))
         adv_spo_pred_asym_intd_I = np.zeros((cfg.get("num_test_samples"),))
+        adv_spo_pred_asym_intd_I_oracle = np.zeros((cfg.get("num_test_samples"),))
 
     ############################################################
     ##### Asymmetric Interdiction with wrong evader models #####
@@ -294,7 +299,13 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     rand_spo_std = np.array(rand_spo_objs).std() * normalization_constant
     adv_spo_std = np.array(adv_spo_objs).std() * normalization_constant
     # Print the results in a table format
-    table_headers = ["Predictor", "No Interdictor", "Sym. Interdictor", "Asym. Interdictor"]
+    table_headers = [
+        "Predictor",
+        "No Interdictor",
+        "Sym. Interdictor",
+        "Asym. Intd (Model Evader)",
+        "Asym. Intd (Oracle Evader)",
+    ]
 
     rows = [
         [
@@ -302,26 +313,31 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             f"{true_mean:.4f} +/- {true_std:.4f}", 
             f"{all_pred_sym_intd['true_objective'].mean():.4f} +/- {all_pred_sym_intd['true_objective'].std():.4f}", 
             f"{no_pred_asym_intd.mean():.4f} +/- {no_pred_asym_intd.std():.4f}", 
+            f"{no_pred_asym_intd_oracle.mean():.4f} +/- {no_pred_asym_intd_oracle.std():.4f}", 
         ], [
             "PO", 
             f"{po_mean:.4f} +/- {po_std:.4f}",  
             f"{all_pred_sym_intd['po_objective'].mean():.4f} +/- {all_pred_sym_intd['po_objective'].std():.4f}", 
             f"{po_pred_asym_intd_I.mean():.4f} +/- {po_pred_asym_intd_I.std():.4f}", 
+            f"{po_pred_asym_intd_I_oracle.mean():.4f} +/- {po_pred_asym_intd_I_oracle.std():.4f}", 
         ], [
             "SPO", 
             f"{spo_mean:.4f} +/- {spo_std:.4f}", 
             f"{all_pred_sym_intd['spo_objective'].mean():.4f} +/- {all_pred_sym_intd['spo_objective'].std():.4f}", 
             f"{spo_pred_asym_intd_I.mean():.4f} +/- {spo_pred_asym_intd_I.std():.4f}", 
+            f"{spo_pred_asym_intd_I_oracle.mean():.4f} +/- {spo_pred_asym_intd_I_oracle.std():.4f}", 
         ], [
             "SPO rnd", 
             f"{rand_spo_mean:.4f} +/- {rand_spo_std:.4f}", 
             f"{all_pred_sym_intd['rand_adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['rand_adv_spo_objective'].std():.4f}", 
             f"{rand_spo_pred_asym_intd_I.mean():.4f} +/- {rand_spo_pred_asym_intd_I.std():.4f}", 
+            f"{rand_spo_pred_asym_intd_I_oracle.mean():.4f} +/- {rand_spo_pred_asym_intd_I_oracle.std():.4f}", 
         ], [
             "SPO adv", 
             f"{adv_spo_mean:.4f} +/- {adv_spo_std:.4f}", 
             f"{all_pred_sym_intd['adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['adv_spo_objective'].std():.4f}", 
             f"{adv_spo_pred_asym_intd_I.mean():.4f} +/- {adv_spo_pred_asym_intd_I.std():.4f}", 
+            f"{adv_spo_pred_asym_intd_I_oracle.mean():.4f} +/- {adv_spo_pred_asym_intd_I_oracle.std():.4f}", 
         ]
     ]
     print(tabulate(rows, headers=table_headers, tablefmt="github"))

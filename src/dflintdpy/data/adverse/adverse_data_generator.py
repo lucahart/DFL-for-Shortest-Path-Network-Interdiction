@@ -17,6 +17,7 @@ from dflintdpy.utils.read_write import (
     write_rnd_intd,
 )
 
+
 class AdvDataGenerator:
     """
     Class to augment existing datasets for SPO learning 
@@ -146,6 +147,8 @@ class AdvDataGenerator:
             self._sym_interdictor = SymmetricInterdictor(
                 self.opt_model._graph,
                 k = budget,
+                max_cnt = 3,
+                eps = cfg.get("benders_eps"),
                 **kwargs
             )
 
@@ -157,6 +160,7 @@ class AdvDataGenerator:
                 opt_model.gamma, 
                 budget=opt_model.c.sum()*0.3
             )
+
 
     def _load_interdictions_from_cache(self, cfg, costs, feats):
         """

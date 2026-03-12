@@ -5,7 +5,7 @@ from typing import Any, Tuple
 @dataclass
 class HP:
     # Hyperparameters
-    num_seeds : int = 15 # number of simulations to run and random seed sets to use
+    num_seeds : int = 5 # number of simulations to run and random seed sets to use
     seed_sweep_offset : int = 100 # Offset to ensure different random seeds for different runs
 
     # Data parameters
@@ -23,8 +23,8 @@ class HP:
     loader_seed : int = 17
 
     # Interdiction parameters
-    budget : int = 5
-    num_scenarios : int = 3
+    budget : int = 10
+    num_scenarios : int = 10
 
     benders_max_count : int = 100
     benders_eps : float = 1e-3
@@ -34,7 +34,7 @@ class HP:
 
     # ML hyperparameters
     batch_size : int = 32
-    po_epochs : int = 400
+    po_epochs : int = 200
     spo_epochs : int = 200 # 300
     po_lr : float = 1e-3 # 2e-4 # 2e-3
     spo_lr : float = 1e-3 # 3.5e-4 # 5e-3

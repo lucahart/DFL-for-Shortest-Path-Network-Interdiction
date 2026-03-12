@@ -163,10 +163,10 @@ def compute_percentage_increases_from_samples(all_data):
     calculations['sym_intd_r'] = _safe_percentage(all_data['s_r'], all_data['s_o'])
     calculations['sym_intd_a'] = _safe_percentage(all_data['s_a'], all_data['s_o'])
 
-    calculations['asym_intd_p'] = _safe_percentage(all_data['a_p'], all_data['a_p_o'])
-    calculations['asym_intd_s'] = _safe_percentage(all_data['a_s'], all_data['a_s_o'])
-    calculations['asym_intd_r'] = _safe_percentage(all_data['a_r'], all_data['a_r_o'])
-    calculations['asym_intd_a'] = _safe_percentage(all_data['a_a'], all_data['a_a_o'])
+    calculations['asym_intd_p'] = _safe_percentage(all_data['a_p'], all_data['a_o'])
+    calculations['asym_intd_s'] = _safe_percentage(all_data['a_s'], all_data['a_o'])
+    calculations['asym_intd_r'] = _safe_percentage(all_data['a_r'], all_data['a_o'])
+    calculations['asym_intd_a'] = _safe_percentage(all_data['a_a'], all_data['a_o'])
 
     return calculations
 
@@ -185,10 +185,10 @@ def compute_percentage_increases_from_simulations(simulations):
         calculations['sym_intd_r'].append(_safe_percentage_sum(sim_data['s_r'], sim_data['s_o']))
         calculations['sym_intd_a'].append(_safe_percentage_sum(sim_data['s_a'], sim_data['s_o']))
 
-        calculations['asym_intd_p'].append(_safe_percentage_sum(sim_data['a_p'], sim_data['a_p_o']))
-        calculations['asym_intd_s'].append(_safe_percentage_sum(sim_data['a_s'], sim_data['a_s_o']))
-        calculations['asym_intd_r'].append(_safe_percentage_sum(sim_data['a_r'], sim_data['a_r_o']))
-        calculations['asym_intd_a'].append(_safe_percentage_sum(sim_data['a_a'], sim_data['a_a_o']))
+        calculations['asym_intd_p'].append(_safe_percentage_sum(sim_data['a_p'], sim_data['a_o']))
+        calculations['asym_intd_s'].append(_safe_percentage_sum(sim_data['a_s'], sim_data['a_o']))
+        calculations['asym_intd_r'].append(_safe_percentage_sum(sim_data['a_r'], sim_data['a_o']))
+        calculations['asym_intd_a'].append(_safe_percentage_sum(sim_data['a_a'], sim_data['a_o']))
 
     return dict(calculations)
 

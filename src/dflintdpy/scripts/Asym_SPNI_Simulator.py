@@ -11,10 +11,10 @@ from dflintdpy.utils.analyse_results import analyze_results
 # Initialize the configuration class
 cfg = HP()
 set_cache_replace_options(
-    replace_pred=False,
+    replace_pred=True,
     replace_data=False,
-    replace_intd_adv=False,
-    replace_intd_rnd=False,
+    replace_intd_adv=True,
+    replace_intd_rnd=True,
     replace_result=False,
     replace_fig=False,
     archive_replaced=True,

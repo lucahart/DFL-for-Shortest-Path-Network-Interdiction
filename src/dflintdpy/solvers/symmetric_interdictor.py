@@ -24,7 +24,8 @@ class SymmetricInterdictor:
                  *,
                  max_cnt: int = 10,
                  eps: float = 1,
-                 output_flag: bool = False
+                 output_flag: bool = False,
+                 **kwargs
                  ):
 
         # Copy the provided instance of a graph
@@ -210,6 +211,7 @@ class SymmetricInterdictor:
 
         return interdictions_x, shortest_path_y, z_min
     
+
     def solve(self,
               visualize: bool = False,
               versatile: bool = True,
