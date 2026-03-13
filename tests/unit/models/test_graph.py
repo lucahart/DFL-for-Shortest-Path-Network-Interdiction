@@ -1,6 +1,7 @@
 # test_graph.py
 from copy import deepcopy
 
+from dflintdpy.models.grid import Grid
 import networkx as nx
 import numpy as np
 import pytest
@@ -190,6 +191,15 @@ def test_graph_arcs_one_hot(
 
     assert np.array_equal(one_hot, expected_one_hot), "One-hot encoding does not match expected encoding."
     assert obj == expected_obj, "Objective value does not match expected value."
+    pass
+
+def test_graph_arcs_one_hot_invalid_arc_error(larger_graph: Graph):
+    """Test if the _arcs_one_hot method raises an error if there is an invalid arc."""
+    path = [0, 2, 4, 5]  # This path includes the arc (2, 4) which is not in the graph
+
+    with pytest.raises(ValueError):
+        _, _ = larger_graph._arcs_one_hot(path)
+    pass
 
 
 def test_graph_arcs_one_hot_invalid_nodes(triangle_graph: Graph):

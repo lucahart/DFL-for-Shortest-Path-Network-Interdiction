@@ -10,7 +10,7 @@ pytest.importorskip("pyepo")
 pytest.importorskip("gurobipy")
 
 from dflintdpy.models.grid import Grid
-from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
+from dflintdpy.models.graph import Graph
 
 
 def test_grid_arc_order():
@@ -91,6 +91,27 @@ def test_grid_arcs_one_hot():
 
     assert np.array_equal(one_hot, expected_one_hot), "One-hot encoding does not match expected encoding."
     assert obj == expected_obj, "Objective value does not match expected value."
+
+def test_arcs_one_hot_matches_base():
+    """Test if the _arcs_one_hot method in Grid matches the implementation in the base Graph class."""
+    grid = Grid(3, 4)
+    path = [0, 1, 5, 9, 10, 11]
+
+    one_hot, obj = grid._arcs_one_hot(path)
+    expected_one_hot, expected_obj = Graph._arcs_one_hot(grid, path)
+
+    assert np.array_equal(one_hot, expected_one_hot)
+    assert obj == expected_obj
+    pass
+
+def test_grid_arcs_one_hot_invalid_arc_error():
+    """Test if the _arcs_one_hot method raises an error if there is an invalid arc."""
+    grid = Grid(3, 3)
+    path = [0, 4, 5, 5, 8]
+
+    with pytest.raises(ValueError):
+        _, _ = grid._arcs_one_hot(path)
+    pass
 
 def test_grid_arcs_one_hot_invalid_nodes():
     """Test if the _arcs_one_hot method raises an error when given invalid nodes."""

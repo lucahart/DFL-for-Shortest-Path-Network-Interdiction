@@ -333,6 +333,10 @@ class Graph(optModel):
         objective : float
             The total cost of the shortest path represented by the one-hot vector.
         ------------
+        Raises 
+        ------------
+        ValueError : If the shortest path contains nodes that are not in the graph vertices.
+        ------------
         """
 
         if any(node not in self.vertices for node in shortest_path_nodes):
@@ -347,7 +351,7 @@ class Graph(optModel):
 
         # Create a one-hot encoded array for the arcs
         num_arcs = len(self.arcs)
-        arc_indices = [self.arcs.index(arc) for arc in shortest_path]
+        arc_indices = [self.arcs.index(arc) for arc in shortest_path] # raises ValueError if arc not in list
         one_hot_vector = np.zeros(num_arcs, dtype=np.float32)
         one_hot_vector[arc_indices] = 1.0
         objective = one_hot_vector @ self.cost

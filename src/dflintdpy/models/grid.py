@@ -118,7 +118,8 @@ class Grid(Graph):
             else:
                 idx = row * (2 * self.n - 1) + col
 
-            assert self.arcs[idx] == (u, v), "Arc index mapping error"
+            if self.arcs[idx] != (u, v):
+                raise ValueError("Arc not part of the grid.")
 
             arc_indices.append(idx)
             objective += self.cost[idx]
