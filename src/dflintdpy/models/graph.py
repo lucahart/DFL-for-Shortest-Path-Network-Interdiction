@@ -1,3 +1,4 @@
+from importlib.resources import path
 from typing import Tuple
 from pyepo.model.opt import optModel
 import torch
@@ -49,14 +50,14 @@ class Graph(optModel):
         ------------
         """
 
-        # Store arcs, vertices, and costs
+        # Store arcs and vertices
         self.arcs = arcs
-        self.vertices = (vertices 
-                         if vertices is not None 
-                         else np.arange(
-                             max(max(a) for a in arcs) + 1
-                             )
-                        )
+        if vertices is None:
+            self.vertices = np.arange(max(max(a) for a in arcs) + 1)
+        else:
+            self.vertices = vertices
+        # TODO: Currently assums that vertices are labeled from 0 to n-1, 
+        # need to change that if we want to allow for arbitrary vertex labels
 
         # Create a graph from the vertices and arcs
         self.graph = nx.DiGraph()
@@ -67,6 +68,9 @@ class Graph(optModel):
             self.setObj(cost, source=source, target=target)
         else:
             self.setObj(np.ones(len(arcs), dtype=float))
+        
+        # Set source and target nodes if provided
+        self._set_source_target(source, target)
 
         # Call the parent constructor
         super().__init__()
@@ -115,21 +119,21 @@ class Graph(optModel):
             The total cost of the path represented by the one-hot vector.
         """
 
-        return path @ (self.cost + interdictions) if interdictions is not None else path @ self.cost
+        return self.evaluate(path, interdictions)
     
     def evaluate(self,
                  path: np.ndarray[float],
                  interdictions: np.ndarray[float] | None = None
                  ) -> float:
         """
-        Evaluate the cost of a given path. Use the __call__ method instead.
+        Evaluation method to compute the cost of a given path.
 
         Parameters
         ----------
         path : np.ndarray[float]
             A one-hot encoded vector representing the arcs in the path.
         interdictions : np.ndarray[float] | None, optional
-            A vector representing the interdiction values on the arcs.
+            A vector representing the interdiction values on the arcs. 
             The graph model's objective is NOT updated.
 
         Returns
@@ -137,7 +141,71 @@ class Graph(optModel):
         float
             The total cost of the path represented by the one-hot vector.
         """
-        return self.__call__(path, interdictions)
+
+        # Convert provided path to numpy array
+        new_path = self._to_1d_numpy(path)
+
+        # Return the objective value if no interdictions are provided
+        if interdictions is None:
+            return new_path @ self.cost
+        
+        # Convert provided interdictions to numpy array
+        new_interdictions = self._to_1d_numpy(interdictions)
+
+        return new_path @ (self.cost + new_interdictions)
+    
+    def _to_1d_numpy(
+            self, 
+            vector: np.ndarray[float] | torch.Tensor | list[float]
+        ) -> np.ndarray[float]:
+        """
+        Converts the provided list, ndarray, or tensor to a numpy array.
+        Checks that:
+        - The input is one of the types: numpy array, torch tensor, or list.
+        - The resulting array is 1D.
+        - The resulting array length matches the number of arcs in the graph.
+
+        Parameters
+        ----------
+        vector : np.ndarray[float] | torch.Tensor | list[float]
+            The vector to be converted, which can be a numpy array, torch tensor, or list.
+
+        Returns
+        -------
+        np.ndarray[float]
+            The vector converted to a numpy array.
+
+        Raises
+        ------
+        TypeError
+            If the input vector is not a numpy array, torch tensor, or list.
+        ValueError
+            If the resulting array is not 1D.
+            If the resulting array length does not match the number of arcs in the graph.
+        """
+        # Convert vector to numpy array if it's a torch tensor or list.
+        # Raise error if it's not one of the expected types.
+        if isinstance(vector, torch.Tensor):
+            new_vector = vector.detach().numpy().squeeze()
+        elif isinstance(vector, np.ndarray):
+            new_vector = vector.squeeze()
+        elif isinstance(vector, list):
+            new_vector = np.array(vector).squeeze()
+        else:
+            raise TypeError(f"Expected vector to be a numpy array, " + 
+                            f"torch tensor, or list, got {type(vector)} instead.")
+
+        # Check that the vector is 1D and has the correct length
+        if new_vector.ndim != 1:
+            raise ValueError(f"Expected vector to be a 1D array, " + 
+                             f"got {new_vector.ndim}D array instead.")
+        if len(new_vector) != len(self.arcs):
+            raise ValueError(f"Expected vector to have length {len(self.arcs)}," +
+                             f" got {len(new_vector)} instead.")
+        
+        # Return the converted vector
+        return new_vector
+    
 
     def solve(self,
               cost: torch.Tensor | np.ndarray[float] | None = None,
@@ -250,7 +318,7 @@ class Graph(optModel):
                      shortest_path_nodes: list[int]
                      ) -> Tuple[np.ndarray[float], float]:
         """
-        Converts a list of arcs to a one-hot encoded tensor.
+        Converts a list of arcs to a one-hot encoded array.
 
         ------------
         Parameters
@@ -267,6 +335,9 @@ class Graph(optModel):
         ------------
         """
 
+        if any(node not in self.vertices for node in shortest_path_nodes):
+            raise ValueError("Shortest path contains nodes that are not in the graph vertices.")
+
         # Create list of arcs form shortest path nodes
         shortest_path = [Graph.__sort(shortest_path_nodes[i],
                                               shortest_path_nodes[i + 1]
@@ -274,7 +345,7 @@ class Graph(optModel):
                          for i in range(len(shortest_path_nodes) - 1)]
         # objective = sum(self.graph.edges[edge]['weight'] for edge in shortest_path)
 
-        # Create a one-hot encoded tensor for the arcs
+        # Create a one-hot encoded array for the arcs
         num_arcs = len(self.arcs)
         arc_indices = [self.arcs.index(arc) for arc in shortest_path]
         one_hot_vector = np.zeros(num_arcs, dtype=np.float32)
@@ -331,21 +402,15 @@ class Graph(optModel):
             If not provided, defaults to the last vertex.
         ------------
         """
-        # Set source to the first vertex if not provided
-        if source is None or source < 0 or source > max(self.vertices):
-            self.source = self.vertices[0]
 
-        # Set target to the last vertex if not provided
-        if target is None or target < 0 or target > max(self.vertices):
-            self.target = max(self.vertices)
-        else:
-            self.target = target
+        # Set source and target nodes
+        self._set_source_target(source, target)
 
         # Check if cost is in the correct data format
         if isinstance(c, (list, np.ndarray)):
             cost = np.squeeze(c)
         else:
-            raise ValueError(
+            raise TypeError(
                 f"Expected cost to be ndarray or list, got {type(c)} instead."
             )
         # Check if cost is a 1D arrays
@@ -354,16 +419,70 @@ class Graph(optModel):
                 f"Expected costs to be a 1D array, got {cost.ndim}D array instead."
             )
         # Check if the length of cost matches the number of arcs
-        if len(c) != len(self.arcs) and len(c) != 1:
+        if len(cost) != len(self.arcs) and len(cost) != 1:
             raise ValueError(f"cost has length {len(c)}, expected {len(self.arcs)}")
+        
         # Store cost attribute if all checks pass
         self.cost = cost
 
         # Add edges to the graph with the specified weights
         for i, arc in enumerate(self.arcs):
             u, v = arc
-            w = c[i] if len(c) > 1 else c[0]
+            w = cost[i] if len(cost) > 1 else cost[0]
             self.graph.add_edge(u, v, weight=w)
+        
+        # TODO: There is a functionality that len(cost) can be 1. 
+        # Remove it: Update length check and w assignment for nx graph.
+        # When it's removed, use the _to_1d_numpy method for conversion.
+        # When using _to_1d_numpy, remove obsolete tests for setObj.
+        pass
+
+    def _set_source_target(self, 
+                           source: int | None, 
+                           target: int | None) -> None:
+        """
+        Sets the source and target nodes for the graph.
+
+        ------------
+        Parameters
+        ------------
+        source : int, optional
+            The source node for the shortest path. Defaults to the first vertex.
+        target : int, optional
+            The target node for the shortest path. Defaults to the last vertex.
+        ------------
+        Raises
+        ------------
+        TypeError : If the source or target is not an integer or None.
+        ValueError : If the source or target node is not in the graph vertices.
+        ------------
+        """
+        # TODO: Change that target defaults to the last vertex instead of the largest value
+
+        # Check that source and target are of the type int or None
+        if not (isinstance(source, int) or source is None):
+            raise TypeError(f"Expected source to be an integer or None, got {type(source)} instead.")
+        if not (isinstance(target, int) or target is None):
+            raise TypeError(f"Expected target to be an integer or None, got {type(target)} instead.")
+        
+        # Raise an error if source or target don't exist in the graph
+        if source is not None and source not in self.vertices:
+            raise ValueError(f"Source node {source} is not in the graph vertices.")
+        if target is not None and target not in self.vertices:
+            raise ValueError(f"Target node {target} is not in the graph vertices.")
+
+        # Set source to the first vertex if not provided
+        if source is None:
+            self.source = self.vertices[0]
+        else:
+            self.source = source
+
+        # Set target to the vertex with highest number if not provided
+        if target is None:
+            self.target = max(self.vertices)
+        else:
+            self.target = target
+        
         pass
 
     @staticmethod
@@ -388,6 +507,8 @@ class Graph(optModel):
             of two integers.
         ------------
         """
+        # TODO: Make this a class method.
+        # TODO: Rename to _one_hot_to_arcs for consistency with _arcs_one_hot.
         return [arc for arc in model.arcs if one_hot_vector[model.arcs.index(arc)] > 0]
 
     @property
