@@ -1,5 +1,6 @@
 from operator import __call__
 import gurobipy as gp
+import torch
 from gurobipy import GRB
 from pyepo.model.grb import optGrbModel
 from typing import Tuple
@@ -44,7 +45,7 @@ class ShortestPathGrb(optGrbModel):
         See `solve` method for details.
         """
 
-        return self.solve(cost = cost, versatile=versatile)
+        return self.solve(c=cost, versatile=versatile)
     
     def __deepcopy__(self, memo):
         """
@@ -73,6 +74,8 @@ class ShortestPathGrb(optGrbModel):
 
         return self._graph.cost
 
+
+    # TODO: Break tie if there are multiple optimal paths. Add test that we always get a single path as solution.
     def solve(self,
               c: ndarray | Tensor | None = None,
               visualize: bool = False,
@@ -83,7 +86,7 @@ class ShortestPathGrb(optGrbModel):
         
         Parameters:
         -----------
-        cost : ndarray | Tensor | None, Optional
+        c | cost : ndarray | Tensor | None, Optional
             Cost vector for the edges. If provided, it updates the model's objective
             during the solve process. The original cost is restored after solving.
         visualize : bool, Optional
@@ -94,9 +97,47 @@ class ShortestPathGrb(optGrbModel):
         Tuple[ndarray, float]
             A tuple containing the solution vector and the objective value.
         """
-        
-        # Run solver to find solution
-        sol, obj = super().solve()
+        if c is None and "cost" in kwargs:
+            c = kwargs.pop("cost")
+
+        if isinstance(c, Tensor) and c.ndim == 2:
+            sols = []
+            objs = []
+
+            for row in c:
+                sol, obj = self.solve(c=row, visualize=visualize, **kwargs)
+                sols.append(torch.as_tensor(sol, dtype=c.dtype, device=c.device))
+                objs.append(obj)
+
+            return torch.stack(sols), torch.tensor(objs, dtype=c.dtype, device=c.device)
+
+        # Temporarily update the objective if a new cost is provided.
+        original_cost = self.cost.copy() if c is not None else None
+        if c is not None:
+            self.setObj(c)
+
+        try:
+            # Run solver to find solution.
+            self._model.update()
+            self._model.optimize()
+
+            # Surface model failures explicitly for callers and tests.
+            status = self._model.Status
+            if status == GRB.INFEASIBLE:
+                raise RuntimeError("Shortest path model is infeasible.")
+            if status in (GRB.UNBOUNDED, GRB.INF_OR_UNBD):
+                raise RuntimeError("Shortest path model is unbounded.")
+            if status != GRB.OPTIMAL:
+                raise RuntimeError(f"Shortest path optimization failed with status {status}.")
+
+            if isinstance(self.x, gp.MVar):
+                sol = self.x.x
+            else:
+                sol = [self.x[k].x for k in self.x]
+            obj = self._model.objVal
+        finally:
+            if original_cost is not None:
+                self.setObj(original_cost)
 
         # Show solution in graph if visualize is True
         if visualize:
@@ -108,7 +149,7 @@ class ShortestPathGrb(optGrbModel):
     def evaluate(self,
                  y: ndarray | Tensor,
                  x: ndarray | Tensor | None = None
-                 ) -> float:
+                 ) -> float | Tensor:
         """
         Evaluate the objective function value for a given solution vector.
 
@@ -126,12 +167,37 @@ class ShortestPathGrb(optGrbModel):
         float
             The objective function value for the provided solution vector.
         """
-        
-        # Convert x to numpy array if it's a tensor
-        if isinstance(y, Tensor):
-            y = y.numpy()
-        if isinstance(x, Tensor):
-            x = x.numpy()
+        if isinstance(y, Tensor) and y.ndim == 2:
+            if y.shape[1] != self._graph.num_cost:
+                raise ValueError(
+                    f"Expected batched paths to have {self._graph.num_cost} columns, "
+                    f"got {y.shape[1]} instead."
+                )
+
+            cost = torch.as_tensor(self.cost, dtype=y.dtype, device=y.device)
+
+            if x is None:
+                return torch.sum(y * cost, dim=1)
+
+            intd = torch.as_tensor(x, dtype=y.dtype, device=y.device)
+            if intd.ndim == 1:
+                if intd.shape[0] != self._graph.num_cost:
+                    raise ValueError(
+                        f"Expected interdictions to have length {self._graph.num_cost}, "
+                        f"got {intd.shape[0]} instead."
+                    )
+            elif intd.ndim == 2:
+                if intd.shape != y.shape:
+                    raise ValueError(
+                        f"Expected batched interdictions to match path shape {tuple(y.shape)}, "
+                        f"got {tuple(intd.shape)} instead."
+                    )
+            else:
+                raise ValueError(
+                    f"Expected interdictions to be 1D or 2D for batched paths, got {intd.ndim}D instead."
+                )
+
+            return torch.sum(y * (cost + intd), dim=1)
 
         return self._graph(y, interdictions=x)
     
@@ -141,15 +207,17 @@ class ShortestPathGrb(optGrbModel):
         # Run visualize method of graph instance
         self._graph.visualize(**kwargs)
 
+
+    # TODO: Make sure that _model is always updated when setObj or _getModel are run.
     def setObj(self,
                c: ndarray
                ) -> None:
+
+        if isinstance(c, Tensor):
+            c = c.detach().cpu().numpy()
         
         # Update local graph model objective
-        if isinstance(c, Tensor):
-            self._graph.setObj(c.numpy())
-        else:
-            self._graph.setObj(c)
+        self._graph.setObj(c)
         
         # Update gurobi model's objective
         super().setObj(c)
