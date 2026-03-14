@@ -1,13 +1,13 @@
 # test_graph.py
-from copy import deepcopy
-
-from dflintdpy.models.grid import Grid
 import networkx as nx
 import numpy as np
 import pytest
+import torch
+
+from copy import deepcopy
 
 from dflintdpy.models.graph import Graph
-import torch
+from dflintdpy.models.grid import Grid
 
 
 @pytest.fixture
@@ -122,19 +122,20 @@ def test_graph_setObj_source_target(triangle_graph: Graph):
     assert triangle_graph.target == 0, f"Target should be 0 but was {triangle_graph.target}."
     pass
 
-def test_graph_setObj_torch_tensor_type_error(triangle_graph: Graph):
-    """Test that the cost is of type list of ndarray."""
-    cost = torch.tensor([1.0, 2.0, 3.0])
-    with pytest.raises(TypeError):
-        triangle_graph.setObj(cost)
-    pass
+# def test_graph_setObj_torch_tensor_type_error(triangle_graph: Graph):
+#     """Test that the cost is of type list or ndarray."""
+#     cost = torch.tensor([1.0, 2.0, 3.0])
+#     with pytest.raises(TypeError):
+#         triangle_graph.setObj(cost)
+#     pass
 
 def test_graph_setObj_cost_squeeze(triangle_graph: Graph):
     """Test that the cost is squeezed."""
     cost = np.array([[1.0, 2.0, 3.0]])
     # Arrays are squeezed and no error should be raised
     triangle_graph.setObj(cost)
-    assert triangle_graph.cost.ndim == 1, f"Expected cost to be 1D but got {triangle_graph.cost.ndim}D."
+    assert triangle_graph.cost.ndim == 1, \
+        f"Expected cost to be 1D but got {triangle_graph.cost.ndim}D."
     assert len(triangle_graph.cost) == len(triangle_graph.arcs), \
         f"Expected cost to have length {len(triangle_graph.arcs)} but got {len(triangle_graph.cost)}."
     pass
@@ -153,8 +154,11 @@ def test_graph_setObj_cost_dimension_error():
 
 def test_graph_setObj_cost_length_error(triangle_graph: Graph):
     """Test that the cost has the correct length."""
+    cost_single = np.array([1.0])
     cost_short = np.array([1.0, 2.0])
     cost_long = np.array([1,2,3,4])
+    with pytest.raises(ValueError):
+        triangle_graph.setObj(cost_single)
     with pytest.raises(ValueError):
         triangle_graph.setObj(cost_short)
     with pytest.raises(ValueError):
@@ -170,6 +174,40 @@ def test_graph_setObj_cost_values(triangle_graph: Graph):
     assert np.array_equal(triangle_graph.cost, np.array(cost_list))
     triangle_graph.setObj(cost_ndarray)
     assert np.array_equal(triangle_graph.cost, cost_ndarray)
+    pass
+
+def test_graph_setObj_copies_cost_inputs(triangle_graph: Graph):
+    """Test that setObj stores a copy of ndarray, torch.tensor, and list inputs."""
+    cost_array = np.array([1.0, 2.0, 3.0])
+    triangle_graph.setObj(cost_array)
+    cost_array[0] = 99.0
+    assert np.array_equal(triangle_graph.cost, np.array([1.0, 2.0, 3.0]))
+    assert triangle_graph.cost is not cost_array
+
+    cost_list = [4.0, 5.0, 6.0]
+    triangle_graph.setObj(cost_list)
+    cost_list[0] = 99.0
+    assert np.array_equal(triangle_graph.cost, np.array([4.0, 5.0, 6.0]))
+
+    cost_tensor = [7.0, 8.0, 9.0]
+    triangle_graph.setObj(cost_tensor)
+    cost_tensor[0] = 99.0
+    assert np.array_equal(triangle_graph.cost, np.array([7.0, 8.0, 9.0]))
+    pass
+
+def test_graph_setObj_dimensions(triangle_graph: Graph):
+    """Tests if setObj raises an error if non-1D tensors are provided as costs."""
+    cost = torch.tensor([
+        [1.0, 2.0, 3.0],
+        [4.0, 5.0, 6.0]
+    ])
+    with pytest.raises(ValueError):
+        triangle_graph.setObj(cost)
+    pass
+
+def test_graph_setObj_typing():
+    """Tests if setObj accepts 1D lists, numpy arrays, and torch tensors."""
+    # TODO.
     pass
 
 
@@ -254,6 +292,85 @@ def test_graph_solve(
     assert objective == expected_objective, \
         f"Objective value {objective} does not match expected value {expected_objective}."
     pass
+
+def test_graph_solve_types(
+        larger_graph: Graph
+    ):
+    """Test that solve handles a single list cost vector."""
+    cost = [1.0, 9.0, 1.0, 9.0, 9.0, 1.0, 9.0]
+    expected_solution = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0])
+    expected_objective = 3.0
+    original_cost = larger_graph.cost.copy()
+
+    # Test for list, numpy array, and torch.tensor
+    cost_types = [
+        (list, cost),
+        (np.ndarray, np.array(cost)),
+        (torch.tensor, torch.tensor(cost))
+    ]
+
+    for cost_type, cost_input in cost_types:
+        # Compute solution with cost vector
+        solution, objective = larger_graph.solve(cost=cost_input)
+
+        # Check solution
+        assert isinstance(solution, np.ndarray), \
+            f"Expected solution to be a numpy array but got {type(solution)}."
+        assert np.isscalar(objective), \
+            "Objective should be a scalar."
+        assert np.array_equal(solution, expected_solution), \
+            "Solved path does not match expected path."
+        assert objective == expected_objective, \
+            f"Objective value {objective} does not match expected value {expected_objective}."
+        assert np.array_equal(larger_graph.cost, original_cost), \
+            "Graph cost should not be modified by solve when cost is provided as an argument."
+    pass
+
+def test_graph_solve_torch_tensor_multiple_cost_vectors(larger_graph: Graph):
+    """Test that solve handles a batch of torch cost vectors."""
+    costs = torch.tensor([
+        [1.0, 9.0, 1.0, 9.0, 9.0, 1.0, 9.0],
+        [1.0, 9.0, 1.0, 1.0, 9.0, 9.0, 1.0],
+        [9.0, 1.0, 9.0, 1.0, 9.0, 9.0, 1.0],
+    ])
+    expected_solutions = torch.tensor([
+        [1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+        [1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+    ])
+    expected_objectives = torch.tensor([3.0, 4.0, 3.0])
+    original_cost = larger_graph.cost.copy()
+
+    solutions, objectives = larger_graph.solve(cost=costs)
+
+    assert isinstance(solutions, torch.Tensor)
+    assert isinstance(objectives, torch.Tensor)
+    assert solutions.shape == costs.shape
+    assert objectives.shape == (costs.shape[0],)
+    assert torch.equal(solutions, expected_solutions)
+    assert torch.equal(objectives, expected_objectives)
+    assert np.array_equal(larger_graph.cost, original_cost)
+    pass
+
+def test_graph_solve_torch_tensor_multiple_cost_vectors_length_error(larger_graph: Graph):
+    """Test that solve rejects batched torch cost tensors with the wrong width."""
+    costs = torch.ones((2, larger_graph.num_cost - 1))
+
+    with pytest.raises(ValueError):
+        larger_graph.solve(cost=costs)
+    pass
+
+def test_graph_solve_torch_tensor_3D(larger_graph: Graph):
+    """Test that solve raises an error if given a 3D torch cost tensor."""
+    costs = torch.ones((2, 2, larger_graph.num_cost))
+
+    with pytest.raises(ValueError):
+        larger_graph.solve(cost=costs)
+    pass
+
+# TODO: Test that if a c and cost is provided for solve, c is preferred
+# TODO: Make sure we have coverage of solve without c or cost provided
+# TODO: Test with unsolvable cost -> is the cost restored afterwards? (Tes for both 1D and 2D, where the latter should work already.)
 
 
 #####################

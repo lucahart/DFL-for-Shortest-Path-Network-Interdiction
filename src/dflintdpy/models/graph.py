@@ -121,6 +121,8 @@ class Graph(optModel):
 
         return self.evaluate(path, interdictions)
     
+    # TODO: Add equals method. Then update tests in, e.g., test_shortest_path_grb.
+    
     def evaluate(self,
                  path: np.ndarray[float],
                  interdictions: np.ndarray[float] | None = None
@@ -153,7 +155,9 @@ class Graph(optModel):
         new_interdictions = self._to_1d_numpy(interdictions)
 
         return new_path @ (self.cost + new_interdictions)
-    
+    # TODO: Evaluate method should also be able to handle 2D torch.tensors just like solve.
+
+
     def _to_1d_numpy(
             self, 
             vector: np.ndarray[float] | torch.Tensor | list[float]
@@ -186,11 +190,9 @@ class Graph(optModel):
         # Convert vector to numpy array if it's a torch tensor or list.
         # Raise error if it's not one of the expected types.
         if isinstance(vector, torch.Tensor):
-            new_vector = vector.detach().numpy().squeeze()
-        elif isinstance(vector, np.ndarray):
-            new_vector = vector.squeeze()
-        elif isinstance(vector, list):
-            new_vector = np.array(vector).squeeze()
+            new_vector = vector.detach().cpu().numpy().squeeze()
+        elif isinstance(vector, (list, np.ndarray)):
+            new_vector = np.array(np.squeeze(vector), copy=True)
         else:
             raise TypeError(f"Expected vector to be a numpy array, " + 
                             f"torch tensor, or list, got {type(vector)} instead.")
@@ -208,32 +210,47 @@ class Graph(optModel):
     
 
     def solve(self,
-              cost: torch.Tensor | np.ndarray[float] | None = None,
+              c: torch.Tensor | np.ndarray[float] | list[float] | None = None,
               **kwargs
               ) -> Tuple[np.ndarray, float]:
         """
         Solves the shortest path problem using Dijkstra's algorithm.
+        
+        Parameters:
+        -----------
+        c | cost : ndarray | Tensor | None, Optional
+            Cost vector for the edges. If provided, it updates the model's objective
+            during the solve process. The original cost is restored after solving.
 
-        ------------
         Returns
-        ------------
+        -------
         shortest_path : list of tuples (int, int)
             List of arcs (edges) in the shortest path, where each arc is 
             represented as a tuple of two integers (source, target).
         objective : float
             Total cost of the shortest path.
-        ------------
         """
+        new_cost = False
+        # Cover case if new cost is provided
+        if c is not None or "cost" in kwargs:
+            new_cost = True
+            if c is not None:
+                # Case: c is not None, "cost" can be in kwargs but ignored
+                cost = c.copy() 
+            else:
+                # Case: c is None, "cost" in kwargs
+                cost = kwargs.pop("cost")
         
-        # If costs are provided, update the graph's weights
-        if isinstance(cost, torch.Tensor):
-            # If a tensor is provided, return a batch of solutions
-            return self._solve_tensor(cost, self.source, self.target)
-        elif isinstance(cost, np.ndarray):
+            # Check if cost is a 2D torch tensor
+            if isinstance(cost, torch.Tensor) and cost.ndim == 2:
+                return self._solve_tensor(cost, self.source, self.target)
+
+            # All remaining options are 1D: list, numpy array, torch tensor 
+            # and will be checked in setObj
+
+            # Store original cost then update objective
+            original_cost = self.cost.copy()
             self.setObj(cost)
-        elif cost is not None:
-            raise ValueError(
-                f"Expected costs to be a 1D array or tensor, got {type(cost)} instead.")
 
         # Compute the shortest path and its total cost with Dijkstra's algorithm
         shortest_path_nodes = nx.shortest_path(
@@ -245,8 +262,11 @@ class Graph(optModel):
             )
 
         # Convert the path to a one-hot vector representation
-
         shortest_path, objective = self._arcs_one_hot(shortest_path_nodes)
+
+        # Restore cost if it was provided
+        if new_cost:
+            self.setObj(original_cost)
 
         return shortest_path, objective
     
@@ -266,7 +286,7 @@ class Graph(optModel):
         """
         
         # Ensure costs is a 2D tensor of appropriate shape
-        costs_arr = costs.detach().numpy()
+        costs_arr = costs.detach().cpu().numpy()
         if costs_arr.ndim != 2:
             raise ValueError(
                 f"Expected costs to be a 2D tensor, got {costs_arr.ndim}D tensor instead.")
@@ -275,23 +295,28 @@ class Graph(optModel):
                 f"Expected costs to have {len(self.arcs)} columns, " + 
                 f"got {costs_arr.shape[1]} columns instead.")
 
-        # Initialize lists to store solutions and objectives
-        solutions_list = []
-        objectives_list = []
+        original_cost = self.cost.copy()
+        original_source = self.source
+        original_target = self.target
 
-        # Iterate over each instance in the batch
-        for cost in costs_arr:
-            # Set the costs for the current instance
-            self.setObj(cost)
-            sol, obj = self.solve(source=source, target=target, cost=cost)
-            one_hot_sol = self._arcs_one_hot(sol)
-            solutions_list.append(one_hot_sol)
-            objectives_list.append(obj)
-        
-        # Return the solutions and objectives
-        solutions = torch.from_numpy(np.array(solutions_list))
-        objectives = torch.from_numpy(np.array(objectives_list))
-        return solutions, objectives
+        solutions = np.zeros((costs_arr.shape[0], len(self.arcs)), dtype=np.float32)
+        objectives = np.empty(costs_arr.shape[0], dtype=costs_arr.dtype)
+
+        try:
+            for i, cost in enumerate(costs_arr):
+                self.setObj(cost, source=source, target=target)
+                shortest_path_nodes = nx.shortest_path(
+                    self.graph,
+                    source=self.source,
+                    target=self.target,
+                    weight='weight',
+                    method='dijkstra'
+                )
+                solutions[i], objectives[i] = self._arcs_one_hot(shortest_path_nodes)
+        finally:
+            self.setObj(original_cost, source=original_source, target=original_target)
+
+        return torch.from_numpy(solutions), torch.from_numpy(objectives)
     
     @staticmethod
     def __sort(u: int, v: int) -> tuple[int, int]:
@@ -410,21 +435,8 @@ class Graph(optModel):
         # Set source and target nodes
         self._set_source_target(source, target)
 
-        # Check if cost is in the correct data format
-        if isinstance(c, (list, np.ndarray)):
-            cost = np.squeeze(c)
-        else:
-            raise TypeError(
-                f"Expected cost to be ndarray or list, got {type(c)} instead."
-            )
-        # Check if cost is a 1D arrays
-        if cost.ndim != 1:
-            raise ValueError(
-                f"Expected costs to be a 1D array, got {cost.ndim}D array instead."
-            )
-        # Check if the length of cost matches the number of arcs
-        if len(cost) != len(self.arcs) and len(cost) != 1:
-            raise ValueError(f"cost has length {len(c)}, expected {len(self.arcs)}")
+        # Convert to 1D numpy array
+        cost = self._to_1d_numpy(c)
         
         # Store cost attribute if all checks pass
         self.cost = cost
@@ -434,11 +446,6 @@ class Graph(optModel):
             u, v = arc
             w = cost[i] if len(cost) > 1 else cost[0]
             self.graph.add_edge(u, v, weight=w)
-        
-        # TODO: There is a functionality that len(cost) can be 1. 
-        # Remove it: Update length check and w assignment for nx graph.
-        # When it's removed, use the _to_1d_numpy method for conversion.
-        # When using _to_1d_numpy, remove obsolete tests for setObj.
         pass
 
     def _set_source_target(self, 
