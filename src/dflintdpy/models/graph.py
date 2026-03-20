@@ -9,7 +9,79 @@ import matplotlib.pyplot as plt
 
 class Graph(optModel):
     """
-    This class can solve shortest path problems for generic graphs.
+    Lightweight shortest-path model built on top of a weighted `networkx.DiGraph`.
+
+    This class is the stateful graph representation used directly in the model-layer
+    tests and indirectly by `ShortestPathGrb`, which deep-copies a `Graph` instance
+    and then mirrors its cost vector into a Gurobi objective. The ordering of
+    `self.arcs` is therefore the central convention of the class: every cost vector,
+    one-hot path vector, solution vector, and interdiction vector is interpreted in
+    that exact arc order.
+
+    Core attributes
+    ---------------
+    `arcs`
+        Ordered list of graph arcs. This defines the index layout for optimization
+        inputs and outputs.
+    `vertices`
+        Available node labels.
+    `cost`
+        Current edge-weight vector aligned with `arcs`.
+    `graph`
+        Internal `networkx.DiGraph` whose edge weights are kept synchronized with
+        `cost`.
+    `source`, `target`
+        Terminal nodes for shortest-path solves.
+
+    Main responsibilities
+    ---------------------
+    `__init__`
+        Instantiates the graph from arcs, optional vertices, optional costs, and
+        optional source/target terminals. If vertices are omitted, they are inferred
+        as `0..max endpoint in arcs`. If costs are omitted, every arc receives unit
+        weight. Initialization creates the `networkx` graph, pushes the initial
+        objective through `setObj`, stores source and target defaults, and then
+        initializes the `optModel` parent class.
+    `setObj`
+        Central state-update method for the class. It validates and stores a new
+        1D cost vector, optionally updates `source` and `target`, and rewrites the
+        weights on every edge in the backing `networkx` graph. Both `Graph.solve`
+        and `ShortestPathGrb.setObj` rely on this method to keep model state and
+        edge weights consistent.
+    `solve`
+        Computes a shortest path between `source` and `target` using
+        `networkx.shortest_path(..., weight="weight", method="dijkstra")`. It
+        returns a one-hot arc vector plus its objective value. If a temporary cost
+        vector is passed through `c` or `cost`, the method swaps that objective in,
+        solves, and restores the original stored cost in a `finally` block. It also
+        supports batched 2D torch cost tensors through `_solve_tensor`, returning one
+        solution and objective per row while still restoring the original model state
+        after the batch is processed.
+    `evaluate`
+        Scores a candidate one-hot path vector without solving. It computes the path
+        objective under the stored `cost`, or under `cost + interdictions` when an
+        additive interdiction vector is provided. This is a pure scoring step: it
+        does not mutate the graph objective or the `networkx` weights.
+
+    Important helpers
+    -----------------
+    `__call__`
+        Alias for `evaluate`, allowing the graph to be used as a callable scorer.
+    `_to_1d_numpy`
+        Normalizes list, NumPy, and torch inputs into validated 1D NumPy arrays that
+        match the arc dimension.
+    `_solve_tensor`
+        Batched shortest-path helper used by `solve` for 2D torch cost tensors.
+    `_arcs_one_hot`
+        Converts a node path into the arc-aligned one-hot representation returned by
+        `solve`.
+    `one_hot_to_arcs`
+        Decodes a one-hot arc vector back into the corresponding list of arcs.
+    `_set_source_target`
+        Validates and stores terminal nodes.
+    `visualize`, `__deepcopy__`, `_getModel`, `num_edges`
+        Utility methods for plotting, copying, compatibility with the parent model
+        interface, and simple graph metadata access.
     """
 
     # Attributes
@@ -28,26 +100,39 @@ class Graph(optModel):
                 target: int = None
                 ) -> None:
         """
-        Constructor for shortest path class.
+        Build a shortest-path graph and initialize its current objective.
 
-        ------------
         Parameters
-        ------------
-        arcs : list of tuples (int, int)
-            List of arcs (edges) in the graph, where each arc is represented as a tuple
-            of two integers (source, target).
+        ----------
+        arcs : list[tuple[int, int]]
+            Ordered arc list for the graph. This ordering defines the meaning of every
+            cost vector, one-hot path vector, and interdiction vector used by the
+            class.
         vertices : np.ndarray[int] | list[int], optional
-            List of vertices (nodes) in the graph. If not provided, it defaults to a
-            range of integers from 0 to the maximum vertex index found in arcs.
+            Explicit node labels. If omitted, vertices are inferred as the contiguous
+            range `0..max endpoint in arcs`.
         cost : np.ndarray[float] | list[float], optional
-            List of costs associated with each arc. 
-            If not provided, it defaults to 1 for all arcs.
-            The length of this list should match the number of arcs.
-        ------------
+            Initial cost vector aligned with `arcs`. If omitted, the graph starts with
+            unit cost on every arc.
+        source : int, optional
+            Source node for future solves. If omitted, the first stored vertex is used.
+        target : int, optional
+            Target node for future solves. If omitted, the largest stored vertex is
+            used.
+
+        Notes
+        -----
+        Initialization creates an empty `networkx.DiGraph`, adds the vertices, pushes
+        the initial weights through `setObj`, stores source and target defaults, and
+        then calls the `optModel` parent constructor.
+
         Raises
-        ------------
-        ValueError : If the length of cost does not match the number of arcs.
-        ------------
+        ------
+        TypeError
+            If `source` or `target` is not an integer or `None`.
+        ValueError
+            If `cost` cannot be interpreted as a 1D vector of length `len(arcs)`, or
+            if `source` / `target` is not present in `vertices`.
         """
 
         # Store arcs and vertices
@@ -78,8 +163,8 @@ class Graph(optModel):
 
     def __deepcopy__(self, memo) -> 'Graph':
         """
-        Creates a deepcopy of the current ShortestPath instance.
-        
+        Create an independent copy of the graph model.
+
         Parameters
         ----------
         memo : dict
@@ -88,13 +173,17 @@ class Graph(optModel):
         Returns
         -------
         Graph
-            A new instance of Graph with the same attributes.
+            A new `Graph` with copied arcs, vertices, and costs. Source and target are
+            re-derived from the copied graph's defaults because they are not passed
+            explicitly into the constructor here.
         """
 
         new_instance = Graph(
             arcs=deepcopy(self.arcs, memo),
             vertices=deepcopy(self.vertices, memo),
-            cost=deepcopy(self.cost, memo)
+            cost=deepcopy(self.cost, memo),
+            source=self.source,
+            target=self.target,
         )
         return new_instance
     
@@ -103,20 +192,21 @@ class Graph(optModel):
                  interdictions: np.ndarray[float] | None = None
                  ) -> float:
         """
-        Call method to compute the cost of a given path.
+        Alias for :meth:`evaluate`.
 
         Parameters
         ----------
-        path : np.ndarray[float]
-            A one-hot encoded vector representing the arcs in the path.
+        path : np.ndarray[float] | torch.Tensor | list[float]
+            One-hot or flow-style arc vector aligned with `self.arcs`.
         interdictions : np.ndarray[float] | None, optional
-            A vector representing the interdiction values on the arcs. 
-            The graph model's objective is NOT updated.
+            Optional additive cost adjustment applied only for this evaluation. The
+            stored graph objective is not modified.
 
         Returns
         -------
         float
-            The total cost of the path represented by the one-hot vector.
+            The path objective under the stored costs, or under the stored costs plus
+            the provided interdictions.
         """
 
         return self.evaluate(path, interdictions)
@@ -128,20 +218,31 @@ class Graph(optModel):
                  interdictions: np.ndarray[float] | None = None
                  ) -> float:
         """
-        Evaluation method to compute the cost of a given path.
+        Score a provided path under the current graph objective.
 
         Parameters
         ----------
-        path : np.ndarray[float]
-            A one-hot encoded vector representing the arcs in the path.
-        interdictions : np.ndarray[float] | None, optional
-            A vector representing the interdiction values on the arcs. 
-            The graph model's objective is NOT updated.
+        path : np.ndarray[float] | torch.Tensor | list[float]
+            One-dimensional arc vector aligned with `self.arcs`. The method accepts
+            NumPy arrays, torch tensors, and Python lists, and normalizes them through
+            `_to_1d_numpy`.
+        interdictions : np.ndarray[float] | torch.Tensor | list[float] | None, optional
+            Optional additive arc-cost vector of the same length as `path`. If
+            provided, the returned objective is `path @ (self.cost + interdictions)`.
+            The graph's stored objective and edge weights are not updated.
 
         Returns
         -------
         float
-            The total cost of the path represented by the one-hot vector.
+            Scalar objective value of the provided path.
+
+        Raises
+        ------
+        TypeError
+            If `path` or `interdictions` is not a supported vector type.
+        ValueError
+            If `path` or `interdictions` cannot be reduced to a 1D vector of length
+            `len(self.arcs)`.
         """
 
         # Convert provided path to numpy array
@@ -163,29 +264,30 @@ class Graph(optModel):
             vector: np.ndarray[float] | torch.Tensor | list[float]
         ) -> np.ndarray[float]:
         """
-        Converts the provided list, ndarray, or tensor to a numpy array.
-        Checks that:
-        - The input is one of the types: numpy array, torch tensor, or list.
-        - The resulting array is 1D.
-        - The resulting array length matches the number of arcs in the graph.
+        Normalize a supported vector input into a validated 1D NumPy array.
+
+        The method accepts Python lists, NumPy arrays, and torch tensors. Inputs are
+        squeezed before validation, so shapes such as `(1, n)` are accepted if they
+        reduce to a single 1D vector. The final vector must match the arc dimension of
+        the graph.
 
         Parameters
         ----------
         vector : np.ndarray[float] | torch.Tensor | list[float]
-            The vector to be converted, which can be a numpy array, torch tensor, or list.
+            Candidate vector to normalize.
 
         Returns
         -------
         np.ndarray[float]
-            The vector converted to a numpy array.
+            Copy of the provided data as a 1D NumPy array.
 
         Raises
         ------
         TypeError
-            If the input vector is not a numpy array, torch tensor, or list.
+            If `vector` is not a list, NumPy array, or torch tensor.
         ValueError
-            If the resulting array is not 1D.
-            If the resulting array length does not match the number of arcs in the graph.
+            If the squeezed result is not 1D, or if its length differs from
+            `len(self.arcs)`.
         """
         # Convert vector to numpy array if it's a torch tensor or list.
         # Raise error if it's not one of the expected types.
@@ -214,21 +316,47 @@ class Graph(optModel):
               **kwargs
               ) -> Tuple[np.ndarray, float]:
         """
-        Solves the shortest path problem using Dijkstra's algorithm.
-        
-        Parameters:
-        -----------
-        c | cost : ndarray | Tensor | None, Optional
-            Cost vector for the edges. If provided, it updates the model's objective
-            during the solve process. The original cost is restored after solving.
+        Solve the current shortest-path problem.
+
+        The solve is performed with `networkx.shortest_path` using edge attribute
+        `"weight"` and `method="dijkstra"`. By default the method uses the graph's
+        stored `self.cost`. A temporary cost vector can be supplied either as `c` or
+        as keyword argument `cost`; when both are supplied, `c` takes precedence and
+        `kwargs["cost"]` is ignored.
+
+        If a temporary 1D cost vector is provided, the method updates the graph
+        objective via `setObj`, solves, and then restores the original stored costs in
+        a `finally` block. If a temporary 2D torch tensor is provided, the method
+        delegates to `_solve_tensor` and returns one solution and one objective per
+        row.
+
+        Parameters
+        ----------
+        c : torch.Tensor | np.ndarray[float] | list[float] | None, optional
+            Temporary cost input. Supported cases are:
+            - 1D list / NumPy array / torch tensor: solve one instance and return a
+              NumPy solution vector plus scalar objective.
+            - 2D torch tensor with shape `(batch_size, len(self.arcs))`: solve a
+              batch of instances and return torch tensors for both solutions and
+              objectives.
+        **kwargs
+            Optional keyword arguments. The method recognizes `cost` as an alternate
+            name for `c`.
 
         Returns
         -------
-        shortest_path : list of tuples (int, int)
-            List of arcs (edges) in the shortest path, where each arc is 
-            represented as a tuple of two integers (source, target).
-        objective : float
-            Total cost of the shortest path.
+        tuple[np.ndarray, float] | tuple[torch.Tensor, torch.Tensor]
+            For a single solve, returns `(solution, objective)` where `solution` is a
+            one-hot NumPy vector aligned with `self.arcs` and `objective` is the path
+            cost. For batched 2D torch input, returns `(solutions, objectives)` as
+            torch tensors, with one row and one objective per input row.
+
+        Raises
+        ------
+        ValueError
+            If a provided temporary cost vector has the wrong shape.
+        networkx.NetworkXNoPath
+            If no path exists between the current source and target.
         """
         new_cost = False
         # Cover case if new cost is provided
@@ -252,21 +380,22 @@ class Graph(optModel):
             original_cost = self.cost.copy()
             self.setObj(cost)
 
-        # Compute the shortest path and its total cost with Dijkstra's algorithm
-        shortest_path_nodes = nx.shortest_path(
-            self.graph, 
-            source=self.source, 
-            target=self.target, 
-            weight='weight', 
-            method='dijkstra'
-            )
+        try:
+            # Compute the shortest path and its total cost with Dijkstra's algorithm
+            shortest_path_nodes = nx.shortest_path(
+                self.graph, 
+                source=self.source, 
+                target=self.target, 
+                weight='weight', 
+                method='dijkstra'
+                )
 
-        # Convert the path to a one-hot vector representation
-        shortest_path, objective = self._arcs_one_hot(shortest_path_nodes)
-
-        # Restore cost if it was provided
-        if new_cost:
-            self.setObj(original_cost)
+            # Convert the path to a one-hot vector representation
+            shortest_path, objective = self._arcs_one_hot(shortest_path_nodes)
+        finally:
+            # Restore cost if it was provided
+            if new_cost:
+                self.setObj(original_cost)
 
         return shortest_path, objective
     
@@ -275,14 +404,34 @@ class Graph(optModel):
                       source: int,
                       target: int) -> None:
         """
-        Solves a batch of shortest path problems using the provided costs tensor.
+        Solve a batch of shortest-path instances from a 2D torch cost tensor.
 
-        ------------
         Parameters
-        ------------
-        costs : Tensor[float]
-            A tensor containing the costs for all instances of the data batch.
-        ------------
+        ----------
+        costs : torch.Tensor
+            Tensor with shape `(batch_size, len(self.arcs))`. Each row is treated as a
+            temporary cost vector for one shortest-path solve.
+        source : int
+            Source node to use for every batch item.
+        target : int
+            Target node to use for every batch item.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            Batched solution tensor of shape `(batch_size, len(self.arcs))` and
+            batched objective tensor of shape `(batch_size,)`.
+
+        Notes
+        -----
+        The method temporarily overwrites the graph objective row by row, computes the
+        corresponding shortest path, and restores the original cost/source/target in a
+        `finally` block.
+
+        Raises
+        ------
+        ValueError
+            If `costs` is not a 2D tensor with one column per arc.
         """
         
         # Ensure costs is a 2D tensor of appropriate shape
@@ -343,35 +492,43 @@ class Graph(optModel):
                      shortest_path_nodes: list[int]
                      ) -> Tuple[np.ndarray[float], float]:
         """
-        Converts a list of arcs to a one-hot encoded array.
+        Convert a node-path representation into the graph's one-hot arc format.
 
-        ------------
         Parameters
-        ------------
-        shortest_path_nodes : list of integers
-            List of node indices representing the shortest path.
-        ------------
+        ----------
+        shortest_path_nodes : list[int]
+            Ordered node sequence returned by a shortest-path routine.
+
         Returns
-        ------------
-        one_hot_vector : np.ndarray[float]
-            A one-hot encoded vector representing the arcs.
-        objective : float
-            The total cost of the shortest path represented by the one-hot vector.
-        ------------
-        Raises 
-        ------------
-        ValueError : If the shortest path contains nodes that are not in the graph vertices.
-        ------------
+        -------
+        tuple[np.ndarray[float], float]
+            One-hot arc vector aligned with `self.arcs`, and the corresponding
+            objective computed against `self.cost`.
+
+        Notes
+        -----
+        Consecutive node pairs are normalized through `__sort` before lookup in
+        `self.arcs`, so this helper assumes the stored arc list is compatible with
+        that normalization.
+
+        Raises
+        ------
+        ValueError
+            If any node is not present in `self.vertices`, or if a derived arc cannot
+            be found in `self.arcs`.
         """
 
         if any(node not in self.vertices for node in shortest_path_nodes):
             raise ValueError("Shortest path contains nodes that are not in the graph vertices.")
 
         # Create list of arcs form shortest path nodes
-        shortest_path = [Graph.__sort(shortest_path_nodes[i],
-                                              shortest_path_nodes[i + 1]
-                                              )
-                         for i in range(len(shortest_path_nodes) - 1)]
+        # shortest_path = [Graph.__sort(shortest_path_nodes[i],
+        #                                       shortest_path_nodes[i + 1]
+        #                                       )
+        #                  for i in range(len(shortest_path_nodes) - 1)]
+        shortest_path = [(shortest_path_nodes[i],
+                          shortest_path_nodes[i + 1]
+                          ) for i in range(len(shortest_path_nodes) - 1)]
         # objective = sum(self.graph.edges[edge]['weight'] for edge in shortest_path)
 
         # Create a one-hot encoded array for the arcs
@@ -389,7 +546,16 @@ class Graph(optModel):
                   figsize: tuple[int, int] = (6,5)
                   ) -> None:
         """
-        Very simple visualization of the graph without edge annotations.
+        Display a simple plot of the current graph structure.
+
+        Parameters
+        ----------
+        colored_edges : np.ndarray | None, optional
+            Currently unused placeholder for future edge-highlighting support.
+        dashed_edges : np.ndarray | None, optional
+            Currently unused placeholder for future edge-style support.
+        figsize : tuple[int, int], optional
+            Matplotlib figure size.
         """
         # Create a directed graph
         G = nx.DiGraph()
@@ -407,6 +573,14 @@ class Graph(optModel):
         plt.show()
     
     def _getModel(self):
+        """
+        Return the lightweight model representation expected by the parent interface.
+
+        Returns
+        -------
+        tuple[nx.DiGraph, np.ndarray]
+            The underlying `networkx` graph together with the current cost vector.
+        """
 
         return self.graph, self.cost
 
@@ -416,20 +590,33 @@ class Graph(optModel):
                target: int = None
                ) -> None:
         """
-        Sets the graph's weights.
+        Update the graph objective and synchronize the `networkx` edge weights.
 
-        ------------
+        This is the mutating objective setter for the class. It optionally updates
+        `source` and `target`, validates the provided cost vector through
+        `_to_1d_numpy`, stores the result in `self.cost`, and rewrites the weight on
+        every stored arc in `self.graph`.
+
         Parameters
-        ------------
-        c : np.ndarray[float] | list[float] | None
-            1D array or list of coefficients for the objective function. If a list/ndarray
-            with a single value is provided, it is applied uniformly to all arcs.
+        ----------
+        c : np.ndarray[float] | torch.Tensor | list[float]
+            New 1D cost vector aligned with `self.arcs`. Inputs are squeezed and then
+            validated by `_to_1d_numpy`.
         source : int, optional
-            The source node for the shortest path. Defaults to 0.
+            Optional replacement source node. If `None`, the source is reset to the
+            first stored vertex.
         target : int, optional
-            The target node for the shortest path. 
-            If not provided, defaults to the last vertex.
-        ------------
+            Optional replacement target node. If `None`, the target is reset to the
+            largest stored vertex.
+
+        Raises
+        ------
+        TypeError
+            If `c` is not a supported vector type, or if `source` / `target` is not
+            an integer or `None`.
+        ValueError
+            If `c` cannot be reduced to a 1D vector of length `len(self.arcs)`, or if
+            `source` / `target` is not present in the graph.
         """
 
         # Set source and target nodes
@@ -452,21 +639,21 @@ class Graph(optModel):
                            source: int | None, 
                            target: int | None) -> None:
         """
-        Sets the source and target nodes for the graph.
+        Validate and store the terminals used by `solve`.
 
-        ------------
         Parameters
-        ------------
-        source : int, optional
-            The source node for the shortest path. Defaults to the first vertex.
-        target : int, optional
-            The target node for the shortest path. Defaults to the last vertex.
-        ------------
+        ----------
+        source : int | None
+            Source node. If `None`, the first stored vertex is used.
+        target : int | None
+            Target node. If `None`, the largest stored vertex is used.
+
         Raises
-        ------------
-        TypeError : If the source or target is not an integer or None.
-        ValueError : If the source or target node is not in the graph vertices.
-        ------------
+        ------
+        TypeError
+            If `source` or `target` is not an integer or `None`.
+        ValueError
+            If an explicit `source` or `target` does not belong to `self.vertices`.
         """
         # TODO: Change that target defaults to the last vertex instead of the largest value
 
@@ -501,22 +688,20 @@ class Graph(optModel):
                          one_hot_vector: np.ndarray[float]
                          ) -> list[tuple[int, int]]:
         """
-        Converts a one-hot encoded vector back to a list of arcs.
+        Decode a one-hot arc vector into the corresponding arc list.
 
-        ------------
         Parameters
-        ------------
-        model : ShortestPath
-            The ShortestPath model instance.
+        ----------
+        model : Graph
+            Graph instance whose `arcs` ordering defines the decoding.
         one_hot_vector : np.ndarray[float]
-            A one-hot encoded vector representing the arcs.
-        ------------
+            Arc indicator vector aligned with `model.arcs`. Every strictly positive
+            entry is interpreted as "arc selected".
+
         Returns
-        ------------
-        arcs : list of tuples (int, int)
-            List of arcs (edges) in the graph, where each arc is represented as a tuple
-            of two integers.
-        ------------
+        -------
+        list[tuple[int, int]]
+            Subsequence of `model.arcs` selected by the positive entries.
         """
         # TODO: Make this a class method.
         # TODO: Rename to _one_hot_to_arcs for consistency with _arcs_one_hot.
@@ -525,13 +710,6 @@ class Graph(optModel):
     @property
     def num_edges(self) -> int:
         """
-        Returns the number of edges in the graph.
-
-        ------------
-        Returns
-        ------------
-        int
-            Number of edges in the graph.
-        ------------
+        Number of stored arcs in the graph.
         """
         return len(self.arcs)

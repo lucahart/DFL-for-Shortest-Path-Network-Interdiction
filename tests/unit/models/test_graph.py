@@ -252,6 +252,22 @@ def test_graph_arcs_one_hot_invalid_nodes(triangle_graph: Graph):
     pass
 
 
+def test_graph_arcs_one_hot_preserves_directed_arc_orientation():
+    """Test if the _arcs_one_hot method correctly encodes directed arcs."""
+    arcs = [(0, 1), (1, 0)]
+    vertices = [0, 1]
+    cost = np.array([1.0, 10.0])
+    graph = Graph(arcs, vertices, cost)
+
+    one_hot, objective = graph._arcs_one_hot([1, 0])
+
+    expected_one_hot = np.array([0.0, 1.0], dtype=np.float32)
+    expected_objective = 10.0
+
+    assert np.array_equal(one_hot, expected_one_hot)
+    assert objective == expected_objective
+
+
 ############################
 ### test one_hot_to_arcs ###
 ############################
@@ -296,7 +312,7 @@ def test_graph_solve(
 def test_graph_solve_types(
         larger_graph: Graph
     ):
-    """Test that solve handles a single list cost vector."""
+    """Test that solve handles single list, numpy array, and torch tensor cost vectors."""
     cost = [1.0, 9.0, 1.0, 9.0, 9.0, 1.0, 9.0]
     expected_solution = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0])
     expected_objective = 3.0
@@ -368,9 +384,75 @@ def test_graph_solve_torch_tensor_3D(larger_graph: Graph):
         larger_graph.solve(cost=costs)
     pass
 
-# TODO: Test that if a c and cost is provided for solve, c is preferred
-# TODO: Make sure we have coverage of solve without c or cost provided
-# TODO: Test with unsolvable cost -> is the cost restored afterwards? (Tes for both 1D and 2D, where the latter should work already.)
+def test_graph_solve_prefers_c_over_cost(larger_graph: Graph):
+    """Test that solve prefers c when both c and cost are provided."""
+    c = [1.0, 9.0, 1.0, 9.0, 9.0, 1.0, 9.0]
+    cost = [1.0, 9.0, 1.0, 1.0, 9.0, 9.0, 1.0]
+    expected_solution = np.array([1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0])
+    expected_objective = 3.0
+    original_cost = larger_graph.cost.copy()
+
+    solution, objective = larger_graph.solve(c=c, cost=cost)
+
+    assert np.array_equal(solution, expected_solution)
+    assert objective == expected_objective
+    assert np.array_equal(larger_graph.cost, original_cost)
+    pass
+
+def test_graph_solve_without_cost_argument(larger_graph: Graph):
+    """Test that solve uses the graph's stored cost when no cost argument is provided."""
+    expected_solution = np.array([0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    expected_objective = 8.0
+    original_cost = larger_graph.cost.copy()
+
+    solution, objective = larger_graph.solve()
+
+    assert isinstance(solution, np.ndarray)
+    assert np.isscalar(objective)
+    assert np.array_equal(solution, expected_solution)
+    assert objective == expected_objective
+    assert np.array_equal(larger_graph.cost, original_cost)
+    pass
+
+def test_graph_solve_unsolvable_temp_cost_restores_original_cost(larger_graph: Graph, monkeypatch):
+    """Test that solve restores the stored cost after a failing 1D temporary-cost solve."""
+    temp_cost = np.array([1.0, 9.0, 1.0, 9.0, 9.0, 1.0, 9.0])
+    original_cost = larger_graph.cost.copy()
+
+    def raise_no_path(*args, **kwargs):
+        raise nx.NetworkXNoPath("No path between source and target.")
+
+    monkeypatch.setattr(nx, "shortest_path", raise_no_path)
+
+    with pytest.raises(nx.NetworkXNoPath):
+        larger_graph.solve(cost=temp_cost)
+
+    assert np.array_equal(larger_graph.cost, original_cost), \
+        "Graph cost should be restored after a failing temporary-cost solve."
+    pass
+
+def test_graph_solve_unsolvable_batched_temp_cost_restores_original_cost(
+        larger_graph: Graph,
+        monkeypatch
+    ):
+    """Test that solve restores the stored cost after a failing batched temporary-cost solve."""
+    costs = torch.tensor([
+        [1.0, 9.0, 1.0, 9.0, 9.0, 1.0, 9.0],
+        [1.0, 9.0, 1.0, 1.0, 9.0, 9.0, 1.0],
+    ])
+    original_cost = larger_graph.cost.copy()
+
+    def raise_no_path(*args, **kwargs):
+        raise nx.NetworkXNoPath("No path between source and target.")
+
+    monkeypatch.setattr(nx, "shortest_path", raise_no_path)
+
+    with pytest.raises(nx.NetworkXNoPath):
+        larger_graph.solve(cost=costs)
+
+    assert np.array_equal(larger_graph.cost, original_cost), \
+        "Graph cost should be restored after a failing batched temporary-cost solve."
+    pass
 
 
 #####################
@@ -476,6 +558,18 @@ def test_graph_deepcopy(triangle_graph: Graph):
     assert triangle_graph.graph is not graph_copy.graph, "Graph object was not deepcopied properly."
     assert nx.utils.misc.graphs_equal(triangle_graph.graph, graph_copy.graph), "Graphs are not exactly equal."
     pass
+
+def test_graph_deepcopy_preserves_custom_source_target():
+    """Test that deepcopy preserves custom source and target values."""
+    arcs = [(0, 1), (1, 2), (2, 3)]
+    vertices = [0, 1, 2, 3]
+    cost = np.array([1.0, 2.0, 3.0])
+
+    graph = Graph(arcs, vertices, cost, source=1, target=2)
+    graph_copy = deepcopy(graph)
+
+    assert graph_copy.source == graph.source
+    assert graph_copy.target == graph.target
 
 
 ###############################
