@@ -13,23 +13,92 @@ from dflintdpy.models.graph import Graph
 from dflintdpy.models.grid import Grid
 
 class ShortestPathGrb(optGrbModel):
+    """
+    Gurobi-backed shortest-path solver built around a deep-copied ``Graph``.
+
+    Main state:
+    - ``_graph`` stores the local graph copy, including arcs, vertices, source,
+      target, and the current edge-cost vector.
+    - ``_model`` and ``x`` are created by ``optGrbModel`` through ``_getModel``;
+      they represent the live Gurobi model and one continuous decision variable
+      per arc.
+    - ``cost`` exposes the currently stored graph cost vector.
+
+    Core functionality:
+    - ``__init__(graph)`` copies the input graph, builds the source-target flow
+      model, and immediately pushes the graph cost into the Gurobi objective so
+      the solver state and model objective start in sync.
+    - ``solve(c=None, visualize=False, **kwargs)`` optimizes the current model.
+      It can temporarily replace the objective with a provided cost vector,
+      supports batched 2D tensor costs by solving one row at a time, restores
+      the original objective after temporary solves, raises explicit errors for
+      infeasible or unbounded models, and can visualize the selected path.
+    - ``evaluate(y, x=None)`` scores a candidate path/flow without re-solving.
+      For 1D inputs it delegates to ``Graph.evaluate``; for batched tensor paths
+      it returns one objective per row and optionally adds shared or batched
+      interdiction vectors.
+    - ``setObj(c)`` updates both the graph's stored costs and the live Gurobi
+      objective coefficients, accepting lists, NumPy arrays, and tensors.
+
+    Supporting methods:
+    - ``empty_grid(m, n)`` builds a solver on a new ``Grid`` instance.
+    - ``__call__`` forwards directly to ``solve``.
+    - ``__deepcopy__`` rebuilds an equivalent solver around a copied graph.
+    - ``visualize`` delegates drawing to the underlying graph.
+    - ``_getModel`` creates the minimum-cost flow formulation with one flow
+      balance constraint per vertex.
+    - ``pretty_print`` prints the current model variables, objective, and
+      constraints in a readable tabular form.
+    """
 
     _graph: Graph
 
     def __init__(self,
                  graph: Graph = None):
+        """
+        Build a shortest-path solver from a graph-like object.
+
+        Parameters
+        ----------
+        graph : Graph, optional
+            Graph instance supplying arcs, vertices, source, target, and edge
+            costs. The graph is deep-copied so later solver-side objective
+            updates do not mutate the caller's object.
+
+        Notes
+        -----
+        Construction performs three linked steps:
+        1. Copy the input graph into ``self._graph``.
+        2. Let ``optGrbModel`` build the Gurobi model and decision variables by
+           calling ``_getModel``.
+        3. Push the copied graph cost vector into the live Gurobi objective so
+           the internal graph state and the optimization model start aligned.
+        """
         
         # Store graph instance
         self._graph = deepcopy(graph)
         # Run parent class constructors
         super().__init__()
         # Update the gurobi model with the edge weights of the graph
-        super().setObj(self._graph.cost)
+        self.setObj(self._graph.cost)
 
     @classmethod
     def empty_grid(cls,
                  m: int,
                  n: int) -> 'ShortestPathGrb': 
+        """
+        Create a solver on a newly constructed ``Grid`` graph.
+
+        Parameters
+        ----------
+        m, n : int
+            Grid dimensions.
+
+        Returns
+        -------
+        ShortestPathGrb
+            Solver initialized on ``Grid(m, n)`` with the grid's default costs.
+        """
         
         # Create an instance of Grid
         graph = Grid(m, n)
@@ -38,28 +107,47 @@ class ShortestPathGrb(optGrbModel):
     
     def __call__(self,
                  cost: ndarray | Tensor | None = None,
-                 versatile: bool = False
+                 versatile: bool = False,
+                 **kwargs
                  ) -> Tuple[ndarray, float]:
         """
-        Call method to solve the shortest path problem.
-        See `solve` method for details.
+        Solve through function-call syntax.
+
+        Parameters
+        ----------
+        cost : ndarray | Tensor | None, optional
+            Temporary cost vector or batched tensor cost matrix forwarded as
+            ``c`` to ``solve``.
+        versatile : bool, optional
+            Forwarded unchanged to ``solve`` for compatibility with the parent
+            interface.
+
+        Returns
+        -------
+        tuple
+            Same return contract as ``solve``:
+            - 1D or scalar-cost solve -> ``(solution, objective)`` where
+              ``solution`` is array-like and ``objective`` is a float.
+            - 2D tensor-cost solve -> ``(solutions, objectives)`` where both are
+              tensors with one row or value per cost row.
         """
 
-        return self.solve(c=cost, versatile=versatile)
+        return self.solve(c=cost, versatile=versatile, **kwargs)
     
     def __deepcopy__(self, memo):
         """
-        Create a deep copy of the shortestPathGrb instance.
-        
-        Parameters:
-        -----------
-        memo : dict
-            A dictionary to keep track of already copied objects.
+        Rebuild an equivalent solver around a copied graph.
 
-        Returns:
-        --------
+        Parameters
+        ----------
+        memo : dict
+            Standard ``deepcopy`` memo dictionary.
+
+        Returns
+        -------
         ShortestPathGrb
-            A new instance of ShortestPathGrb with the same attributes.
+            New solver instance with an independent copied graph, Gurobi model,
+            and objective coefficients.
         """
         
         # Create a new instance and copy the graph
@@ -69,7 +157,12 @@ class ShortestPathGrb(optGrbModel):
     @property
     def cost(self):
         """
-        Linear cost vector representing edge weights.
+        Return the current edge-cost vector stored on the local graph copy.
+
+        Returns
+        -------
+        ndarray
+            One cost coefficient per arc in ``self._graph.arcs``.
         """
 
         return self._graph.cost
@@ -82,20 +175,47 @@ class ShortestPathGrb(optGrbModel):
               **kwargs
               ) -> Tuple[ndarray, float]:
         """
-        Solve the shortest path problem.
-        
-        Parameters:
-        -----------
-        c | cost : ndarray | Tensor | None, Optional
-            Cost vector for the edges. If provided, it updates the model's objective
-            during the solve process. The original cost is restored after solving.
-        visualize : bool, Optional
-            If True, the solution is visualized in a graph. Default is False.
+        Optimize the current shortest-path model.
 
-        Returns:
-        --------
-        Tuple[ndarray, float]
-            A tuple containing the solution vector and the objective value.
+        Parameters
+        ----------
+        c : ndarray | Tensor | None, optional
+            Temporary objective coefficients for the solve. If provided, the
+            solver updates the graph and Gurobi objective before optimizing, then
+            restores the original objective afterward.
+        visualize : bool, optional
+            If ``True``, draw the solved path on the underlying graph after a
+            successful optimization.
+        **kwargs
+            Additional options. The method also accepts ``cost=...`` as an alias
+            for ``c``. If both ``c`` and ``cost`` are supplied, ``c`` takes
+            precedence and ``cost`` is ignored.
+            Additional parameters for visualization can also be passed through 
+            ``**kwargs`` and are forwarded to the graph's ``visualize`` method 
+            if ``visualize=True``.
+
+        Returns
+        -------
+        tuple[np.ndarray | list, float] | tuple[Tensor, Tensor]
+            Return shape depends on the cost input:
+            - No cost override, list, 1D NumPy array, or 1D tensor:
+              returns ``(sol, obj)`` for one optimization, where ``sol`` is the
+              one-hot solution as a numpy array and ``obj`` is a Python float.
+            - 2D tensor cost matrix:
+              treats each row as one temporary objective and returns
+              ``(sols, objs)`` where both are tensors with one solution and one
+              objective per row.
+
+        Raises
+        ------
+        RuntimeError
+            If the model is infeasible, unbounded, or terminates with a
+            non-optimal status.
+
+        Notes
+        -----
+        Batched solves are implemented by iterating over the rows of a 2D tensor
+        and reusing the same model with temporary objective updates.
         """
         if c is None and "cost" in kwargs:
             c = kwargs.pop("cost")
@@ -151,21 +271,34 @@ class ShortestPathGrb(optGrbModel):
                  x: ndarray | Tensor | None = None
                  ) -> float | Tensor:
         """
-        Evaluate the objective function value for a given solution vector.
+        Evaluate the objective value of a candidate path or flow.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         y : ndarray | Tensor
-            Solution vector representing the flow on each edge.
-        x : ndarray | Tensor, Optional
-            Interdiction vector representing the interdicted edges. If provided,
-            it modifies the cost of the edges in the evaluation. The optimization
-            model's objective is NOT updated.
+            Candidate edge-flow vector. A 1D list/array/tensor is treated as one
+            path. A 2D tensor is treated as a batch with one path per row.
+        x : ndarray | Tensor | None, optional
+            Optional interdiction adjustment added to the base cost during
+            evaluation only. It does not modify the stored graph cost or Gurobi
+            objective. For batched tensor paths, ``x`` may be one shared 1D
+            interdiction vector or a 2D tensor matching ``y``.
 
-        Returns:
-        --------
-        float
-            The objective function value for the provided solution vector.
+        Returns
+        -------
+        float | Tensor
+            - 1D input path -> scalar objective value.
+            - 2D tensor path batch -> 1D tensor with one objective per row.
+
+        Raises
+        ------
+        ValueError
+            If batched path or interdiction shapes are incompatible.
+
+        Notes
+        -----
+        For non-batched inputs, evaluation is delegated to the underlying graph
+        object rather than the Gurobi model.
         """
         if isinstance(y, Tensor) and y.ndim == 2:
             if y.shape[1] != self._graph.num_cost:
@@ -199,10 +332,18 @@ class ShortestPathGrb(optGrbModel):
 
             return torch.sum(y * (cost + intd), dim=1)
 
-        return self._graph(y, interdictions=x)
+        return self._graph.evaluate(y, interdictions=x)
     
     def visualize(self,
                   **kwargs):
+        """
+        Forward graph-visualization requests to the underlying graph object.
+
+        Parameters
+        ----------
+        **kwargs
+            Keyword arguments passed directly to ``self._graph.visualize``.
+        """
         
         # Run visualize method of graph instance
         self._graph.visualize(**kwargs)
@@ -212,6 +353,25 @@ class ShortestPathGrb(optGrbModel):
     def setObj(self,
                c: ndarray
                ) -> None:
+        """
+        Replace the stored objective coefficients on both graph and model.
+
+        Parameters
+        ----------
+        c : list | ndarray | Tensor
+            New edge-cost vector. Tensor inputs are detached and converted to a
+            NumPy array before updating the graph and Gurobi model.
+
+        Notes
+        -----
+        This method updates both layers of state:
+        - ``self._graph.cost`` via ``Graph.setObj``.
+        - The live Gurobi variable objective coefficients via the parent
+          ``optGrbModel.setObj`` implementation.
+
+        The model is updated immediately so the next ``solve`` uses the new
+        objective without rebuilding the model.
+        """
 
         if isinstance(c, Tensor):
             c = c.detach().cpu().numpy()
@@ -221,14 +381,24 @@ class ShortestPathGrb(optGrbModel):
         
         # Update gurobi model's objective
         super().setObj(c)
+        self._model.update()
         pass
 
     def _getModel(self):
         """
-        A method to build Gurobi model
+        Build the Gurobi shortest-path model.
 
-        Returns:
-            tuple: optimization model and variables
+        Returns
+        -------
+        tuple[gp.Model, gp.tupledict]
+            Model and arc-variable mapping used by ``optGrbModel``.
+
+        Notes
+        -----
+        The formulation creates one continuous flow variable per arc, sets a
+        minimization objective, and adds one flow-balance equality per vertex:
+        source has net outflow 1, target has net inflow 1, and intermediate
+        vertices have zero net flow.
         """
         # ceate a model
         m = gp.Model("shortest path")
@@ -259,8 +429,10 @@ class ShortestPathGrb(optGrbModel):
 
     def pretty_print(self):
         """
-        Print the Gurobi model in a human-readable format.
-        This includes variables, objective function, and constraints.
+        Print the current Gurobi model in a readable tabular form.
+
+        The output includes variable metadata, the linear objective, and every
+        stored constraint with its assembled row expression.
         """
         
         model = self._model
@@ -274,7 +446,7 @@ class ShortestPathGrb(optGrbModel):
         obj = " + ".join(f"{v.Obj:g}·{v.VarName}"
                         for v in model.getVars() if abs(v.Obj) > 1e-9)
         print("\nObjective")
-        print(f" maximize {obj}\n")
+        print(f" minimize {obj}\n")
 
         # ---------- constraints ----------
         con_rows = []

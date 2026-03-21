@@ -69,6 +69,15 @@ def _assert_flow_balance(graph: Graph, sol: np.ndarray[float]) -> None:
 
         assert balance == pytest.approx(expected), \
             f"Flow conservation is violated at vertex {vertex}"
+        
+
+def _build_graph() -> Graph:
+    """Helper function to build a sample graph for testing."""
+    arcs = [(0, 1), (0, 2), (1, 2), (2, 3), (2, 4), (2, 5), (3, 5)]
+    vertices = [0, 1, 2, 3, 4, 5]
+    cost = np.array([1.0, 4.0, 2.0, 3.0, 1.0, 6.0, 2.0])
+    return Graph(arcs, vertices, cost)
+
 
 
 #####################
@@ -121,6 +130,14 @@ def test_sp_init_graph_deepcopy(graph):
         "Graph vertices were not deep copied in __init__"
     assert np.array_equal(sp_graph._graph.arcs, org_graph.arcs), \
         "Graph arcs were not deep copied in __init__"
+
+
+def test_shortest_path_grb_init_keeps_live_gurobi_objective_in_sync():
+    """Test that the Gurobi model objective coefficients match the graph cost after initialization."""
+    graph = _build_graph()
+    sp = ShortestPathGrb(graph)
+
+    assert [var.Obj for var in sp._model.getVars()] == pytest.approx(graph.cost)
 
 
 
@@ -628,6 +645,27 @@ def test_sp_solve_with_cost_kwarg_uses_temp_obj(graph):
         "solve returned the wrong objective for the temporary cost kwarg"
 
 
+def test_sp_solve_prefers_c_over_cost_kwarg(graph):
+    """Test that solve prefers c when both c and cost are provided."""
+    preferred_cost = np.array([10.0, 1.0, 10.0, 1.0, 10.0, 10.0, 1.0])
+    ignored_cost = np.array([1.0, 10.0, 1.0, 10.0, 10.0, 1.0, 10.0])
+    expected_sol = np.array([0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0])
+    original_cost = graph.cost.copy()
+    sp = ShortestPathGrb(graph)
+
+    sol, obj = sp.solve(c=preferred_cost, cost=ignored_cost)
+    sp._model.update()
+
+    assert np.array_equal(sol, expected_sol), \
+        "solve did not prefer c over the conflicting cost kwarg"
+    assert obj == pytest.approx(expected_sol @ preferred_cost), \
+        "solve returned the wrong objective when both c and cost were provided"
+    assert np.array_equal(sp.cost, original_cost), \
+        "solve did not restore the graph cost after preferring c"
+    assert [var.Obj for var in sp._model.getVars()] == pytest.approx(original_cost), \
+        "solve did not restore the Gurobi objective after preferring c"
+
+
 def test_sp_setObj_copies_external_cost_on_all_graph_types(graph, grid):
     """Test that setObj copies ndarray, list, and tensor inputs."""
     dgrid = DGrid(3, 3, cost=np.arange(1.0, 17.0, 1.0))
@@ -716,6 +754,36 @@ def test_sp_solve_batched_torch_costs_accepts_cost_kwarg(graph):
         "solve(cost=...) returned different batched objectives than solve(c=...)"
 
 
+def test_sp_solve_batched_torch_costs_prefers_c_over_cost_kwarg(graph):
+    """Test that solve prefers batched tensor costs passed through c."""
+    preferred_costs = torch.tensor(np.vstack([
+        graph.cost,
+        [10.0, 1.0, 10.0, 1.0, 10.0, 10.0, 1.0],
+        [10.0, 1.0, 10.0, 10.0, 10.0, 1.0, 10.0],
+    ]), dtype=torch.float64)
+    ignored_costs = torch.tensor(np.vstack([
+        [10.0, 1.0, 10.0, 10.0, 10.0, 1.0, 10.0],
+        [1.0, 10.0, 1.0, 10.0, 10.0, 1.0, 10.0],
+        [1.0, 10.0, 1.0, 1.0, 10.0, 10.0, 1.0],
+    ]), dtype=torch.float64)
+    original_cost = graph.cost.copy()
+    sp_expected = ShortestPathGrb(graph)
+    sp = ShortestPathGrb(graph)
+
+    expected_sols, expected_objs = sp_expected.solve(c=preferred_costs)
+    sols, objs = sp.solve(c=preferred_costs, cost=ignored_costs)
+    sp._model.update()
+
+    assert torch.allclose(sols, expected_sols), \
+        "solve did not prefer batched tensor costs passed through c"
+    assert torch.allclose(objs, expected_objs), \
+        "solve returned different batched objectives when both c and cost were provided"
+    assert np.array_equal(sp.cost, original_cost), \
+        "solve did not restore the graph cost after preferring batched c"
+    assert [var.Obj for var in sp._model.getVars()] == pytest.approx(original_cost), \
+        "solve did not restore the Gurobi objective after preferring batched c"
+
+
 def test_sp_solve_batched_torch_costs_restores_original_objective(graph):
     """Test that solve restores the stored graph and Gurobi objectives after a batched solve."""
     batch_costs = torch.tensor(np.vstack([
@@ -734,4 +802,52 @@ def test_sp_solve_batched_torch_costs_restores_original_objective(graph):
     assert [var.Obj for var in sp._model.getVars()] == pytest.approx(original_cost), \
         "solve did not restore the Gurobi objective after using batched tensor costs"
 
+
+def test_shortest_path_grb_call_forwards_solve_kwargs():
+    """Test that calling the solver directly forwards all kwargs to solve."""
+    sp = ShortestPathGrb(_build_graph())
+
+    direct_sol, direct_obj = sp.solve(visualize=False)
+    call_sol, call_obj = sp(visualize=False)
+
+    assert np.array_equal(call_sol, direct_sol)
+    assert call_obj == pytest.approx(direct_obj)
+
+
+@pytest.mark.skip(reason="This test relies on legacy versatile kwargs that should be removed in the future.")
+def test_shortest_path_grb_solve_does_not_forward_internal_kwargs_to_visualize(monkeypatch):
+    """Test that solve notices and removes legacy kwargs (versatile) before forwarding to visualize."""
+    sp = ShortestPathGrb(_build_graph())
+    captured_kwargs = {}
+
+    def fake_visualize(**kwargs):
+        captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr(sp._graph, "visualize", fake_visualize)
+
+    sol, obj = sp.solve(visualize=True, versatile=True)
+
+    assert obj == pytest.approx(sp.evaluate(sol))
+    assert "colored_edges" in captured_kwargs
+    assert "versatile" not in captured_kwargs
+
 # TODO: Check how the SPO+ loss function in pyepo works, given that shortest_path_grb wasn't able to handle tensors until now.
+
+
+
+#########################
+### test pretty_print ###
+#########################
+
+def test_shortest_path_grb_pretty_print_reports_minimization(capsys):
+    """Test that pretty_print reports the correct optimization sense."""
+    sp = ShortestPathGrb(_build_graph())
+    sp.setObj(sp.cost)
+
+    sp.pretty_print()
+
+    printed = capsys.readouterr().out
+    assert "minimize" in printed
+    assert "maximize" not in printed
+
+
