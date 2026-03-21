@@ -8,6 +8,64 @@ from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 
 class SymmetricInterdictor:
+    """
+    Symmetric shortest-path interdiction solver with a Gurobi leader and a
+    shortest-path follower.
+
+    The class models a two-level problem. The leader chooses up to `k` edges to
+    interdict, where each chosen edge adds the corresponding entry of
+    `interdiction_cost` to the follower's edge costs. The follower then solves a
+    shortest-path problem on the interdicted graph. The implementation handles this
+    interaction with a Benders-style loop that alternates between:
+
+    1. Solving the follower shortest-path problem for the current edge costs.
+    2. Converting the returned path into one leader scenario.
+    3. Solving a max-min binary knapsack problem over all accumulated scenarios.
+    4. Re-applying the chosen interdictions to the follower objective.
+
+    Core state
+    ----------
+    `opt_model`
+        Follower model stored as a `ShortestPathGrb` instance. It is created from a
+        copied `Graph`, so the solver owns an independent follower graph state.
+    `_model`
+        Gurobi model used for the leader's max-min knapsack subproblem.
+    `k`
+        Cardinality budget limiting how many edges may be interdicted at once.
+    `max_cnt`
+        Maximum number of Benders iterations.
+    `eps`
+        Convergence tolerance for the Benders gap `z_max - z_min`.
+    `interdiction_cost`
+        Arc-aligned additive interdiction-cost vector used by `solve`.
+
+    Main functionality
+    ------------------
+    `solve`
+        Public entry point. Runs Benders decomposition with the stored
+        `interdiction_cost` vector and optionally visualizes the returned follower
+        path and leader interdictions.
+    `benders_decomposition`
+        Coordinates the alternating leader-follower loop, accumulates follower paths
+        as leader scenarios, stops on epsilon convergence or iteration limit, and
+        restores the original follower objective before returning.
+    `solve_maxmin_knapsack`
+        Solves the leader subproblem `max_x min_i (A[i] @ x + b[i])` under the
+        budget `sum(x) <= k`, with `x` binary.
+    `__call__`
+        Convenience alias for `solve`.
+    `__deepcopy__`
+        Builds an independent copy of the solver, including copied follower and
+        interdiction-cost state.
+
+    Important implementation detail
+    -------------------------------
+    All vectors are interpreted in the follower graph's edge order. The same index
+    layout is shared by the base edge costs, interdiction costs, follower path
+    vectors, and leader interdiction decisions.
+    """
+
+    _LEADER_PARAM_NAMES = ("OutputFlag", "TimeLimit", "MIPGap", "Threads", "Seed")
 
     # Attributes
     opt_model: 'ShortestPathGrb'  # Reference to the ShortestPath object
@@ -27,6 +85,35 @@ class SymmetricInterdictor:
                  output_flag: bool = False,
                  **kwargs
                  ):
+        """
+        Build a symmetric shortest-path interdictor with an independent follower.
+
+        Parameters
+        ----------
+        graph : Graph
+            Base graph for the follower shortest-path problem. The constructor wraps
+            it in a new `ShortestPathGrb` instance, which deep-copies the graph so
+            later mutations to the caller's `Graph` do not leak into this solver.
+        k : int, optional
+            Cardinality budget for the leader problem. At most `k` edges can be
+            interdicted in each max-min knapsack solve.
+        interdiction_cost : np.ndarray | None, optional
+            Additive arc-cost vector aligned with the follower graph edge order. If
+            omitted, a zero vector is created, so interdictions initially add no
+            extra cost.
+        max_cnt : int, optional
+            Maximum number of Benders iterations.
+        eps : float, optional
+            Termination tolerance for the Benders gap `z_max - z_min`.
+        output_flag : bool, optional
+            Controls Gurobi logging on the leader model. By default logs are
+            suppressed.
+
+        Raises
+        ------
+        ValueError
+            If `interdiction_cost` does not have one entry per graph edge.
+        """
 
         # Copy the provided instance of a graph
         self.opt_model = ShortestPathGrb(graph)
@@ -47,7 +134,7 @@ class SymmetricInterdictor:
         if interdiction_cost is not None:
             if len(interdiction_cost) != self.opt_model.num_cost:
                 raise ValueError("Interdiction cost must match the number of edges in the graph.")
-            self.interdiction_cost = interdiction_cost
+            self.interdiction_cost = deepcopy(interdiction_cost)
         else:
             # If no interdiction cost is provided, initialize with zeros
             self.interdiction_cost = np.zeros(self.opt_model.num_cost)
@@ -55,8 +142,8 @@ class SymmetricInterdictor:
 
     def __deepcopy__(self, memo):
         """
-        Create a deep copy of the BendersDecomposition instance.
-        
+        Create an independent copy of the interdictor and its mutable state.
+
         Parameters
         ----------
         memo : dict
@@ -64,61 +151,110 @@ class SymmetricInterdictor:
 
         Returns
         -------
-        BendersDecomposition
-            A new instance of BendersDecomposition with the same attributes.
+        SymmetricInterdictor
+            New solver with the same budget, Benders hyperparameters, logging
+            setting, follower cost vector, and interdiction-cost values, but backed
+            by distinct arrays, a distinct follower solver, and a distinct copied
+            graph.
         """
         
         # Create a new instance and copy the graph and other attributes
-        new_instance = SymmetricInterdictor(deepcopy(self.opt_model),
-                                            self.k, 
-                                            self.interdiction_cost.copy() if self.interdiction_cost is not None else None,
-                                            self.max_cnt, 
-                                            self.eps)
+        output_flag = bool(self._model.Params.OutputFlag)
+        new_instance = SymmetricInterdictor(
+            deepcopy(self.opt_model._graph, memo),
+            k=self.k,
+            interdiction_cost=self.interdiction_cost.copy() if self.interdiction_cost is not None else None,
+            max_cnt=self.max_cnt,
+            eps=self.eps,
+            output_flag=output_flag,
+        )
         return new_instance
     
     def __call__(self) -> tuple[np.ndarray, np.ndarray, float]:
         """
-        Call the Benders decomposition method.
-        
+        Alias for :meth:`solve`.
+
         Returns
         -------
         interdictions_x : ndarray
-            Optimal decision vector from the max-min knapsack problem.
+            Final leader interdiction vector.
         shortest_path_y : ndarray
-            Decision vector from the shortest path problem.
+            Final follower shortest-path vector.
         z_min : float
-            The minimum cost of the shortest path.
+            Final follower objective value.
         """
 
         return self.solve()
+
+    def _reset_leader_model(self) -> None:
+        """
+        Rebuild the leader Gurobi model while preserving selected parameters.
+
+        Notes
+        -----
+        Repeated calls to :meth:`solve_maxmin_knapsack` must start from a fresh
+        model so variables and constraints from earlier scenario sets do not
+        accumulate. This helper preserves only the leader settings listed in
+        `_LEADER_PARAM_NAMES`.
+        """
+
+        saved_params = {
+            name: getattr(self._model.Params, name)
+            for name in self._LEADER_PARAM_NAMES
+        }
+
+        self._model = gp.Model("maxmin_knapsack")
+        for name, value in saved_params.items():
+            setattr(self._model.Params, name, value)
 
     def solve_maxmin_knapsack(self,
                               A: np.ndarray, 
                               b: np.ndarray, 
                               ) -> tuple[np.ndarray, float]:
         """
-        Robust (max-min) knapsack with a cardinality budget.
-        
+        Solve the leader's robust cardinality-constrained max-min problem.
+
+        The model chooses a binary interdiction vector `x` and maximizes a scalar
+        `z` subject to `sum(x) <= self.k` and `z <= A[i] @ x + b[i]` for every
+        scenario row `i`. Equivalently, it maximizes the worst-case scenario value
+        induced by `x`.
+
         Parameters
         ----------
         A : (m, n) ndarray
-            Row i contains the coefficient vector a_i^T of scenario i.
+            Scenario matrix. Row `i` contains the coefficient vector for scenario
+            `i`, and column `j` corresponds to edge `j`.
         b : (m,) ndarray
-            Constant terms b_i for each scenario.
-        k : int
-            Budget on the number of items that can be selected.
-        output_flag : bool, optional
-            If False, suppresses Gurobi log output.
-        
+            Scenario constant terms. The method reshapes this input to 1D and
+            requires one constant per scenario row in `A`.
+
         Returns
         -------
         x_opt : ndarray, shape (n,)
-            Binary decision vector (1 if item j is chosen, else 0).
+            Optimal binary interdiction vector. If multiple symmetric optima achieve
+            the same worst-case value, any one of them may be returned.
         z_opt : float
-            Optimal objective value.
+            Optimal worst-case scenario value.
+
+        Raises
+        ------
+        ValueError
+            If `b` does not contain exactly one entry per scenario row in `A`.
+        RuntimeError
+            If Gurobi terminates with a non-optimal status instead of returning an
+            optimal leader solution.
         """
 
+        A = np.asarray(A, dtype=float)
+        b = np.asarray(b, dtype=float).reshape(-1)
+
         m, n = A.shape
+        if b.shape[0] != m:
+            raise ValueError("b must have one entry per scenario.")
+
+        # Rebuild the leader model on each solve so repeated calls do not
+        # accumulate stale variables or constraints from earlier scenarios.
+        self._reset_leader_model()
 
         # Decision variables
         x = self._model.addVars(n, vtype=GRB.BINARY, name="x")
@@ -129,7 +265,7 @@ class SymmetricInterdictor:
 
         # Worst-case (max-min) constraints
         for i in range(m):
-            expr = gp.quicksum(A[i, j] * x[j] for j in range(n)) + float(b[i])
+            expr = gp.quicksum(A[i, j] * x[j] for j in range(n)) + b[i]
             self._model.addConstr(z <= expr, name=f"scenario_{i}")
 
         # Objective: maximise the worst-case value z
@@ -149,24 +285,39 @@ class SymmetricInterdictor:
                               versatile: bool = True
                             ) -> tuple[np.ndarray, np.ndarray, float]:
         """
-        Perform Benders decomposition for the given grid and interdiction cost.
-        
+        Run the alternating leader-follower Benders loop for interdiction.
+
+        The routine first solves the follower shortest-path problem under the
+        original objective. Each iteration then:
+
+        1. Appends the current follower path as a new leader scenario with
+           coefficients `interdiction_cost * shortest_path_y` and constant term
+           `org_cost @ shortest_path_y`.
+        2. Solves the leader max-min knapsack over all accumulated scenarios.
+        3. Updates the follower objective to
+           `org_cost + interdiction_cost * interdictions_x`.
+        4. Resolves the follower and computes the Benders gap `z_max - z_min`.
+
+        The loop stops once the gap is within `self.eps` or once `self.max_cnt`
+        leader solves have been executed. Before returning, the follower objective is
+        always restored to the original cost vector.
+
         Parameters
         ----------
         interdiction_cost : ndarray
-            The cost of interdicting each edge.
+            Additive arc-cost vector aligned with the follower edge order.
         versatile : bool
-            If True, enables versatile Benders decomposition.
-            Defaults to True.
+            If `True`, print start-up, per-iteration, and completion progress
+            messages. If `False`, run silently.
 
         Returns
         -------
         interdictions_x : ndarray
-            Optimal decision vector from the max-min knapsack problem.
+            Last leader interdiction vector produced by the loop.
         shortest_path_y : ndarray
-            Decision vector from the shortest path problem.
-        diff : float
-            The difference between the max-min and min-max objective values.
+            Last follower shortest-path vector found before termination.
+        z_min : float
+            Last follower objective value found before termination.
         """
 
         # Print that Bender's decomposition algorithm started
@@ -178,6 +329,7 @@ class SymmetricInterdictor:
         diff = np.inf
         cnt = 0
         org_cost = self.opt_model.cost.copy()
+        interdictions_x = np.zeros_like(interdiction_cost, dtype=int)
 
         # Solve the shortest path problem of the follower for the first time
         shortest_path_y, z_min = self.opt_model.solve()
@@ -187,10 +339,10 @@ class SymmetricInterdictor:
             # 
             if cnt == 1:
                 A = np.reshape(interdiction_cost * shortest_path_y, (1, -1))
-                b = np.reshape(org_cost @ shortest_path_y, 1)
+                b = np.array([org_cost @ shortest_path_y], dtype=float)
             else:
                 A = np.vstack((A, np.reshape(interdiction_cost * shortest_path_y, (1, -1))))
-                b = np.vstack((b, np.reshape(org_cost @ shortest_path_y, 1)))
+                b = np.concatenate((b, np.array([org_cost @ shortest_path_y], dtype=float)))
             # Solve the max-min knapsack problem of the leader
             interdictions_x, z_max = self.solve_maxmin_knapsack(A, b)
             # Update costs
@@ -218,16 +370,34 @@ class SymmetricInterdictor:
               **kwargs
               ) -> tuple[np.ndarray, np.ndarray, float]:
         """
-        Solve the Benders decomposition problem.
-        
+        Solve the interdiction problem using the stored interdiction-cost vector.
+
+        This is the public orchestration entry point. It forwards
+        `self.interdiction_cost` into :meth:`benders_decomposition` and returns that
+        method's `(interdictions_x, shortest_path_y, z_min)` tuple unchanged.
+
+        If `visualize=True`, the follower visualization hook is called exactly once
+        after the Benders loop with `colored_edges=shortest_path_y` and
+        `dashed_edges=interdictions_x`, plus any extra keyword arguments.
+
+        Parameters
+        ----------
+        visualize : bool, optional
+            Whether to visualize the returned follower path and leader interdictions.
+        versatile : bool, optional
+            Whether to print Benders progress messages.
+        **kwargs
+            Additional keyword arguments forwarded to `self.opt_model.visualize(...)`
+            when `visualize=True`.
+
         Returns
         -------
         interdictions_x : ndarray
-            Optimal decision vector from the max-min knapsack problem.
+            Final leader interdiction vector.
         shortest_path_y : ndarray
-            Decision vector from the shortest path problem.
+            Final follower shortest-path vector.
         z_min : float
-            The minimum cost of the shortest path.
+            Final follower objective value.
         """
 
         # Compute solution
@@ -240,4 +410,3 @@ class SymmetricInterdictor:
         # Return solution
         return interdictions_x, shortest_path_y, z_min
         
-
