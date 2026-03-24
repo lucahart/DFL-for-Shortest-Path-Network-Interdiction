@@ -1,11 +1,28 @@
 import warnings
+import inspect
 
 import numpy as np
 import pytest
 
 import dflintdpy.data.adverse.adverse_data_generator as adg_module
-from dflintdpy.data.adverse.adverse_data_generator import AdvDataGenerator
 from dflintdpy.data.config import HP
+
+AdvDataGenerator = adg_module.AdvDataGenerator
+BaseAdverseDataGenerator = getattr(
+    adg_module,
+    "BaseAdverseDataGenerator",
+    AdvDataGenerator,
+)
+SPNIAdverseDataGenerator = getattr(
+    adg_module,
+    "SPNIAdverseDataGenerator",
+    AdvDataGenerator,
+)
+BPPOAdverseDataGenerator = getattr(
+    adg_module,
+    "BPPOAdverseDataGenerator",
+    AdvDataGenerator,
+)
 
 
 ################
@@ -42,11 +59,18 @@ class _SymStub:
         self.kwargs = kwargs
 
 
+def _instantiate_generator(generator_cls, *args, **kwargs) -> BaseAdverseDataGenerator:
+    """Instantiate a generator class while tolerating legacy signatures."""
+    if "adverse_problem" not in inspect.signature(generator_cls).parameters:
+        kwargs.pop("adverse_problem", None)
+    return generator_cls(*args, **kwargs)
+
+
 def _patch_lightweight_spni_dependencies(monkeypatch):
     # Keep constructor tests lightweight by replacing heavy collaborators.
     monkeypatch.setattr(adg_module, "SymmetricInterdictor", _SymStub)
     monkeypatch.setattr(
-        AdvDataGenerator,
+        SPNIAdverseDataGenerator,
         "gen_interdictions",
         staticmethod(lambda *args, **kwargs: np.ones((2, 3), dtype=float)),
     )
@@ -57,17 +81,10 @@ def _patch_lightweight_spni_dependencies(monkeypatch):
 #####################
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Constructor forwards n_training_interdictions via **kwargs into "
-        "gen_interdictions and should not."
-    ),
-)
 def test_adv_data_generator_regression_init_filters_training_count_kwarg(
     cfg, opt_model_stub, monkeypatch
 ):
-    """Document that n_training_interdictions leaks into gen_interdictions."""
+    """Verify that SPNI init filters training-count kwargs correctly."""
     captured = {}
 
     def _fake_gen(*args, **kwargs):
@@ -77,11 +94,12 @@ def test_adv_data_generator_regression_init_filters_training_count_kwarg(
     # Patch constructor dependencies and capture forwarded kwargs.
     monkeypatch.setattr(adg_module, "SymmetricInterdictor", _SymStub)
     monkeypatch.setattr(
-        AdvDataGenerator, "gen_interdictions", staticmethod(_fake_gen)
+        SPNIAdverseDataGenerator, "gen_interdictions", staticmethod(_fake_gen)
     )
 
     # Construct with n_training_interdictions and inspect forwarded kwargs.
-    AdvDataGenerator(
+    _instantiate_generator(
+        SPNIAdverseDataGenerator,
         cfg,
         opt_model_stub,
         budget=2,
@@ -96,23 +114,17 @@ def test_adv_data_generator_regression_init_filters_training_count_kwarg(
     pass
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Constructor calls Warning(...) instead of warnings.warn(...), so "
-        "no warning is emitted when scenarios exceed available interdictions."
-    ),
-)
 def test_adv_data_generator_regression_init_emits_warning_for_scenario_clamp(
     cfg, opt_model_stub, monkeypatch
 ):
-    """Document missing warning emission when scenario count is clamped."""
+    """Verify that SPNI init emits a warning when scenarios are clamped."""
     _patch_lightweight_spni_dependencies(monkeypatch)
 
     # Capture runtime warnings while forcing scenario clamp behavior.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        AdvDataGenerator(
+        _instantiate_generator(
+            SPNIAdverseDataGenerator,
             cfg,
             opt_model_stub,
             budget=2,
@@ -131,16 +143,9 @@ def test_adv_data_generator_regression_init_emits_warning_for_scenario_clamp(
 ### test generate ###
 ######################
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BPPO generate(cfg=...) always raises NotImplementedError because "
-        "_save_interdictions_to_cache has no BPPO implementation."
-    ),
-)
 def test_adv_data_generator_regression_generate_bppo_with_cfg_avoids_crash():
-    """Document that BPPO generate with cfg currently crashes on cache save."""
-    generator = object.__new__(AdvDataGenerator)
+    """Verify that BPPO generate with cfg no longer crashes on cache save."""
+    generator = object.__new__(BPPOAdverseDataGenerator)
     generator.adverse_problem = "BPPO"
     generator.num_scenarios = 2
     generator.interdiction_policy = "adversarial"
@@ -152,7 +157,7 @@ def test_adv_data_generator_regression_generate_bppo_with_cfg_avoids_crash():
     generator._load_interdictions_from_cache = (
         lambda cfg_arg, costs_arg, feats_arg: None
     )
-    generator._generate_bppo_interdictions = (
+    generator._generate = (
         lambda feats_arg, costs_arg, versatile=False: (
             feats_arg,
             np.array([[[2.0, 3.0], [1.0, 1.5]]], dtype=float),

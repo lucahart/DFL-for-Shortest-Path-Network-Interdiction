@@ -1,13 +1,30 @@
 from types import MethodType, SimpleNamespace
+import inspect
 
 import numpy as np
 import pytest
 
 import dflintdpy.data.adverse.adverse_data_generator as \
     adverse_data_generator_module
-from dflintdpy.data.adverse.adverse_data_generator import AdvDataGenerator
 from dflintdpy.data.config import HP
 from dflintdpy.utils.read_write import CacheReplaceOptions
+
+AdvDataGenerator = adverse_data_generator_module.AdvDataGenerator
+BaseAdverseDataGenerator = getattr(
+    adverse_data_generator_module,
+    "BaseAdverseDataGenerator",
+    AdvDataGenerator,
+)
+SPNIAdverseDataGenerator = getattr(
+    adverse_data_generator_module,
+    "SPNIAdverseDataGenerator",
+    AdvDataGenerator,
+)
+BPPOAdverseDataGenerator = getattr(
+    adverse_data_generator_module,
+    "BPPOAdverseDataGenerator",
+    AdvDataGenerator,
+)
 
 
 ################
@@ -179,9 +196,103 @@ class _ChoiceStub:
         return self.outputs.pop(0)
 
 
-def _build_generator(**overrides) -> AdvDataGenerator:
+class _GeneratorDispatchStub:
+    """Stub generator used to verify wrapper dispatch and delegation."""
+
+    label = "dispatch"
+    init_calls: list[dict] = []
+    generate_calls: list[dict] = []
+
+    def __init__(
+        self,
+        cfg,
+        opt_model,
+        budget,
+        normalization_constant,
+        **kwargs,
+    ):
+        type(self).init_calls.append(
+            {
+                "cfg": cfg,
+                "opt_model": opt_model,
+                "budget": budget,
+                "normalization_constant": normalization_constant,
+                "kwargs": kwargs,
+            }
+        )
+        self.delegate_marker = self.label
+
+    @classmethod
+    def reset(cls) -> None:
+        """Clear captured constructor and generate state."""
+        cls.init_calls = []
+        cls.generate_calls = []
+
+    def generate(self, feats, costs, cfg=None, versatile=False):
+        """Record one delegated generate call and return sentinel arrays."""
+        type(self).generate_calls.append(
+            {
+                "feats": np.array(feats, dtype=float),
+                "costs": np.array(costs, dtype=float),
+                "cfg": cfg,
+                "versatile": versatile,
+            }
+        )
+        return (
+            feats,
+            np.full((feats.shape[0], 1, costs.shape[1]), 7.0, dtype=float),
+            np.full((feats.shape[0], 1, costs.shape[1]), 3.0, dtype=float),
+        )
+
+
+class _BaseGenerateHarness(BaseAdverseDataGenerator):
+    """Minimal concrete generator for exercising base orchestration."""
+
+    def _load_interdictions_from_cache(self, cfg, costs, feats):
+        """Return the cached result captured on the instance."""
+        self.load_calls.append(
+            {
+                "cfg": cfg,
+                "costs": np.array(costs, dtype=float),
+                "feats": np.array(feats, dtype=float),
+            }
+        )
+        return self.cached_result
+
+    def _save_interdictions_to_cache(self, cfg, interdictions_grouped):
+        """Record one cache write attempt."""
+        self.save_calls.append(
+            {
+                "cfg": cfg,
+                "grouped": np.array(interdictions_grouped, dtype=float),
+            }
+        )
+
+    def _generate(self, feats, costs, versatile=False):
+        """Return the configured generated result and record the call."""
+        self.generate_calls.append(
+            {
+                "feats": np.array(feats, dtype=float),
+                "costs": np.array(costs, dtype=float),
+                "versatile": versatile,
+            }
+        )
+        return self.generated_result
+
+
+def _instantiate_generator(generator_cls, *args, **kwargs) -> BaseAdverseDataGenerator:
+    """Instantiate a generator class while tolerating legacy signatures."""
+    if "adverse_problem" not in inspect.signature(generator_cls).parameters:
+        kwargs.pop("adverse_problem", None)
+    return generator_cls(*args, **kwargs)
+
+
+def _build_generator(
+    generator_cls=SPNIAdverseDataGenerator,
+    **overrides,
+) -> BaseAdverseDataGenerator:
     """Create a partially initialized generator for method-level tests."""
-    generator = object.__new__(AdvDataGenerator)
+    generator = object.__new__(generator_cls)
     generator.opt_model = _OptModelStub()
     generator.num_scenarios = 3
     generator.interdictions = np.array(
@@ -200,14 +311,447 @@ def _build_generator(**overrides) -> AdvDataGenerator:
     generator.interdiction_policy = "adversarial"
     generator._cache_options = CacheReplaceOptions()
     generator._base_seed = 0
+    if generator_cls is SPNIAdverseDataGenerator:
+        generator._policy = (
+            adverse_data_generator_module.AdversarialSPNIInterdictionPolicy(
+                generator._sym_interdictor
+            )
+        )
+    if generator_cls is BPPOAdverseDataGenerator:
+        generator._pricing_problem = generator._sym_interdictor
     for key, value in overrides.items():
         setattr(generator, key, value)
+    if generator_cls is SPNIAdverseDataGenerator and "interdiction_policy" in overrides:
+        if overrides["interdiction_policy"] == "adversarial":
+            generator._policy = (
+                adverse_data_generator_module.AdversarialSPNIInterdictionPolicy(
+                    generator._sym_interdictor
+                )
+            )
+        else:
+            generator._policy = (
+                adverse_data_generator_module.RandomSPNIInterdictionPolicy(
+                    generator._rng,
+                    generator._sym_interdictor.k,
+                )
+            )
+    if generator_cls is BPPOAdverseDataGenerator and "_sym_interdictor" in overrides:
+        generator._pricing_problem = overrides["_sym_interdictor"]
     return generator
 
 
 def _bind_method(instance, func):
     """Bind a function as an instance method for orchestration tests."""
     return MethodType(func, instance)
+
+
+#########################
+### test strategies ###
+#########################
+
+
+def test_adv_data_generator_strategy_adversarial_applies_benders_solution(
+    monkeypatch,
+):
+    """Verify that the adversarial SPNI strategy uses the interdictor."""
+    # Arrange: create a deterministic interdictor and planned solution.
+    _SymmetricInterdictorStub.reset(
+        planned_solutions=[np.array([1.0, 0.0, 1.0], dtype=float)]
+    )
+    interdictor = _SymmetricInterdictorStub(
+        _GraphStub(),
+        k=2,
+        max_cnt=3,
+        eps=1e-4,
+    )
+    policy = adverse_data_generator_module.AdversarialSPNIInterdictionPolicy(
+        interdictor
+    )
+    cost = np.array([10.0, 20.0, 30.0], dtype=float)
+    interdiction_cost = np.array([4.0, 5.0, 6.0], dtype=float)
+
+    # Act: apply the adversarial strategy.
+    applied = policy.apply(
+        cost=cost,
+        interdiction_cost=interdiction_cost,
+        versatile=True,
+    )
+
+    # Assert: the interdictor was called and the weighted pattern was returned.
+    assert np.array_equal(
+        interdictor.opt_model.set_obj_calls[0], cost
+    ), "Adversarial strategy did not push the sample cost to the solver."
+    assert np.array_equal(
+        interdictor.benders_calls[0]["interdiction_cost"],
+        interdiction_cost,
+    ), "Adversarial strategy passed the wrong interdiction cost."
+    assert np.array_equal(
+        applied,
+        np.array([4.0, 0.0, 6.0], dtype=float),
+    ), "Adversarial strategy did not weight the interdiction correctly."
+    pass
+
+
+def test_adv_data_generator_strategy_random_respects_budget_and_weights_costs():
+    """Verify that the random SPNI strategy samples budget-feasible edges."""
+    # Arrange: provide a deterministic edge selection.
+    rng = _ChoiceStub([np.array([1, 2])])
+    policy = adverse_data_generator_module.RandomSPNIInterdictionPolicy(
+        rng,
+        budget=2,
+    )
+    cost = np.array([10.0, 20.0, 30.0], dtype=float)
+    interdiction_cost = np.array([4.0, 5.0, 6.0], dtype=float)
+
+    # Act: apply the random strategy.
+    applied = policy.apply(
+        cost=cost,
+        interdiction_cost=interdiction_cost,
+        versatile=False,
+    )
+
+    # Assert: the sampled pattern obeys the budget and weights the cost.
+    assert np.array_equal(
+        applied,
+        np.array([0.0, 5.0, 6.0], dtype=float),
+    ), "Random strategy did not weight the selected interdiction correctly."
+    assert np.count_nonzero(applied) == 2, \
+        "Random strategy exceeded the requested interdiction budget."
+    assert rng.calls[0]["size"] == 2, \
+        "Random strategy did not request the correct budget size."
+    pass
+
+
+###############################
+### test wrapper dispatch ###
+###############################
+
+
+def test_adv_data_generator_wrapper_dispatches_spni_generation(
+    cfg,
+    opt_model,
+    monkeypatch,
+):
+    """Verify that the compatibility wrapper dispatches to SPNI."""
+    # Arrange: replace the concrete SPNI generator with a local stub.
+    _GeneratorDispatchStub.reset()
+    _GeneratorDispatchStub.label = "spni"
+    monkeypatch.setattr(
+        adverse_data_generator_module,
+        "SPNIAdverseDataGenerator",
+        _GeneratorDispatchStub,
+    )
+    monkeypatch.setattr(
+        adverse_data_generator_module.AdvDataGenerator,
+        "_GENERATOR_TYPES",
+        {"SPNI": _GeneratorDispatchStub},
+    )
+
+    # Act: build the compatibility wrapper and call generate through it.
+    generator = AdvDataGenerator(
+        cfg,
+        opt_model,
+        budget=2,
+        normalization_constant=1.0,
+        adverse_problem="SPNI",
+        num_scenarios=3,
+        interdiction_policy="adversarial",
+        n_training_interdictions=5,
+    )
+    result = generator.generate(
+        np.array([[1.0, 2.0]], dtype=float),
+        np.array([[3.0, 4.0, 5.0]], dtype=float),
+        cfg=cfg,
+        versatile=True,
+    )
+
+    # Assert: the wrapper delegated construction and method calls correctly.
+    assert isinstance(generator._delegate, _GeneratorDispatchStub), \
+        "Wrapper did not instantiate the expected SPNI generator."
+    assert generator.delegate_marker == "spni", \
+        "Wrapper did not expose attributes from the delegate."
+    assert len(_GeneratorDispatchStub.init_calls) == 1, \
+        "Wrapper did not construct the SPNI delegate exactly once."
+    assert len(_GeneratorDispatchStub.generate_calls) == 1, \
+        "Wrapper did not forward generate to the SPNI delegate."
+    assert result[1].shape == (1, 1, 3), \
+        "Wrapper did not return the SPNI delegate result."
+    pass
+
+
+def test_adv_data_generator_wrapper_dispatches_bppo_generation(
+    cfg,
+    opt_model,
+    monkeypatch,
+):
+    """Verify that the compatibility wrapper dispatches to BPPO."""
+    # Arrange: replace the concrete BPPO generator with a local stub.
+    _GeneratorDispatchStub.reset()
+    _GeneratorDispatchStub.label = "bppo"
+    monkeypatch.setattr(
+        adverse_data_generator_module,
+        "BPPOAdverseDataGenerator",
+        _GeneratorDispatchStub,
+    )
+    monkeypatch.setattr(
+        adverse_data_generator_module.AdvDataGenerator,
+        "_GENERATOR_TYPES",
+        {"BPPO": _GeneratorDispatchStub},
+    )
+
+    # Act: build the wrapper and route generation through the BPPO path.
+    generator = AdvDataGenerator(
+        cfg,
+        opt_model,
+        budget=2,
+        normalization_constant=1.0,
+        adverse_problem="BPPO",
+        num_scenarios=2,
+        interdiction_policy="adversarial",
+    )
+    result = generator.generate(
+        np.array([[1.0, 2.0]], dtype=float),
+        np.array([[3.0, 4.0, 5.0]], dtype=float),
+        cfg=cfg,
+        versatile=False,
+    )
+
+    # Assert: the wrapper delegated to the BPPO stub.
+    assert isinstance(generator._delegate, _GeneratorDispatchStub), \
+        "Wrapper did not instantiate the expected BPPO generator."
+    assert generator.delegate_marker == "bppo", \
+        "Wrapper did not expose BPPO delegate attributes."
+    assert len(_GeneratorDispatchStub.init_calls) == 1, \
+        "Wrapper did not construct the BPPO delegate exactly once."
+    assert len(_GeneratorDispatchStub.generate_calls) == 1, \
+        "Wrapper did not forward generate to the BPPO delegate."
+    assert result[2].shape == (1, 1, 3), \
+        "Wrapper did not return the BPPO delegate result."
+    pass
+
+
+############################
+### test base generate ###
+############################
+
+
+def test_adv_data_generator_base_generate_returns_cached_result_when_available():
+    """Verify that the base generator returns cached results immediately."""
+    # Arrange: prepare a harness with a precomputed cache hit.
+    generator = object.__new__(_BaseGenerateHarness)
+    generator.load_calls = []
+    generator.save_calls = []
+    generator.generate_calls = []
+    generator.cached_result = (
+        np.array([[1.0]], dtype=float),
+        np.zeros((1, 2, 3), dtype=float),
+        np.ones((1, 2, 3), dtype=float),
+    )
+    generator._generate = _bind_method(
+        generator,
+        lambda self, *args, **kwargs: pytest.fail(
+            "Base generator should not generate data on a cache hit."
+        ),
+    )
+    generator._save_interdictions_to_cache = _bind_method(
+        generator,
+        lambda self, *args, **kwargs: pytest.fail(
+            "Base generator should not save data on a cache hit."
+        ),
+    )
+
+    # Act: ask the base generator to produce data with a cache hit.
+    result = BaseAdverseDataGenerator.generate(
+        generator,
+        np.array([[9.0]], dtype=float),
+        np.array([[8.0, 7.0, 6.0]], dtype=float),
+        cfg=object(),
+        versatile=True,
+    )
+
+    # Assert: the cached tuple is returned and no generation occurs.
+    assert result is generator.cached_result, \
+        "Base generator did not return the cached tuple unchanged."
+    assert generator.generate_calls == [], \
+        "Base generator still generated data on a cache hit."
+    assert generator.save_calls == [], \
+        "Base generator still attempted to save on a cache hit."
+    pass
+
+
+def test_adv_data_generator_base_generate_saves_generated_result_on_miss():
+    """Verify that the base generator saves newly generated results."""
+    # Arrange: prepare a harness that must generate new data.
+    generator = object.__new__(_BaseGenerateHarness)
+    generator.load_calls = []
+    generator.save_calls = []
+    generator.generate_calls = []
+    generated_result = (
+        np.array([[2.0]], dtype=float),
+        np.full((1, 2, 3), 9.0, dtype=float),
+        np.full((1, 2, 3), 4.0, dtype=float),
+    )
+    generator.cached_result = None
+    generator.generated_result = generated_result
+
+    # Act: ask the base generator to produce data on a cache miss.
+    result = BaseAdverseDataGenerator.generate(
+        generator,
+        np.array([[5.0]], dtype=float),
+        np.array([[1.0, 2.0, 3.0]], dtype=float),
+        cfg=object(),
+        versatile=False,
+    )
+
+    # Assert: generation ran and the result was saved once.
+    assert np.array_equal(result[0], generated_result[0]), \
+        "Base generator did not return the generated features."
+    assert np.array_equal(result[1], generated_result[1]), \
+        "Base generator did not return the generated grouped costs."
+    assert np.array_equal(result[2], generated_result[2]), \
+        "Base generator did not return the generated interdictions."
+    assert len(generator.generate_calls) == 1, \
+        "Base generator did not generate data on a cache miss."
+    assert len(generator.save_calls) == 1, \
+        "Base generator did not save generated data on a cache miss."
+    assert np.array_equal(
+        generator.save_calls[0]["grouped"],
+        generated_result[2],
+    ), "Base generator saved the wrong grouped interdictions."
+    pass
+
+
+############################
+### test BPPO no-cache ###
+############################
+
+
+def test_adv_data_generator_bppo_cache_helpers_are_noops(monkeypatch):
+    """Verify that BPPO cache helpers intentionally do nothing."""
+    # Arrange: build a BPPO generator with a lightweight interdictor stub.
+    generator = _build_generator(
+        BPPOAdverseDataGenerator,
+        adverse_problem="BPPO",
+        num_scenarios=2,
+        _sym_interdictor=SimpleNamespace(
+            Sigma=np.eye(3, dtype=float),
+            gamma=1.25,
+            budget=2.5,
+        ),
+    )
+    grouped = np.zeros((1, 2, 3), dtype=float)
+    read_calls: list[tuple] = []
+    write_calls: list[tuple] = []
+
+    def _read_cache(*args, **kwargs):
+        read_calls.append((args, kwargs))
+        return np.ones((1, 3), dtype=float)
+
+    def _write_adv_intd(*args, **kwargs):
+        write_calls.append(("adv", args, kwargs))
+        return None
+
+    def _write_rnd_intd(*args, **kwargs):
+        write_calls.append(("rnd", args, kwargs))
+        return None
+
+    # Patch cache collaborators to prove they stay untouched.
+    monkeypatch.setattr(adverse_data_generator_module, "read_cache", _read_cache)
+    monkeypatch.setattr(
+        adverse_data_generator_module,
+        "write_adv_intd",
+        _write_adv_intd,
+    )
+    monkeypatch.setattr(
+        adverse_data_generator_module,
+        "write_rnd_intd",
+        _write_rnd_intd,
+    )
+
+    # Act: call the BPPO cache helpers directly.
+    loaded = generator._load_interdictions_from_cache(
+        object(),
+        np.zeros((1, 3), dtype=float),
+        np.zeros((1, 1), dtype=float),
+    )
+    generator._save_interdictions_to_cache(object(), grouped)
+
+    # Assert: BPPO caching is intentionally disabled.
+    assert loaded is None, \
+        "BPPO cache loading should be a no-op that returns None."
+    assert read_calls == [], \
+        "BPPO cache loading should not touch the cache reader."
+    assert write_calls == [], \
+        "BPPO cache saving should not touch any cache writers."
+    pass
+#####################################
+### test interdiction strategies ###
+#####################################
+
+def test_adv_data_generator_adversarial_spni_policy_weights_solution():
+    """Verify that the adversarial SPNI policy weights the solver solution."""
+    # Arrange: build a deterministic symmetric interdictor stub.
+    _SymmetricInterdictorStub.reset(
+        planned_solutions=[np.array([1.0, 0.0, 1.0], dtype=float)]
+    )
+    interdictor = _SymmetricInterdictorStub(
+        _GraphStub(),
+        k=2,
+        max_cnt=3,
+        eps=1e-4,
+    )
+    policy = adverse_data_generator_module.AdversarialSPNIInterdictionPolicy(
+        interdictor
+    )
+    cost = np.array([10.0, 20.0, 30.0], dtype=float)
+    interdiction_cost = np.array([4.0, 5.0, 6.0], dtype=float)
+
+    # Act: apply the adversarial policy to one interdiction vector.
+    result = policy.apply(
+        cost=cost,
+        interdiction_cost=interdiction_cost,
+        versatile=True,
+    )
+
+    # Assert: the policy forwards the data and weights the binary solution.
+    assert np.array_equal(interdictor.opt_model.set_obj_calls[0], cost), \
+        "Adversarial SPNI policy did not push costs into the follower model."
+    assert np.array_equal(
+        interdictor.benders_calls[0]["interdiction_cost"],
+        interdiction_cost,
+    ), "Adversarial SPNI policy did not forward the interdiction costs."
+    assert np.array_equal(
+        result,
+        np.array([4.0, 0.0, 6.0], dtype=float),
+    ), "Adversarial SPNI policy did not weight the chosen interdiction."
+    pass
+
+
+def test_adv_data_generator_random_spni_policy_samples_weighted_pattern():
+    """Verify that the random SPNI policy samples a budget-feasible pattern."""
+    # Arrange: build a deterministic choice stub for the random policy.
+    rng = _ChoiceStub([np.array([2, 0])])
+    policy = adverse_data_generator_module.RandomSPNIInterdictionPolicy(
+        rng,
+        budget=2,
+    )
+    interdiction_cost = np.array([4.0, 5.0, 6.0], dtype=float)
+
+    # Act: apply the random policy to one interdiction vector.
+    result = policy.apply(
+        cost=np.array([1.0, 2.0, 3.0], dtype=float),
+        interdiction_cost=interdiction_cost,
+        versatile=False,
+    )
+
+    # Assert: the policy chooses exactly the sampled entries and weights them.
+    assert rng.calls == [{"a": 3, "size": 2, "replace": False}], \
+        "Random SPNI policy did not draw one budget-feasible edge sample."
+    assert np.array_equal(
+        result,
+        np.array([4.0, 0.0, 6.0], dtype=float),
+    ), "Random SPNI policy did not weight the sampled interdiction pattern."
+    pass
 
 
 #####################
@@ -218,13 +762,14 @@ def test_adv_data_generator_init_rejects_unknown_adverse_problem(
     cfg,
     opt_model,
 ):
-    """Verify that __init__ rejects unsupported adverse-problem values."""
+    """Verify that the compatibility entrypoint rejects bad problem values."""
     # Act / Assert: construction should fail for unknown problem types.
     with pytest.raises(
         ValueError,
         match="Unknown adverse problem type: OTHER",
     ):
-        AdvDataGenerator(
+        _instantiate_generator(
+            AdvDataGenerator,
             cfg,
             opt_model,
             budget=2,
@@ -238,17 +783,19 @@ def test_adv_data_generator_init_rejects_unknown_interdiction_policy(
     cfg,
     opt_model,
 ):
-    """Verify that __init__ rejects unsupported interdiction policies."""
+    """Verify that the SPNI generator rejects unsupported policies."""
     # Act / Assert: construction should fail for unknown policy types.
     with pytest.raises(
         ValueError,
         match="Unknown interdiction policy: OTHER",
     ):
-        AdvDataGenerator(
+        _instantiate_generator(
+            SPNIAdverseDataGenerator,
             cfg,
             opt_model,
             budget=2,
             normalization_constant=2.0,
+            adverse_problem="SPNI",
             interdiction_policy="OTHER",
         )
     pass
@@ -264,7 +811,7 @@ def test_adv_data_generator_init_spni_deepcopies_model_and_builds_helpers(
     _SymmetricInterdictorStub.reset()
     planned_intds = np.array([[1.0, 0.5, 0.0], [0.0, 1.0, 1.5]])
     monkeypatch.setattr(
-        adverse_data_generator_module.AdvDataGenerator,
+        SPNIAdverseDataGenerator,
         "gen_interdictions",
         staticmethod(lambda *args, **kwargs: planned_intds.copy()),
     )
@@ -275,13 +822,15 @@ def test_adv_data_generator_init_spni_deepcopies_model_and_builds_helpers(
     )
 
     # Act: construct the generator under SPNI mode.
-    generator = AdvDataGenerator(
+    generator = _instantiate_generator(
+        SPNIAdverseDataGenerator,
         cfg,
         opt_model,
         budget=3,
         normalization_constant=2.0,
         num_scenarios=4,
         seed=9,
+        adverse_problem="SPNI",
     )
 
     # Assert: the optimization model was deep-copied and helper state stored.
@@ -311,7 +860,7 @@ def test_adv_data_generator_init_spni_uses_defaults_and_caps_scenarios(
     # Arrange: replace heavy collaborators with lightweight stubs.
     _SymmetricInterdictorStub.reset()
     monkeypatch.setattr(
-        adverse_data_generator_module.AdvDataGenerator,
+        SPNIAdverseDataGenerator,
         "gen_interdictions",
         staticmethod(lambda *args, **kwargs: np.ones((100, 3), dtype=float)),
     )
@@ -322,12 +871,14 @@ def test_adv_data_generator_init_spni_uses_defaults_and_caps_scenarios(
     )
 
     # Act: request more scenarios than the default training pool can support.
-    generator = AdvDataGenerator(
+    generator = _instantiate_generator(
+        SPNIAdverseDataGenerator,
         cfg,
         opt_model,
         budget=2,
         normalization_constant=1.0,
         num_scenarios=102,
+        adverse_problem="SPNI",
     )
 
     # Assert: defaults are retained and scenarios are capped at 101.
@@ -335,6 +886,45 @@ def test_adv_data_generator_init_spni_uses_defaults_and_caps_scenarios(
         "SPNI initialization did not keep the default training pool size."
     assert generator.num_scenarios == 101, \
         "SPNI initialization did not cap the scenario count correctly."
+    pass
+
+
+def test_adv_data_generator_init_bppo_builds_pricing_problem_state(
+    cfg,
+    opt_model,
+):
+    """Verify that BPPO initialization stores pricing-problem state."""
+    # Act: construct the concrete BPPO generator.
+    generator = _instantiate_generator(
+        BPPOAdverseDataGenerator,
+        cfg,
+        opt_model,
+        budget=7,
+        normalization_constant=1.0,
+        adverse_problem="BPPO",
+    )
+
+    # Assert: BPPO stores one adverse scenario and pricing inputs.
+    assert generator.num_scenarios == 2, \
+        "BPPO initialization did not force two grouped scenarios."
+    assert np.array_equal(generator._pricing_problem.Sigma, opt_model.Sigma), \
+        "BPPO initialization did not preserve the covariance matrix."
+    assert generator._pricing_problem.gamma == opt_model.gamma, \
+        "BPPO initialization did not preserve gamma."
+    assert generator._pricing_problem.budget == 7.0, \
+        "BPPO initialization did not store the requested budget."
+    pass
+
+
+def test_adv_data_generator_resolve_generator_cls_returns_concrete_type():
+    """Verify that the compatibility wrapper resolves concrete classes."""
+    # Act / Assert: resolve both supported problem families.
+    assert AdvDataGenerator.resolve_generator_cls("SPNI") \
+        is SPNIAdverseDataGenerator, \
+        "Wrapper did not resolve SPNI to the concrete generator class."
+    assert AdvDataGenerator.resolve_generator_cls("BPPO") \
+        is BPPOAdverseDataGenerator, \
+        "Wrapper did not resolve BPPO to the concrete generator class."
     pass
 
 
@@ -351,6 +941,7 @@ def test_adv_data_generator_load_interdictions_from_cache_skips_read_on_replace(
     """Verify that cache loading is skipped when replacement is requested."""
     # Arrange: build a generator configured to replace adversarial cache data.
     generator = _build_generator(
+        SPNIAdverseDataGenerator,
         _cache_options=CacheReplaceOptions(replace_intd_adv=True),
         interdiction_policy="adversarial",
     )
@@ -581,6 +1172,32 @@ def test_adv_data_generator_save_interdictions_to_cache_flattens_spni_rnd_data(
     pass
 
 
+def test_adv_data_generator_bppo_cache_helpers_are_noops(
+    cfg,
+    feats,
+    costs,
+):
+    """Verify that BPPO cache helpers intentionally do nothing."""
+    # Arrange: build a partially initialized BPPO generator.
+    generator = _build_generator(
+        BPPOAdverseDataGenerator,
+        adverse_problem="BPPO",
+        num_scenarios=2,
+    )
+    grouped = np.ones((2, 2, 3), dtype=float)
+
+    # Act: exercise the BPPO cache helpers.
+    loaded = generator._load_interdictions_from_cache(cfg, costs, feats)
+    saved = generator._save_interdictions_to_cache(cfg, grouped)
+
+    # Assert: BPPO cache helpers skip both loading and saving.
+    assert loaded is None, \
+        "BPPO cache loading did not return the documented cache miss."
+    assert saved is None, \
+        "BPPO cache saving did not remain a no-op."
+    pass
+
+
 ##########################################
 ### test _generate_bppo_interdictions ###
 ##########################################
@@ -609,6 +1226,7 @@ def test_adv_data_generator_generate_bppo_interdictions_clips_and_stores_results
         lambda idx, total: progress_calls.append((idx, total)),
     )
     generator = _build_generator(
+        BPPOAdverseDataGenerator,
         adverse_problem="BPPO",
         num_scenarios=2,
         _sym_interdictor=SimpleNamespace(
@@ -850,16 +1468,20 @@ def test_adv_data_generator_generate_returns_cached_result_when_available(
 
 
 def test_adv_data_generator_generate_rejects_unknown_problem_type(feats):
-    """Verify that generate rejects unsupported adverse-problem values."""
-    # Arrange: build a minimal generator with an invalid problem type.
-    generator = _build_generator(adverse_problem="OTHER")
-
-    # Act / Assert: dispatch should fail before any generation occurs.
+    """Verify that the compatibility entrypoint rejects bad problem values."""
+    # Act / Assert: construction should fail before any generation occurs.
     with pytest.raises(
         ValueError,
-        match="Unknown adverse_problem: OTHER",
+        match="Unknown adverse problem type: OTHER",
     ):
-        generator.generate(feats, np.zeros((2, 3), dtype=float))
+        _instantiate_generator(
+            AdvDataGenerator,
+            HP(),
+            _OptModelStub(),
+            budget=2,
+            normalization_constant=1.0,
+            adverse_problem="OTHER",
+        )
     pass
 
 
