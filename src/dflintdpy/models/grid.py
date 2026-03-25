@@ -97,12 +97,6 @@ class Grid(Graph):
         if any((node < 0 or node >= self.m * self.n) for node in shortest_path_nodes):
             raise ValueError(f"Node indices in shortest_path_nodes "\
                              f"must be between 0 and {self.m * self.n - 1}.")
-        
-        # Paths on the grid must always traverse m+n-1 nodes (including source and sink)
-        if len(shortest_path_nodes) != self.m + self.n - 1:
-            raise ValueError(f"shortest_path_nodes must have length "\
-                             f"{self.m + self.n - 1} for a valid path "\
-                             f"from source to sink in the grid.")
 
         # Find the arc indices using the grid structure
         arc_indices = []

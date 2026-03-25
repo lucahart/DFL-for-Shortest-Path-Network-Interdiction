@@ -113,6 +113,10 @@ def test_grid_arcs_one_hot_invalid_arc_error():
         _, _ = grid._arcs_one_hot(path)
     pass
 
+@pytest.mark.skip(reason=(
+    "Test outdated. A fixed number of nodes would not take into account "
+    "different start/end nodes and thus fails on, e.g., vertical-only paths."
+))
 def test_grid_arcs_one_hot_invalid_nodes():
     """Test if the _arcs_one_hot method raises an error when given invalid nodes."""
     grid = Grid(2, 2)
