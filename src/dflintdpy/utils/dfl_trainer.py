@@ -1,29 +1,15 @@
-import copy
-from typing import Optional, Tuple
-from unicodedata import name
-from matplotlib.axes import Axes
-from numpy import ndarray
-from numpy import arange
-import pyepo.metric
 import torch
 from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
-from dflintdpy.data.config import HP
 
-class DFLTrainer:
+from dflintdpy.data.config import HP
+from dflintdpy.utils.base_trainer import BaseTrainer
+
+
+class DFLTrainer(BaseTrainer):
     """
     A class to handle the training and evaluation of a PyTorch model.
     """
-
-    device: torch.device
-    pred_model: torch.nn.Module
-    opt_model: torch.nn.Module
-    optimizer: torch.optim.Optimizer
-    loss_criterion: torch.nn.Module
     method_name: str
-
-    # Threshold for increase in training loss (10%)
-    LOSS_INCREASE_THRESHOLD = 0.10
 
     def __init__(self,
                  pred_model: torch.nn.Module,
@@ -32,8 +18,6 @@ class DFLTrainer:
                  loss_fn: torch.nn.Module,
                  method_name: str = "spo+",
                  cfg: HP = None,
-                 aggregate: str = "mean",
-                 cvar_alpha: float = 0.9,
                  dfl_variant: str = "a-dfl"
                  ) -> None:
         """
@@ -50,12 +34,6 @@ class DFLTrainer:
             The optimizer to be used for training the model.
         loss_fn : torch.nn.Module
             The loss function to be used for training the model.
-        aggregate : str, optional
-            How to aggregate scenario losses for each base instance. Options
-            are ``"mean"`` (default), ``"worst"`` or ``"cvar"``.
-        cvar_alpha : float, optional
-            Confidence level used when ``aggregate='cvar'``. The trainer
-            averages the worst ``(1 - alpha)`` fraction of scenario losses.
         device : torch.device, optional
             The device on which the model will be trained (default is 'cuda' if available,
             otherwise 'cpu').
@@ -64,23 +42,31 @@ class DFLTrainer:
             ``"mixed"`` uses both the original and interdicted scenarios for training.
         """
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.pred_model = pred_model.to(self.device)
-        self.opt_model = opt_model
-        self.optimizer = optimizer
-        self.loss_criterion = loss_fn
+        super().__init__(pred_model, opt_model, optimizer, loss_fn)
         if method_name in type(self).VALID_METHODS():
             self.method_name = method_name
         else:
             raise ValueError(f"Unknown method name: {method_name}\n"
-                             f"Valid methods are: {type(self).VALID_METHODS}")
+                             f"Valid methods are: {type(self).VALID_METHODS()}")
         self.cfg = cfg
         if cfg is None and method_name == "hybrid":
             raise ValueError("Configuration must be provided for hybrid method.")
 
-        self.aggregate = aggregate
-        self.cvar_alpha = cvar_alpha
         self.dfl_variant = dfl_variant
+
+    def _prepare_loader_for_loss(self, loader: DataLoader) -> None:
+        """DFL optimizes on adverse scenarios."""
+        if hasattr(loader, "adverse_mode"):
+            loader.adverse_mode()
+
+    def _compute_regret(self, loader: DataLoader) -> float:
+        """Evaluate regret on the original scenarios, then restore DFL mode."""
+        if hasattr(loader, "normal_mode"):
+            loader.normal_mode()
+        regret = super()._compute_regret(loader)
+        if hasattr(loader, "adverse_mode"):
+            loader.adverse_mode()
+        return regret
 
     @staticmethod
     def _flatten_scenarios(
@@ -116,265 +102,45 @@ class DFLTrainer:
         o = objs_sel.reshape(B * K_eff, *objs_sel.shape[2:])
         return p, c, s, o, K_eff
 
+    def _before_epoch(self, epoch: int) -> None:
+        """Reserved for method-specific schedules such as hybrid lambda."""
+        # if self.method_name == "hybrid":
+        #     self.loss_criterion.lam = type(self).lambda_schedule(self.cfg, epoch)
+        return None
 
-    def train_epoch(self,
-                    loader: DataLoader
-                    ) -> float:
-        """
-        Trains the model for one epoch.
+    def _compute_batch_loss(
+        self,
+        batch: tuple[torch.Tensor, ...],
+    ) -> tuple[torch.Tensor, int]:
+        """Compute the decision-focused loss for one adverse batch."""
+        feats, costs, sols, objs, intds = batch
 
-        ------------
-        Parameters
-        ------------
-        loader : DataLoader
-            The DataLoader providing the training data. Each batch should
-            return ``feats`` with shape ``(B, p)`` and ``costs``, ``sols``,
-            ``objs`` and ``intds`` with shape ``(B, K, ...)`` where ``K`` is
-            the number of scenarios per base instance.
+        feats = feats.to(self.device)
+        costs = costs.to(self.device)
+        sols = sols.to(self.device)
+        objs = objs.to(self.device)
+        intds = intds.to(self.device)
 
-        ------------
-        Returns
-        ------------
-        float
-            The average loss for the epoch. This is calculated as the total loss
-            divided by the number of samples in the dataset.
-        """
+        pred = self.pred_model(feats).unsqueeze(1) + intds
+        batch_size = costs.shape[0]
 
-        self.pred_model.train()
-        running_loss = 0.0
-        for feats, costs, sols, objs, intds in loader:
+        p, c, s, o, _ = type(self)._flatten_scenarios(
+            pred,
+            costs,
+            sols,
+            objs,
+            self.dfl_variant,
+        )
 
-            feats = feats.to(self.device)
-            costs = costs.to(self.device)
-            sols = sols.to(self.device)
-            objs = objs.to(self.device)
-            intds = intds.to(self.device)
-
-            pred = self.pred_model(feats).unsqueeze(1) + intds
-            B, K = costs.shape[:2] # batch size and number of scenarios per instance
-
-
-            p, c, s, o, K_eff = type(self)._flatten_scenarios(
-                pred,
-                costs,
-                sols,
-                objs,
-                self.dfl_variant,
-            )
-
-            # Compute flattened loss and aggregate across scenarios.
-            loss = type(self).compute_loss(
-                self.loss_criterion,
-                p,
-                c,
-                s,
-                o,
-                method_name=self.method_name,
-            )
-
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-
-            running_loss += loss.item() * B
-
-        return running_loss / len(loader.dataset)
-
-
-    def evaluate(self, loader: DataLoader) -> Tuple[float, float]:
-        """
-        Evaluates the model on the validation or test data.
-
-        ------------
-        Parameters
-        ------------
-        loader : DataLoader
-            The DataLoader providing the validation or test data. Batches have
-            the same shape convention as in :func:`train_epoch`.
-        
-        ------------
-        Returns
-        ------------
-        float
-            The average loss for the evaluation. This is calculated as the total loss
-            divided by the number of samples in the dataset.
-        """
-
-        self.pred_model.eval()
-        total_loss = 0.0
-        with torch.no_grad():
-            for feats, costs, sols, objs, intds in loader:
-                feats = feats.to(self.device)
-                costs = costs.to(self.device)
-                sols = sols.to(self.device)
-                objs = objs.to(self.device)
-                intds = intds.to(self.device)
-
-                pred = self.pred_model(feats).unsqueeze(1) + intds
-                B, K = costs.shape[:2]
-
-                # Flatten scenarios for loss computation
-                p, c, s, o, K_eff = type(self)._flatten_scenarios(
-                    pred,
-                    costs,
-                    sols,
-                    objs,
-                    self.dfl_variant,
-                )
-
-                # Compute flattened loss and aggregate across scenarios.
-                loss = type(self).compute_loss(
-                    self.loss_criterion,
-                    p,
-                    c,
-                    s,
-                    o,
-                    method_name=self.method_name,
-                )
-
-                total_loss += loss.item() * B
-
-        # Compute regret
-        loader.normal_mode() # evaluate regret only on original samples
-        regret = pyepo.metric.regret(self.pred_model, self.opt_model, loader)
-        loader.adverse_mode() # reset to adverse mode
-
-        return total_loss / len(loader.dataset), regret
-
-
-    def fit(self,
-            train_loader: DataLoader,
-            val_loader: DataLoader = None,
-            epochs: int = 10,
-            n_epochs: int = -1
-            ) -> ndarray[float]:
-        """
-        Fits the model to the training data.
-
-        ------------
-        Parameters
-        ------------
-        train_loader : DataLoader
-            The DataLoader providing the training data.
-        val_loader : DataLoader, optional
-            The DataLoader providing the test data. 
-            If not provided, no testing is performed.
-        epochs : int, optional
-            The number of epochs to train the model (default is 10).
-        n_epochs : int, optional
-            The frequency of printing the loss during training.
-            If set to -1, it will be set to max(1, epochs // 10) to print the loss no more than 10 times.
-            If set to a positive integer, it will print the loss every n_epochs epochs.
-        """
-
-        # Set data loaders to adverse mode
-        train_loader.adverse_mode()
-        if val_loader is not None:
-            val_loader.adverse_mode()
-
-        # Set n_epochs so that the loss is printed no more than 10 times if not provided
-        if n_epochs < 0:
-            self.n_epochs = max(1, epochs // 10)
-
-        # Initialize train loss and regret vectors
-        train_loss, train_regret = self.evaluate(train_loader)
-        train_loss_vector = [train_loss]
-        train_regret_vector = [train_regret]
-
-        # If test_loader is provided, initialize test loss and regret vectors
-        if val_loader is not None:
-            test_loss_vector = []
-            test_regret_vector = []
-
-        # Variables for storing best model
-        best_val_loss = float('inf')
-        best_model_state = None
-
-        # Print the initial evaluation before starting training
-        if val_loader is not None:
-            test_loss, test_regret = self.evaluate(val_loader)
-            test_loss_vector.append(test_loss)
-            test_regret_vector.append(test_regret)
-            print(
-                f"Epoch {0:02d} "
-                f"| Train Loss: {train_loss:.4f} "
-                f"| Train Regret: {train_regret:.4f} "
-                f"| Validation Loss: {test_loss:.4f} "
-                f"| Validation Regret: {test_regret:.4f}"
-            )
-        else:
-            print(
-                f"Epoch {0:02d} "
-                f"| Train Loss: {train_loss:.4f} "
-                f"| Train Regret: {train_regret:.4f}"
-            )
-        
-        # Training loop
-        for epoch in range(epochs):
-            # # Set lambda for hybrid method
-            # if self.method_name == "hybrid":
-            #     self.loss_criterion.lam = DFLTrainer.lambda_schedule(self.cfg, epoch)
-
-            # Train the model for one epoch
-            train_loss = self.train_epoch(train_loader)
-            
-            # Evaluate training regret
-            train_loader.normal_mode()  # evaluate regret only on original samples
-            train_regret = pyepo.metric.regret(self.pred_model, 
-                                               self.opt_model, 
-                                               train_loader)
-            train_loader.adverse_mode()  # reset to adverse mode
-
-            # Append loss and regret to vectors
-            train_loss_vector.append(train_loss)
-            train_regret_vector.append(train_regret)
-
-            # Save best model based on validation loss
-            if val_loader is not None and train_loss < best_val_loss:
-                best_val_loss = train_loss
-                best_model_state = copy.deepcopy(self.pred_model.state_dict())
-
-            # Check for increase in training loss and 
-            # adjust learning rate if necessary
-            if (val_loader is not None and 
-                train_loss - best_val_loss > \
-                    self.LOSS_INCREASE_THRESHOLD * best_val_loss):
-                self.optimizer.param_groups[0]['lr'] *= 0.5
-                print(
-                    f"Epoch {epoch+1:02d} | " + 
-                    f"Increase in training loss detected. " + 
-                    f"Reducing learning rate to " + 
-                    f"{self.optimizer.param_groups[0]['lr']:.2e}"
-                )
-            
-            # Print loss every n_epochs
-            if (epoch + 1) % self.n_epochs == 0:
-                if val_loader:
-                    test_loss, test_regret = self.evaluate(val_loader)
-                    test_loss_vector.append(test_loss)
-                    test_regret_vector.append(test_regret)
-                    print(f"Epoch {epoch+1:02d} "
-                          f"| Train Loss: {train_loss:.4f} "
-                          f"| Train Regret: {train_regret:.4f} "
-                          f"| Validation Loss: {test_loss:.4f} "
-                          f"| Validation Regret: {test_regret:.4f}"
-                    )
-                else:
-                    print(f"Epoch {epoch+1:02d} "
-                          f"| Train Loss: {train_loss:.4f} "
-                          f"| Train Regret: {train_regret:.4f}"
-                    )
-
-        # Load best model state        
-        if best_model_state is not None:
-            self.pred_model.load_state_dict(best_model_state)
-
-        # TODO: Save best model to file
-
-        return (train_loss_vector, 
-            train_regret_vector, 
-            (test_loss_vector if val_loader else None), 
-            (test_regret_vector if val_loader else None))
+        loss = type(self).compute_loss(
+            self.loss_criterion,
+            p,
+            c,
+            s,
+            o,
+            method_name=self.method_name,
+        )
+        return loss, batch_size
     
     @staticmethod
     def VALID_METHODS():
@@ -427,82 +193,3 @@ class DFLTrainer:
             return loss_criterion(costs_pred, costs, objs)
         elif method_name in ["pg", "ltr"]:
             return loss_criterion(costs_pred, costs)
-
-
-    @staticmethod
-    def vis_learning_curve(trainer: "DFLTrainer",
-                        train_loss_log: ndarray[float],
-                        train_regret_log: ndarray[float],
-                        test_loss_log: ndarray[float] = None,
-                        test_regret_log: ndarray[float] = None,
-                        ax: Optional[Axes] = None,
-                        *,
-                        file_name: Optional[str] = None) -> None:
-        """
-        Visualizes the learning curve of the model during training.
-
-        ------------
-        Parameters
-        ------------
-        trainer : Trainer
-            The Trainer instance containing the model and training parameters.
-        train_loss_log : ndarray[float]
-            The training loss log.
-        train_regret_log : ndarray[float]
-            The training regret log.
-        test_loss_log : ndarray[float], optional
-            The testing loss log. If not provided, no testing data is plotted.
-        test_regret_log : ndarray[float], optional
-            The testing regret log. If not provided, no testing data is plotted.
-        ax : Optional[Axes], optional
-            The matplotlib Axes to plot on. If not provided, a new figure is created.
-        file_name : Optional[str], optional
-            The file name to save the plot. If not provided, the plot is not saved.
-        ------------
-        """
-
-        # Create figure and subplots
-        if ax is None:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16,4))
-        else:
-            ax1, ax2 = ax
-
-        # Plot regret learning curve with training and testing data
-        ax1.plot(train_regret_log, marker='.', label='Training Regret')
-        if test_regret_log is not None:
-            ax1.scatter(
-                arange(len(test_regret_log))*trainer.n_epochs, 
-                test_regret_log, 
-                marker='x', 
-                color='red', 
-                label='Testing Regret'
-            )
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Regret')
-        ax1.set_yscale('log')
-        ax1.set_title('Regret Learning Curve')
-        ax1.legend()
-        
-
-        # Plot loss learning curve with training and testing data
-        ax2.plot(train_loss_log, marker='.', label='Training Loss')
-        if test_loss_log is not None:
-            ax2.scatter(arange(len(test_loss_log))*trainer.n_epochs, 
-                test_loss_log, 
-                marker='x', 
-                color='red', 
-                label='Testing Loss'
-            )
-        ax2.set_xlabel('Epoch')
-        ax2.set_ylabel('Loss')
-        ax2.set_yscale('log')
-        ax2.set_title('Loss Learning Curve')
-        ax2.legend()
-
-        # Show the plot
-        plt.tight_layout()
-        # plt.show()
-        if file_name is not None:
-            plt.savefig(file_name + ".png")
-            plt.close()
-        pass

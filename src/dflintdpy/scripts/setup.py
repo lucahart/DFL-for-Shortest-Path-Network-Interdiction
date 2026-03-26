@@ -22,7 +22,9 @@ from dflintdpy.utils.read_write import (
     write_data,
     write_pred,
 )
-from dflintdpy.data.adverse.adverse_data_generator import AdvDataGenerator
+from dflintdpy.data.adverse.adverse_data_generator import (
+    SPNIAdverseDataGenerator,
+)
 from dflintdpy.data.adverse.adverse_dataset import AdvDataset
 from dflintdpy.data.adverse.adverse_loader import AdvLoader
 
@@ -75,7 +77,7 @@ def gen_train_data(
     )
 
     # Generate adversarial examples for the validation set
-    adversarial_generator = AdvDataGenerator(
+    adversarial_generator = SPNIAdverseDataGenerator(
         cfg, 
         opt_model, 
         budget=cfg.get("budget"), 
