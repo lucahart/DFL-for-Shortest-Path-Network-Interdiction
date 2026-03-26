@@ -2,8 +2,6 @@
 ###### Imports ######
 #####################
 
-from pathlib import Path
-from dflintdpy.utils.real_world_spni_data_handling import csv_to_graph
 import numpy as np
 
 import torch
@@ -25,7 +23,7 @@ from dflintdpy.scripts.setup import (gen_data,
 
 
 def single_sim(cfg, visualize=False, compute_asym_intd_2=True, 
-               compute_asym_intd=True, load_real_world_graph: str | None = None):
+               compute_asym_intd=True):
     ############################
     ###### Set Parameters ######
     ############################
