@@ -28,3 +28,6 @@ src/dflintdpy/scripts/BipartiteMatchingData/*
 # Generated Figures
 figures/*
 *.png
+
+# Codex
+.codex/
