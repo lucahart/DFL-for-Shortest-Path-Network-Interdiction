@@ -228,9 +228,10 @@ def compare_asym_intd(
     # Print that the simulation is starting
     print(f"Running asymmetric simulation with {num_test_samples} samples...")
 
-    # Prepare lists to store results
-    est_objs = []
-    true_objs = []
+    # Preserve one output slot per input sample, even when an asymmetric
+    # solve fails, so downstream analyses stay aligned with the test set.
+    est_objs = np.full(num_test_samples, np.nan, dtype=float)
+    true_objs = np.full(num_test_samples, np.nan, dtype=float)
 
     # Iterate through each data sample
     for i in range(num_test_samples):
@@ -273,13 +274,19 @@ def compare_asym_intd(
         y_est, _ = opt_model.solve()
 
         # Store the results
-        true_objs.append(true_graph(y_true, interdictions=x_intd * interdiction))
-        est_objs.append(true_graph(y_est, interdictions=x_intd * interdiction))
+        true_objs[i] = true_graph(
+            y_true,
+            interdictions=x_intd * interdiction,
+        )
+        est_objs[i] = true_graph(
+            y_est,
+            interdictions=x_intd * interdiction,
+        )
 
         # Print progress
         print_progress(i, num_test_samples)
 
-    return np.array(est_objs), np.array(true_objs)
+    return est_objs, true_objs
 
 
 def compare_wrong_asym_intd(

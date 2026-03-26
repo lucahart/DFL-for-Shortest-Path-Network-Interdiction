@@ -1,5 +1,6 @@
 from types import MethodType, SimpleNamespace
 import inspect
+import warnings
 
 import numpy as np
 import pytest
@@ -870,22 +871,28 @@ def test_adv_data_generator_init_spni_uses_defaults_and_caps_scenarios(
         _SymmetricInterdictorStub,
     )
 
-    # Act: request more scenarios than the default training pool can support.
-    generator = _instantiate_generator(
-        SPNIAdverseDataGenerator,
-        cfg,
-        opt_model,
-        budget=2,
-        normalization_constant=1.0,
-        num_scenarios=102,
-        adverse_problem="SPNI",
-    )
+    # Act: request more scenarios than the default training pool can support,
+    # capturing warnings.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        generator = _instantiate_generator(
+            SPNIAdverseDataGenerator,
+            cfg,
+            opt_model,
+            budget=2,
+            normalization_constant=1.0,
+            num_scenarios=102,
+            adverse_problem="SPNI",
+        )
 
     # Assert: defaults are retained and scenarios are capped at 101.
     assert generator.n_training_intds == 100, \
         "SPNI initialization did not keep the default training pool size."
     assert generator.num_scenarios == 101, \
         "SPNI initialization did not cap the scenario count correctly."
+    # Assert: a warning was emitted when scenarios were capped.
+    assert len(caught) >= 1, \
+        "Expected warning for scenario capping was not emitted."
     pass
 
 

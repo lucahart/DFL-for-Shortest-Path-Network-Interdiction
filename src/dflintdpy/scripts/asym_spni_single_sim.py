@@ -24,6 +24,14 @@ from dflintdpy.scripts.setup import (gen_data,
 
 def single_sim(cfg, visualize=False, compute_asym_intd_2=True, 
                compute_asym_intd=True):
+    def _nan_stats(values):
+        arr = np.asarray(values, dtype=float)
+        return float(np.nanmean(arr)), float(np.nanstd(arr))
+
+    def _nan_count(values):
+        arr = np.asarray(values, dtype=float)
+        return int(np.isnan(arr).sum())
+
     ############################
     ###### Set Parameters ######
     ############################
@@ -296,6 +304,37 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
     spo_std = np.array(spo_objs).std() * normalization_constant
     rand_spo_std = np.array(rand_spo_objs).std() * normalization_constant
     adv_spo_std = np.array(adv_spo_objs).std() * normalization_constant
+    no_pred_asym_mean, no_pred_asym_std = _nan_stats(no_pred_asym_intd)
+    no_pred_asym_oracle_mean, no_pred_asym_oracle_std = _nan_stats(
+        no_pred_asym_intd_oracle
+    )
+    po_asym_mean, po_asym_std = _nan_stats(po_pred_asym_intd_I)
+    po_asym_oracle_mean, po_asym_oracle_std = _nan_stats(
+        po_pred_asym_intd_I_oracle
+    )
+    spo_asym_mean, spo_asym_std = _nan_stats(spo_pred_asym_intd_I)
+    spo_asym_oracle_mean, spo_asym_oracle_std = _nan_stats(
+        spo_pred_asym_intd_I_oracle
+    )
+    rand_spo_asym_mean, rand_spo_asym_std = _nan_stats(
+        rand_spo_pred_asym_intd_I
+    )
+    rand_spo_asym_oracle_mean, rand_spo_asym_oracle_std = _nan_stats(
+        rand_spo_pred_asym_intd_I_oracle
+    )
+    adv_spo_asym_mean, adv_spo_asym_std = _nan_stats(
+        adv_spo_pred_asym_intd_I
+    )
+    adv_spo_asym_oracle_mean, adv_spo_asym_oracle_std = _nan_stats(
+        adv_spo_pred_asym_intd_I_oracle
+    )
+    asym_nan_counts = {
+        "oracle": _nan_count(no_pred_asym_intd),
+        "po": _nan_count(po_pred_asym_intd_I),
+        "spo": _nan_count(spo_pred_asym_intd_I),
+        "rand_spo": _nan_count(rand_spo_pred_asym_intd_I),
+        "adv_spo": _nan_count(adv_spo_pred_asym_intd_I),
+    }
     # Print the results in a table format
     table_headers = [
         "Predictor",
@@ -310,36 +349,45 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
             "Oracle", 
             f"{true_mean:.4f} +/- {true_std:.4f}", 
             f"{all_pred_sym_intd['true_objective'].mean():.4f} +/- {all_pred_sym_intd['true_objective'].std():.4f}", 
-            f"{no_pred_asym_intd.mean():.4f} +/- {no_pred_asym_intd.std():.4f}", 
-            f"{no_pred_asym_intd_oracle.mean():.4f} +/- {no_pred_asym_intd_oracle.std():.4f}", 
+            f"{no_pred_asym_mean:.4f} +/- {no_pred_asym_std:.4f}", 
+            f"{no_pred_asym_oracle_mean:.4f} +/- {no_pred_asym_oracle_std:.4f}", 
         ], [
             "PO", 
             f"{po_mean:.4f} +/- {po_std:.4f}",  
             f"{all_pred_sym_intd['po_objective'].mean():.4f} +/- {all_pred_sym_intd['po_objective'].std():.4f}", 
-            f"{po_pred_asym_intd_I.mean():.4f} +/- {po_pred_asym_intd_I.std():.4f}", 
-            f"{po_pred_asym_intd_I_oracle.mean():.4f} +/- {po_pred_asym_intd_I_oracle.std():.4f}", 
+            f"{po_asym_mean:.4f} +/- {po_asym_std:.4f}", 
+            f"{po_asym_oracle_mean:.4f} +/- {po_asym_oracle_std:.4f}", 
         ], [
             "SPO", 
             f"{spo_mean:.4f} +/- {spo_std:.4f}", 
             f"{all_pred_sym_intd['spo_objective'].mean():.4f} +/- {all_pred_sym_intd['spo_objective'].std():.4f}", 
-            f"{spo_pred_asym_intd_I.mean():.4f} +/- {spo_pred_asym_intd_I.std():.4f}", 
-            f"{spo_pred_asym_intd_I_oracle.mean():.4f} +/- {spo_pred_asym_intd_I_oracle.std():.4f}", 
+            f"{spo_asym_mean:.4f} +/- {spo_asym_std:.4f}", 
+            f"{spo_asym_oracle_mean:.4f} +/- {spo_asym_oracle_std:.4f}", 
         ], [
             "SPO rnd", 
             f"{rand_spo_mean:.4f} +/- {rand_spo_std:.4f}", 
             f"{all_pred_sym_intd['rand_adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['rand_adv_spo_objective'].std():.4f}", 
-            f"{rand_spo_pred_asym_intd_I.mean():.4f} +/- {rand_spo_pred_asym_intd_I.std():.4f}", 
-            f"{rand_spo_pred_asym_intd_I_oracle.mean():.4f} +/- {rand_spo_pred_asym_intd_I_oracle.std():.4f}", 
+            f"{rand_spo_asym_mean:.4f} +/- {rand_spo_asym_std:.4f}", 
+            f"{rand_spo_asym_oracle_mean:.4f} +/- {rand_spo_asym_oracle_std:.4f}", 
         ], [
             "SPO adv", 
             f"{adv_spo_mean:.4f} +/- {adv_spo_std:.4f}", 
             f"{all_pred_sym_intd['adv_spo_objective'].mean():.4f} +/- {all_pred_sym_intd['adv_spo_objective'].std():.4f}", 
-            f"{adv_spo_pred_asym_intd_I.mean():.4f} +/- {adv_spo_pred_asym_intd_I.std():.4f}", 
-            f"{adv_spo_pred_asym_intd_I_oracle.mean():.4f} +/- {adv_spo_pred_asym_intd_I_oracle.std():.4f}", 
+            f"{adv_spo_asym_mean:.4f} +/- {adv_spo_asym_std:.4f}", 
+            f"{adv_spo_asym_oracle_mean:.4f} +/- {adv_spo_asym_oracle_std:.4f}", 
         ]
     ]
     print(tabulate(rows, headers=table_headers, tablefmt="github"))
 
+    print("\n")
+    print(
+        "Asymmetric solve failures "
+        f"(NaN placeholders): Oracle={asym_nan_counts['oracle']}, "
+        f"PO={asym_nan_counts['po']}, "
+        f"SPO={asym_nan_counts['spo']}, "
+        f"SPO rnd={asym_nan_counts['rand_spo']}, "
+        f"SPO adv={asym_nan_counts['adv_spo']}"
+    )
     print("\n")
 
     if compute_asym_intd_2:
@@ -444,43 +492,48 @@ def single_sim(cfg, visualize=False, compute_asym_intd_2=True,
         "metric_3" : po_mean - adv_spo_mean,
         "metric_4" : all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['rand_adv_spo_objective'].mean(),
         "metric_5" : all_pred_sym_intd['po_objective'].mean() - all_pred_sym_intd['adv_spo_objective'].mean(),
-        "metric_6" : po_pred_asym_intd_I.mean() - rand_spo_pred_asym_intd_I.mean(),
-        "metric_7" : po_pred_asym_intd_I.mean() - adv_spo_pred_asym_intd_I.mean(),
+        "metric_6" : po_asym_mean - rand_spo_asym_mean,
+        "metric_7" : po_asym_mean - adv_spo_asym_mean,
         "metric_8" : (
             true_po_false_spo_asym_intd.mean() - all_pred_sym_intd['adv_spo_objective'].mean()
             if compute_asym_intd_2 else None
-        )
+        ),
+        "asym_nan_rows_oracle" : asym_nan_counts["oracle"],
+        "asym_nan_rows_po" : asym_nan_counts["po"],
+        "asym_nan_rows_spo" : asym_nan_counts["spo"],
+        "asym_nan_rows_rand_spo" : asym_nan_counts["rand_spo"],
+        "asym_nan_rows_adv_spo" : asym_nan_counts["adv_spo"],
     }
 
     table_1 = {
         "t1_o_n_mean" : true_mean,
         "t1_o_s_mean" : all_pred_sym_intd['true_objective'].mean(),
         "t1_o_s_std" : all_pred_sym_intd['true_objective'].std(),
-        "t1_o_a_mean" : no_pred_asym_intd.mean(),
-        "t1_o_a_std" : no_pred_asym_intd.std(),
+        "t1_o_a_mean" : no_pred_asym_mean,
+        "t1_o_a_std" : no_pred_asym_std,
 
         "t1_p_n_mean" : po_mean,
         "t1_p_s_mean" : all_pred_sym_intd['po_objective'].mean(),
         "t1_p_s_std" : all_pred_sym_intd['po_objective'].std(),
-        "t1_p_a_mean" : po_pred_asym_intd_I.mean(),
-        "t1_p_a_std" : po_pred_asym_intd_I.std(),
+        "t1_p_a_mean" : po_asym_mean,
+        "t1_p_a_std" : po_asym_std,
 
         "t1_s_n_mean" : spo_mean,
         "t1_s_s_mean" : all_pred_sym_intd['spo_objective'].mean(),
         "t1_s_s_std" : all_pred_sym_intd['spo_objective'].std(),
-        "t1_s_a_mean" : spo_pred_asym_intd_I.mean(),
-        "t1_s_a_std" : spo_pred_asym_intd_I.std(),
+        "t1_s_a_mean" : spo_asym_mean,
+        "t1_s_a_std" : spo_asym_std,
 
         "t1_r_n_mean" : rand_spo_mean,
         "t1_r_s_mean" : all_pred_sym_intd['rand_adv_spo_objective'].mean(),
         "t1_r_s_std" : all_pred_sym_intd['rand_adv_spo_objective'].std(),
-        "t1_r_a_mean" : rand_spo_pred_asym_intd_I.mean(),
-        "t1_r_a_std" : rand_spo_pred_asym_intd_I.std(),
+        "t1_r_a_mean" : rand_spo_asym_mean,
+        "t1_r_a_std" : rand_spo_asym_std,
         "t1_a_n_mean" : adv_spo_mean,
         "t1_a_s_mean" : all_pred_sym_intd['adv_spo_objective'].mean(),
         "t1_a_s_std" : all_pred_sym_intd['adv_spo_objective'].std(),
-        "t1_a_a_mean" : adv_spo_pred_asym_intd_I.mean(),
-        "t1_a_a_std" : adv_spo_pred_asym_intd_I.std()
+        "t1_a_a_mean" : adv_spo_asym_mean,
+        "t1_a_a_std" : adv_spo_asym_std
     }
 
     table_2 = {

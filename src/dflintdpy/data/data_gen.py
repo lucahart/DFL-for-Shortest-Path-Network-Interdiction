@@ -19,6 +19,8 @@ def gen_syn_data(cfg: HP, opt_model: ShortestPathGrb=None, seed: int=None):
 
     The generated data will use opt_model to determine the # of edges.
     """
+    resolved_seed = cfg.get("random_seed") if seed is None else seed
+
     if opt_model is not None:
         features, costs = genData(
             cfg.get("num_train_samples") + cfg.get("num_val_samples") + cfg.get("num_test_samples"), 
@@ -26,7 +28,7 @@ def gen_syn_data(cfg: HP, opt_model: ShortestPathGrb=None, seed: int=None):
             (1, opt_model.num_cost+1), 
             deg=cfg.get("deg"), 
             noise_width=cfg.get("noise_width"), 
-            seed=cfg.get("random_seed")
+            seed=resolved_seed
         )
     else:
         features, costs = genData(
@@ -35,8 +37,7 @@ def gen_syn_data(cfg: HP, opt_model: ShortestPathGrb=None, seed: int=None):
             cfg.get("grid_size"), 
             deg=cfg.get("deg"), 
             noise_width=cfg.get("noise_width"), 
-            seed=cfg.get("random_seed") if seed is None else seed
+            seed=resolved_seed
         )
 
     return features, costs
-
