@@ -17,6 +17,8 @@ class BaseTrainer(ABC):
     """Shared training loop for predictive and decision-focused trainers."""
 
     LOSS_INCREASE_THRESHOLD = 0.10
+    LR_REDUCTION_FACTOR = 0.5
+    LR_REDUCTION_PATIENCE = 3
 
     device: torch.device
     pred_model: torch.nn.Module
@@ -145,6 +147,7 @@ class BaseTrainer(ABC):
         val_regret_vector: Optional[list[float]] = None
         best_val_loss: Optional[float] = None
         best_model_state: Optional[dict[str, torch.Tensor]] = None
+        epochs_since_best_val = 0
 
         if val_loader is not None:
             val_loss, val_regret = self.evaluate(val_loader)
@@ -176,16 +179,23 @@ class BaseTrainer(ABC):
                 if best_val_loss is None or val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_model_state = self._snapshot_model_state()
+                    epochs_since_best_val = 0
+                else:
+                    epochs_since_best_val += 1
 
                 if (
                     best_val_loss is not None
-                    and train_loss - best_val_loss
+                    and epochs_since_best_val >= self.LR_REDUCTION_PATIENCE
+                    and val_loss - best_val_loss
                     > self.LOSS_INCREASE_THRESHOLD * best_val_loss
                 ):
-                    self.optimizer.param_groups[0]["lr"] *= 0.5
+                    self.optimizer.param_groups[0]["lr"] *= (
+                        self.LR_REDUCTION_FACTOR
+                    )
+                    epochs_since_best_val = 0
                     print(
                         f"Epoch {epoch:02d} | "
-                        "Increase in training loss detected. "
+                        "Validation loss stayed above the best observed loss. "
                         "Reducing learning rate to "
                         f"{self.optimizer.param_groups[0]['lr']:.2e}"
                     )

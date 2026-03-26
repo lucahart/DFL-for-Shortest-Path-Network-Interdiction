@@ -567,6 +567,114 @@ def test_pfl_trainer_fit_tracks_validation_loss_every_epoch_and_regret_on_loggin
     pass
 
 
+def test_pfl_trainer_fit_keeps_lr_when_validation_loss_improves(
+    scalar_model: "_ScalarModel",
+    optimizer: torch.optim.Optimizer,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that an improving validation loss does not trigger LR decay."""
+    # Arrange deterministic train and validation loaders.
+    train_loader = _make_pfl_loader(cost_value=2.0)
+    train_loader.tag = "train"
+    val_loader = _make_pfl_loader(cost_value=2.0)
+    val_loader.tag = "val"
+    trainer = PFLTrainer(
+        pred_model=scalar_model,
+        opt_model=SimpleNamespace(),
+        optimizer=optimizer,
+        loss_fn=nn.MSELoss(),
+    )
+
+    def fake_evaluate(self, loader):
+        """Return the initial train and validation losses."""
+        del self
+        if loader.tag == "train":
+            return 2.0, 0.0
+        return 1.0, 0.0
+
+    val_losses = iter([0.9, 0.8])
+
+    def fake_evaluate_loss(self, loader):
+        """Return an improving validation-loss trajectory."""
+        del self
+        assert loader.tag == "val", \
+            "Validation-loss hook received the wrong loader."
+        return next(val_losses)
+
+    monkeypatch.setattr(PFLTrainer, "evaluate", fake_evaluate)
+    monkeypatch.setattr(PFLTrainer, "train_epoch", lambda self, loader: 2.0)
+    monkeypatch.setattr(PFLTrainer, "_evaluate_loss", fake_evaluate_loss)
+    monkeypatch.setattr(PFLTrainer, "_compute_regret", lambda self, loader: 0.0)
+    monkeypatch.setattr(
+        PFLTrainer,
+        "_print_epoch_metrics",
+        lambda self, epoch, train_loss, train_regret, val_loss=None,
+        val_regret=None: None,
+    )
+
+    # Act by fitting for two epochs with a persistent train/val loss gap.
+    trainer.fit(train_loader, val_loader=val_loader, epochs=2, n_epochs=1)
+
+    # Assert that LR stayed fixed because validation kept improving.
+    assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.25), (
+        "PFLTrainer reduced the LR even though validation loss improved."
+    )
+    pass
+
+
+def test_pfl_trainer_fit_waits_for_patience_before_reducing_lr(
+    scalar_model: "_ScalarModel",
+    optimizer: torch.optim.Optimizer,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that LR reduction waits for repeated validation deterioration."""
+    # Arrange deterministic train and validation loaders.
+    train_loader = _make_pfl_loader(cost_value=2.0)
+    train_loader.tag = "train"
+    val_loader = _make_pfl_loader(cost_value=2.0)
+    val_loader.tag = "val"
+    trainer = PFLTrainer(
+        pred_model=scalar_model,
+        opt_model=SimpleNamespace(),
+        optimizer=optimizer,
+        loss_fn=nn.MSELoss(),
+    )
+
+    def fake_evaluate(self, loader):
+        """Return matching initial losses for both loaders."""
+        del self, loader
+        return 1.0, 0.0
+
+    val_losses = iter([1.12, 1.14, 1.13])
+
+    def fake_evaluate_loss(self, loader):
+        """Return a sustained validation-loss deterioration."""
+        del self
+        assert loader.tag == "val", \
+            "Validation-loss hook received the wrong loader."
+        return next(val_losses)
+
+    monkeypatch.setattr(PFLTrainer, "evaluate", fake_evaluate)
+    monkeypatch.setattr(PFLTrainer, "train_epoch", lambda self, loader: 1.0)
+    monkeypatch.setattr(PFLTrainer, "_evaluate_loss", fake_evaluate_loss)
+    monkeypatch.setattr(PFLTrainer, "_compute_regret", lambda self, loader: 0.0)
+    monkeypatch.setattr(
+        PFLTrainer,
+        "_print_epoch_metrics",
+        lambda self, epoch, train_loss, train_regret, val_loss=None,
+        val_regret=None: None,
+    )
+
+    # Act by fitting for exactly the patience horizon.
+    trainer.fit(train_loader, val_loader=val_loader, epochs=3, n_epochs=1)
+
+    # Assert that LR was reduced exactly once after the patience window.
+    assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.125), (
+        "PFLTrainer did not wait for patience before reducing LR."
+    )
+    pass
+
+
 ###############################
 ### test dfl_trainer_fit ###
 ###############################
