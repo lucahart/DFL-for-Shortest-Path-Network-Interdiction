@@ -124,17 +124,17 @@ Completed in:
 
 ## Phase 4: Assemble Datasets and Loader Views
 
-- [ ] Implement `generate_base_data(...)` in
+- [x] Implement `generate_base_data(...)` in
   `src/dflintdpy/simulation/spni/data.py`.
-- [ ] Implement `split_base_data(...)`.
-- [ ] Implement `build_spni_training_data(...)`.
-- [ ] Implement `build_nonadverse_views(...)`.
-- [ ] Implement `assemble_dataset_bundle(...)`.
-- [ ] Add unit tests for split counts and shape expectations.
-- [ ] Add unit tests for normalization handling.
-- [ ] Add unit tests for presence of adversarial, random, and baseline
+- [x] Implement `split_base_data(...)`.
+- [x] Implement `build_spni_training_data(...)`.
+- [x] Implement `build_nonadverse_views(...)`.
+- [x] Implement `assemble_dataset_bundle(...)`.
+- [x] Add unit tests for split counts and shape expectations.
+- [x] Add unit tests for normalization handling.
+- [x] Add unit tests for presence of adversarial, random, and baseline
   loaders.
-- [ ] Add unit tests for evaluation interdiction generation.
+- [x] Add unit tests for evaluation interdiction generation.
 
 Implementation notes:
 - Wrap the current `gen_syn_data`, `SPNIAdverseDataGenerator`, `AdvDataset`,
@@ -145,6 +145,10 @@ Implementation notes:
 Exit criteria:
 - The data stage can provide every loader and array needed by training and
   evaluation.
+
+Completed in:
+- `src/dflintdpy/simulation/spni/data.py`
+- `tests/unit/simulation/spni/test_data.py`
 
 ---
 
