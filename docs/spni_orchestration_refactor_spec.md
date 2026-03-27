@@ -221,6 +221,7 @@ Required fields:
 - `num_train_samples`
 - `num_val_samples`
 - `num_test_samples`
+- `batch_size`
 - `budget`
 - `num_scenarios`
 - `deg`
@@ -573,4 +574,3 @@ Future role:
 Future role:
 - either migrated into `evaluate.py` or kept as an internal low-level helper
   behind typed wrappers
-

@@ -42,17 +42,17 @@ Exit criteria:
 
 ## Phase 1: Implement Config Normalization
 
-- [ ] Implement `CachePolicy` in
+- [x] Implement `CachePolicy` in
   `src/dflintdpy/simulation/spni/config.py`.
-- [ ] Implement `SeedBundle` in
+- [x] Implement `SeedBundle` in
   `src/dflintdpy/simulation/spni/config.py`.
-- [ ] Implement `SPNIRunConfig` in
+- [x] Implement `SPNIRunConfig` in
   `src/dflintdpy/simulation/spni/config.py`.
-- [ ] Implement `build_run_config(...)`.
-- [ ] Implement `derive_seed_bundle(...)`.
-- [ ] Implement `derive_seed_sweep(...)`.
-- [ ] Implement `describe_run(...)`.
-- [ ] Add unit tests for config normalization and seed determinism.
+- [x] Implement `build_run_config(...)`.
+- [x] Implement `derive_seed_bundle(...)`.
+- [x] Implement `derive_seed_sweep(...)`.
+- [x] Implement `describe_run(...)`.
+- [x] Add unit tests for config normalization and seed determinism.
 
 Implementation notes:
 - Read from the current `HP` object.
@@ -63,6 +63,10 @@ Implementation notes:
 Exit criteria:
 - A legacy `HP` can be converted into a validated `SPNIRunConfig`.
 - Seed derivation is deterministic and test-covered.
+
+Completed in:
+- `src/dflintdpy/simulation/spni/config.py`
+- `tests/unit/simulation/spni/test_config.py`
 
 ---
 
