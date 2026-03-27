@@ -18,19 +18,21 @@ Reference documents:
 
 ## Phase 0: Freeze Current Behavior
 
-- [ ] Record the current SPNI entrypoints and their responsibilities.
-- [ ] Record the current output structures from:
+- [x] Record the current SPNI entrypoints and their responsibilities.
+- [x] Record the current output structures from:
   - `src/dflintdpy/scripts/asym_spni_single_sim.py`
   - `src/dflintdpy/scripts/Asym_SPNI_Simulator.py`
   - `src/dflintdpy/scripts/setup.py`
   - `src/dflintdpy/scripts/compare.py`
-- [ ] Confirm the current regression repros still pass as expected.
-- [ ] Treat `src/dflintdpy/simulation/spni/` as the target architecture.
+- [x] Confirm the current regression repros still pass as expected.
+- [x] Treat `src/dflintdpy/simulation/spni/` as the target architecture.
 
 Implementation notes:
 - Do not move code yet.
 - This phase is only about making the current behavior explicit before
   introducing refactor steps.
+- Baseline document:
+  - `docs/spni_phase0_baseline.md`
 
 Exit criteria:
 - Current behavior is documented well enough to compare against the new
@@ -357,4 +359,3 @@ Suggested order:
 
 This order keeps the refactor incremental and minimizes the risk of breaking
 the current SPNI simulation workflow before the replacement pipeline is ready.
-
