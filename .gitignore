@@ -31,3 +31,6 @@ figures/*
 
 # Codex
 .codex/
+
+# Test launcher
+test_launcher.py
