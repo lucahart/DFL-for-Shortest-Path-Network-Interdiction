@@ -23,7 +23,7 @@ class HP:
     loader_seed : int = 17
 
     # Interdiction parameters
-    budget : int = 10
+    budget : int = 3
     num_scenarios : int = 10
 
     benders_max_count : int = 100
