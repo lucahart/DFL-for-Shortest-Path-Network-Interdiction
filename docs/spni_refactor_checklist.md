@@ -72,17 +72,17 @@ Completed in:
 
 ## Phase 2: Finalize Typed Stage Artifacts
 
-- [ ] Implement `GraphBundle` in
+- [x] Implement `GraphBundle` in
   `src/dflintdpy/simulation/spni/types.py`.
-- [ ] Implement `DatasetBundle`.
-- [ ] Implement `TrainingLogBundle`.
-- [ ] Implement `PredictorBundle`.
-- [ ] Implement `EvaluationBundle`.
-- [ ] Implement `SummaryBundle`.
-- [ ] Implement `SimulationArtifacts`.
-- [ ] Implement `SimulationResult`.
-- [ ] Implement `SweepResult`.
-- [ ] Add unit tests that instantiate each dataclass with lightweight stubs.
+- [x] Implement `DatasetBundle`.
+- [x] Implement `TrainingLogBundle`.
+- [x] Implement `PredictorBundle`.
+- [x] Implement `EvaluationBundle`.
+- [x] Implement `SummaryBundle`.
+- [x] Implement `SimulationArtifacts`.
+- [x] Implement `SimulationResult`.
+- [x] Implement `SweepResult`.
+- [x] Add unit tests that instantiate each dataclass with lightweight stubs.
 
 Implementation notes:
 - Keep field names stable and explicit.
@@ -92,17 +92,22 @@ Implementation notes:
 Exit criteria:
 - Each pipeline stage has a concrete typed output target.
 
+Completed in:
+- `src/dflintdpy/simulation/spni/types.py`
+- `src/dflintdpy/simulation/spni/__init__.py`
+- `tests/unit/simulation/spni/test_types.py`
+
 ---
 
 ## Phase 3: Build Graph and Optimization Model
 
-- [ ] Implement `build_graph(...)` in
+- [x] Implement `build_graph(...)` in
   `src/dflintdpy/simulation/spni/build.py`.
-- [ ] Implement `build_opt_model(...)`.
-- [ ] Implement `build_problem_bundle(...)`.
-- [ ] Add unit tests for synthetic-grid creation.
-- [ ] Add unit tests for optional real-world graph import.
-- [ ] Add unit tests for graph-bundle metadata.
+- [x] Implement `build_opt_model(...)`.
+- [x] Implement `build_problem_bundle(...)`.
+- [x] Add unit tests for synthetic-grid creation.
+- [x] Add unit tests for optional real-world graph import.
+- [x] Add unit tests for graph-bundle metadata.
 
 Implementation notes:
 - Use the existing `Grid`, `ShortestPathGrb`, and real-world CSV helper.
@@ -110,6 +115,10 @@ Implementation notes:
 
 Exit criteria:
 - One stage builds all graph-facing objects for a run.
+
+Completed in:
+- `src/dflintdpy/simulation/spni/build.py`
+- `tests/unit/simulation/spni/test_build.py`
 
 ---
 

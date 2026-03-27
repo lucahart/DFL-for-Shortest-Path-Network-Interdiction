@@ -12,6 +12,8 @@ from typing import Any
 
 from dflintdpy.simulation.spni.config import SPNIRunConfig, SeedBundle
 
+DiagnosticMap = dict[str, Any]
+
 
 @dataclass
 class GraphBundle:
@@ -27,6 +29,24 @@ class GraphBundle:
     opt_model: Any
     graph_kind: str
     graph_source: str | None = None
+    diagnostics: DiagnosticMap = field(default_factory=dict)
+
+
+@dataclass
+class InterdictionSampleBundle:
+    """Sample-aligned interdiction inputs prepared for one evaluation stage.
+
+    Responsibilities:
+    - keep evaluation samples grouped in one stable object
+    - preserve optional sample indexing for row flattening and debugging
+    - expose generation diagnostics without binding to solver behavior
+    """
+
+    features: Any
+    costs: Any
+    interdictions: Any
+    sample_indices: Any | None = None
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -52,7 +72,7 @@ class DatasetBundle:
     normalization_constant: float
     data_generator_adversarial: Any | None = None
     data_generator_random: Any | None = None
-    diagnostics: dict[str, Any] = field(default_factory=dict)
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -84,7 +104,7 @@ class PredictorBundle:
     rdfl: Any
     adfl: Any
     logs: dict[str, TrainingLogBundle] = field(default_factory=dict)
-    diagnostics: dict[str, Any] = field(default_factory=dict)
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -101,7 +121,7 @@ class EvaluationBundle:
     symmetric: dict[str, Any]
     asymmetric: dict[str, Any]
     wrong_model_asymmetry: dict[str, Any]
-    diagnostics: dict[str, Any] = field(default_factory=dict)
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -118,6 +138,7 @@ class SummaryBundle:
     table_1: dict[str, Any]
     table_2: dict[str, Any]
     all_data: dict[str, Any]
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -132,6 +153,7 @@ class SimulationArtifacts:
     predictor_paths: dict[str, str] = field(default_factory=dict)
     result_path: str | None = None
     figure_paths: dict[str, str] = field(default_factory=dict)
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -151,6 +173,7 @@ class SimulationResult:
     evaluation_bundle: EvaluationBundle
     summary_bundle: SummaryBundle
     artifacts: SimulationArtifacts = field(default_factory=SimulationArtifacts)
+    diagnostics: DiagnosticMap = field(default_factory=dict)
 
 
 @dataclass
@@ -165,4 +188,4 @@ class SweepResult:
     run_config: SPNIRunConfig
     results: list[SimulationResult]
     aggregated_summary: dict[str, Any] = field(default_factory=dict)
-
+    diagnostics: DiagnosticMap = field(default_factory=dict)

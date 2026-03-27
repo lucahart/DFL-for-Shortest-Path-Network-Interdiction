@@ -18,7 +18,9 @@ from dflintdpy.simulation.spni.types import (
     DatasetBundle,
     EvaluationBundle,
     GraphBundle,
+    InterdictionSampleBundle,
     PredictorBundle,
+    SimulationArtifacts,
     SimulationResult,
     SummaryBundle,
     SweepResult,
@@ -30,9 +32,11 @@ __all__ = [
     "DatasetBundle",
     "EvaluationBundle",
     "GraphBundle",
+    "InterdictionSampleBundle",
     "PredictorBundle",
     "SPNIRunConfig",
     "SeedBundle",
+    "SimulationArtifacts",
     "SimulationResult",
     "SummaryBundle",
     "SweepResult",
@@ -40,4 +44,3 @@ __all__ = [
     "run_seed_sweep",
     "run_single_simulation",
 ]
-
