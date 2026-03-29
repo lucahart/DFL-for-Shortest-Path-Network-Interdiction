@@ -552,25 +552,50 @@ Core expectations:
 
 ## Script migration targets
 
+Compatibility entrypoint:
+- an existing script or function that keeps its current import path and
+  public callable shape for legacy callers
+- delegates the real work into the new typed pipeline or stage wrapper
+- may temporarily adapt a typed result back into the old dict/tuple return
+  structure
+- is not allowed to remain the owner of SPNI workflow assembly after
+  migration
+
+Target ownership split:
+- `simulation/spni/pipeline.py` becomes the owner of single-run and sweep
+  orchestration
+- legacy scripts remain only as temporary front doors for compatibility
+  until downstream callers are migrated
+- lower-level legacy helpers may remain behind typed wrappers when rewriting
+  them is out of scope for this refactor
+
 ### Current `scripts/asym_spni_single_sim.py`
 
 Future role:
-- thin wrapper around `run_single_simulation`
+- compatibility entrypoint around `run_single_simulation`
+- keeps `single_sim(...)` available for current callers during migration
+- no longer owns graph construction, data assembly, predictor training,
+  evaluation, or summary assembly
 
 ### Current `scripts/Asym_SPNI_Simulator.py`
 
 Future role:
-- thin wrapper around `run_seed_sweep`
+- compatibility entrypoint around `run_seed_sweep`
 - optional persistence and analysis entrypoint
+- no longer owns seed-loop business logic or per-run workflow assembly
 
 ### Current `scripts/setup.py`
 
 Future role:
 - either deprecated or reduced to compatibility wrappers that call
   `simulation/spni/data.py` and `simulation/spni/train.py`
+- if retained, it should stop being the public owner of SPNI data/training
+  orchestration and only forward into the new stage modules
 
 ### Current `scripts/compare.py`
 
 Future role:
 - either migrated into `evaluate.py` or kept as an internal low-level helper
   behind typed wrappers
+- if retained, it should stop being the public owner of SPNI evaluation
+  orchestration

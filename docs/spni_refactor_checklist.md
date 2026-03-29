@@ -273,6 +273,8 @@ Exit criteria:
 Implementation notes:
 - Do not break current callers during this phase.
 - The wrapper may adapt a `SimulationResult` back to the old tuple shape.
+- After this phase, `asym_spni_single_sim.py` remains only as a compatibility
+  entrypoint and is no longer the owner of SPNI single-run orchestration.
 
 Exit criteria:
 - The legacy single-run entrypoint delegates to the new pipeline.
@@ -290,6 +292,8 @@ Exit criteria:
 
 Implementation notes:
 - The script should stop owning business logic after this phase.
+- `Asym_SPNI_Simulator.py` may still persist results or trigger analysis, but
+  the sweep loop itself should delegate to `run_seed_sweep(...)`.
 
 Exit criteria:
 - The legacy sweep script becomes a thin entrypoint.
@@ -306,6 +310,8 @@ Exit criteria:
 
 Implementation notes:
 - This phase removes the last large mixed-responsibility orchestration file.
+- Remaining functions in `setup.py` are compatibility helpers only; they are
+  not the target long-term owner of SPNI stage orchestration.
 
 Exit criteria:
 - `setup.py` is no longer the owner of core SPNI workflow assembly.
