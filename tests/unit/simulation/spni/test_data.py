@@ -287,9 +287,9 @@ def test_spni_data_split_base_data_returns_exact_counts_and_normalization(
         "split_base_data should allocate exactly num_train_samples to train."
     assert split_data.val_indices.shape == (2,), \
         "split_base_data should allocate exactly num_val_samples to val."
-    assert np.isclose(split_data.trainval_costs.max(), 24.0 / 27.0), \
+    assert np.isclose(split_data.trainval_costs.max(), 1.0), \
         "split_base_data should normalize train+val costs by the max cost."
-    assert np.isclose(split_data.test_costs.max(), 1.0), \
+    assert np.isclose(split_data.test_costs.max(), 18/27), \
         "split_base_data should normalize test costs by the same constant."
     assert split_data.diagnostics["train_count"] == run_cfg.num_train_samples, \
         "split diagnostics should record the exact training count."
