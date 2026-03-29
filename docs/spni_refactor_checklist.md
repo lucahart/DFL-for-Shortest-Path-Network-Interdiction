@@ -154,14 +154,14 @@ Completed in:
 
 ## Phase 5: Train All Predictor Families
 
-- [ ] Implement `train_pfl_predictor(...)` in
+- [x] Implement `train_pfl_predictor(...)` in
   `src/dflintdpy/simulation/spni/train.py`.
-- [ ] Implement `train_dfl_predictor(...)`.
-- [ ] Implement `train_all_predictors(...)`.
-- [ ] Add unit tests that monkeypatch current predictor setup helpers.
-- [ ] Verify cache tags are assigned consistently for PFL, DFL, R-DFL, and
+- [x] Implement `train_dfl_predictor(...)`.
+- [x] Implement `train_all_predictors(...)`.
+- [x] Add unit tests that monkeypatch current predictor setup helpers.
+- [x] Verify cache tags are assigned consistently for PFL, DFL, R-DFL, and
   A-DFL.
-- [ ] Verify training-log bundles are captured for each predictor family.
+- [x] Verify training-log bundles are captured for each predictor family.
 
 Implementation notes:
 - Reuse the existing predictor setup helpers instead of rewriting their
@@ -172,21 +172,25 @@ Exit criteria:
 - One function returns a full `PredictorBundle` with four model families and
   logs.
 
+Completed in:
+- `src/dflintdpy/simulation/spni/train.py`
+- `tests/unit/simulation/spni/test_train.py`
+
 ---
 
 ## Phase 6: Implement Evaluation Stage Wrappers
 
-- [ ] Implement `evaluate_uninterdicted(...)` in
+- [x] Implement `evaluate_uninterdicted(...)` in
   `src/dflintdpy/simulation/spni/evaluate.py`.
-- [ ] Implement `evaluate_symmetric_interdiction(...)`.
-- [ ] Implement `evaluate_asymmetric_interdiction(...)`.
-- [ ] Implement `evaluate_wrong_model_asymmetry(...)`.
-- [ ] Implement `evaluate_all(...)`.
-- [ ] Add unit tests for uninterdicted evaluation alignment.
-- [ ] Add unit tests for symmetric evaluation alignment.
-- [ ] Add unit tests for asymmetric evaluation failure handling.
-- [ ] Add unit tests for wrong-model asymmetry enable/disable behavior.
-- [ ] Add unit tests for evaluation diagnostics.
+- [x] Implement `evaluate_symmetric_interdiction(...)`.
+- [x] Implement `evaluate_asymmetric_interdiction(...)`.
+- [x] Implement `evaluate_wrong_model_asymmetry(...)`.
+- [x] Implement `evaluate_all(...)`.
+- [x] Add unit tests for uninterdicted evaluation alignment.
+- [x] Add unit tests for symmetric evaluation alignment.
+- [x] Add unit tests for asymmetric evaluation failure handling.
+- [x] Add unit tests for wrong-model asymmetry enable/disable behavior.
+- [x] Add unit tests for evaluation diagnostics.
 
 Implementation notes:
 - Wrap the current comparison helpers rather than duplicating solver logic.
@@ -195,6 +199,10 @@ Implementation notes:
 
 Exit criteria:
 - All evaluation families are stage-isolated and testable.
+
+Completed in:
+- `src/dflintdpy/simulation/spni/evaluate.py`
+- `tests/unit/simulation/spni/test_evaluate.py`
 
 ---
 
