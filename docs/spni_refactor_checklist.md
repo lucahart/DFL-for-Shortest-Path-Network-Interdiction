@@ -234,9 +234,9 @@ Completed in:
 
 ## Phase 8: Implement Single-Run Pipeline
 
-- [ ] Implement `run_single_simulation(...)` in
+- [x] Implement `run_single_simulation(...)` in
   `src/dflintdpy/simulation/spni/pipeline.py`.
-- [ ] Wire the stages in order:
+- [x] Wire the stages in order:
   - config
   - seed derivation
   - graph/model build
@@ -244,8 +244,8 @@ Completed in:
   - predictor training/loading
   - evaluation
   - summary construction
-- [ ] Return a full `SimulationResult`.
-- [ ] Add unit tests that verify stage call order and argument flow.
+- [x] Return a full `SimulationResult`.
+- [x] Add unit tests that verify stage call order and argument flow.
 
 Implementation notes:
 - This becomes the authoritative single-run orchestration entrypoint.
@@ -255,16 +255,20 @@ Exit criteria:
 - A single function can execute the full SPNI run without relying on the
   legacy scripts.
 
+Completed in:
+- `src/dflintdpy/simulation/spni/pipeline.py`
+- `tests/unit/simulation/spni/test_pipeline.py`
+
 ---
 
 ## Phase 9: Implement Multi-Seed Sweep Pipeline
 
-- [ ] Implement `run_seed_sweep(...)` in
+- [x] Implement `run_seed_sweep(...)` in
   `src/dflintdpy/simulation/spni/pipeline.py`.
-- [ ] Use `derive_seed_sweep(...)` for run ordering.
-- [ ] Return a `SweepResult`.
-- [ ] Aggregate sweep-level summaries.
-- [ ] Add smoke tests for tiny 2-seed sweeps.
+- [x] Use `derive_seed_sweep(...)` for run ordering.
+- [x] Return a `SweepResult`.
+- [x] Aggregate sweep-level summaries.
+- [x] Add smoke tests for tiny 2-seed sweeps.
 
 Implementation notes:
 - Keep run ordering stable for aggregation and CSV output.
@@ -272,6 +276,11 @@ Implementation notes:
 
 Exit criteria:
 - The multi-seed sweep exists as a real pipeline API instead of a script body.
+
+Completed in:
+- `src/dflintdpy/simulation/spni/pipeline.py`
+- `tests/integration/simulation/spni/test_single_run_smoke.py`
+- `tests/integration/simulation/spni/test_seed_sweep_smoke.py`
 
 ---
 
