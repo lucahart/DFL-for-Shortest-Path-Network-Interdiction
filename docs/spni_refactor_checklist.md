@@ -208,15 +208,15 @@ Completed in:
 
 ## Phase 7: Implement Summary and Export Adapters
 
-- [ ] Implement `build_summary(...)` in
+- [x] Implement `build_summary(...)` in
   `src/dflintdpy/simulation/spni/results.py`.
-- [ ] Implement `to_legacy_all_data(...)`.
-- [ ] Implement `flatten_result_rows(...)`.
-- [ ] Implement `aggregate_sweep_results(...)`.
-- [ ] Add unit tests for summary metric derivation.
-- [ ] Add unit tests for legacy `all_data` compatibility.
-- [ ] Add unit tests for row flattening and index preservation.
-- [ ] Add unit tests for safe divide-by-zero handling.
+- [x] Implement `to_legacy_all_data(...)`.
+- [x] Implement `flatten_result_rows(...)`.
+- [x] Implement `aggregate_sweep_results(...)`.
+- [x] Add unit tests for summary metric derivation.
+- [x] Add unit tests for legacy `all_data` compatibility.
+- [x] Add unit tests for row flattening and index preservation.
+- [x] Add unit tests for safe divide-by-zero handling.
 
 Implementation notes:
 - Centralize all legacy column naming here.
@@ -225,6 +225,10 @@ Implementation notes:
 Exit criteria:
 - One module owns translation from raw evaluation outputs to summary and
   export formats.
+
+Completed in:
+- `src/dflintdpy/simulation/spni/results.py`
+- `tests/unit/simulation/spni/test_results.py`
 
 ---
 
