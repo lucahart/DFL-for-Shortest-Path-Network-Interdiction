@@ -286,10 +286,10 @@ Completed in:
 
 ## Phase 10: Migrate `asym_spni_single_sim.py`
 
-- [ ] Replace the current script body with a thin compatibility wrapper around
+- [x] Replace the current script body with a thin compatibility wrapper around
   `run_single_simulation(...)`.
-- [ ] Preserve the current public return shape temporarily.
-- [ ] Add compatibility tests for returned values and structure.
+- [x] Preserve the current public return shape temporarily.
+- [x] Add compatibility tests for returned values and structure.
 
 Implementation notes:
 - Do not break current callers during this phase.
@@ -299,6 +299,10 @@ Implementation notes:
 
 Exit criteria:
 - The legacy single-run entrypoint delegates to the new pipeline.
+
+Completed in:
+- `src/dflintdpy/scripts/asym_spni_single_sim.py`
+- `tests/unit/scripts/test_asym_spni_single_sim.py`
 
 ---
 
