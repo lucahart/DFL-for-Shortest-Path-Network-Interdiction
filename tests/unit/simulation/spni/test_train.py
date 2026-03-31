@@ -10,6 +10,7 @@ from dflintdpy.simulation.spni.types import (
     PredictorBundle,
     TrainingLogBundle,
 )
+from dflintdpy.utils.read_write import _unique_pred_hash
 
 import dflintdpy.simulation.spni.train as train_module
 
@@ -107,6 +108,24 @@ def _predictor_stub(tag: str) -> SimpleNamespace:
     return SimpleNamespace(tag=tag)
 
 
+def test_spni_train_legacy_config_adapter_exposes_hashable_pred_keys(run_cfg):
+    """Verify that the training adapter exposes keys needed for pred hashes."""
+    # Arrange a legacy config adapter for the predictor cache path.
+    cfg = train_module._LegacyConfigAdapter(run_cfg)
+
+    # Act by hashing the adapter with the PFL predictor key subset.
+    hash_value = _unique_pred_hash(cfg, artifact_tag="pfl")
+
+    # Assert that the adapter exposes the expected predictor fields.
+    assert isinstance(hash_value, str) and len(hash_value) == 64, \
+        "The training adapter should support non-empty predictor hashing."
+    assert cfg.num_features == run_cfg.num_features, \
+        "The adapter should expose normalized predictor settings as attributes."
+    assert cfg.lam == 0.0, \
+        "The adapter should also expose legacy base-config keys for helpers."
+    pass
+
+
 #################################
 ### test train_pfl_predictor ###
 #################################
@@ -186,6 +205,56 @@ def test_spni_train_train_pfl_predictor_delegates_to_legacy_helper(
         "PFL training should preserve the training loss curve."
     assert log_bundle.val_regret == [2.5, 1.5], \
         "PFL training should preserve the validation regret curve."
+    pass
+
+
+def test_spni_train_train_pfl_predictor_repairs_missing_read_cache(
+    monkeypatch,
+    run_cfg,
+    graph_bundle,
+    dataset_bundle,
+):
+    """Verify that the wrapper patches read_cache into the legacy setup module."""
+    # Arrange a legacy helper stub that expects read_cache to exist globally.
+    sentinel_predictor = _predictor_stub("pfl-cache")
+    monkeypatch.delattr(
+        train_module.legacy_setup_module,
+        "read_cache",
+        raising=False,
+    )
+
+    def _fake_setup_pfl_predictor(cfg, graph, opt_model, training_data, **kwargs):
+        assert train_module.legacy_setup_module.read_cache is \
+            train_module.read_cache, \
+            "The wrapper should repair setup.py with the shared read_cache."
+        return sentinel_predictor
+
+    def _fake_run_with_fit_capture(trainer_cls, runner):
+        return runner(), _training_log_bundle(), False
+
+    monkeypatch.setattr(
+        train_module.legacy_setup_module,
+        "setup_pfl_predictor",
+        _fake_setup_pfl_predictor,
+    )
+    monkeypatch.setattr(
+        train_module,
+        "_run_with_fit_capture",
+        _fake_run_with_fit_capture,
+    )
+
+    # Act by training through the compatibility wrapper.
+    predictor, log_bundle = train_module.train_pfl_predictor(
+        run_cfg,
+        graph_bundle,
+        dataset_bundle,
+    )
+
+    # Assert that the predictor path succeeds after the namespace repair.
+    assert predictor is sentinel_predictor, \
+        "The wrapper should still return the helper's predictor."
+    assert log_bundle.train_loss == [1.0, 0.5], \
+        "The repaired setup path should still return the captured logs."
     pass
 
 

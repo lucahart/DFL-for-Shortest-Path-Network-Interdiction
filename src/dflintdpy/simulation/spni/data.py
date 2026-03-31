@@ -1,12 +1,16 @@
 """Dataset assembly for SPNI simulations.
 
-This module should own all orchestration around:
-- base synthetic data generation
-- train/val/test splitting
-- adverse/random data creation
-- baseline non-adverse loader creation
+This module is responsible for turning a graph bundle plus a normalized run
+config into the exact loaders and arrays needed by the training and evaluation
+stages. It keeps the current legacy data-generation behavior intact, but makes
+the resulting artifacts explicit and testable.
 
-It must not train predictors or compute evaluation metrics.
+Responsibilities:
+- generate the base synthetic feature/cost arrays
+- split the data into train, validation, and test partitions
+- build adverse and random interdiction training views
+- derive baseline non-adverse loaders from the adverse loaders
+- prepare test-time interdiction arrays for evaluation
 """
 
 from __future__ import annotations
@@ -31,7 +35,11 @@ from dflintdpy.utils.read_write import CacheReplaceOptions
 
 @dataclass(frozen=True)
 class _BaseData:
-    """Internal raw-data payload before normalization or splitting."""
+    """Internal raw-data payload before normalization or splitting.
+
+    This structure is intentionally private because it reflects a staging
+    detail of the current data pipeline rather than a public package contract.
+    """
 
     features: Any
     costs: Any
@@ -40,7 +48,12 @@ class _BaseData:
 
 @dataclass(frozen=True)
 class _SplitData:
-    """Internal split payload preserving the legacy train/val/test flow."""
+    """Internal split payload preserving the legacy train/val/test flow.
+
+    The split stage records both the arrays and the train/validation index
+    vectors because later loaders are built from the fully-generated trainval
+    adverse dataset.
+    """
 
     trainval_features: Any
     trainval_costs: Any
@@ -54,7 +67,11 @@ class _SplitData:
 
 @dataclass(frozen=True)
 class _TrainingDataViews:
-    """Internal container for one SPNI loader family."""
+    """Internal container for one SPNI loader family.
+
+    Each family bundles the train loader, validation loader, and the generator
+    that produced their interdiction scenarios.
+    """
 
     train_loader: Any
     val_loader: Any
@@ -63,7 +80,12 @@ class _TrainingDataViews:
 
 
 class _LegacyConfigAdapter:
-    """Expose normalized run-config values through the legacy `.get(...)` API."""
+    """Expose normalized run-config values through the legacy ``.get(...)`` API.
+
+    The legacy data helpers expect config-like objects with a ``get`` method.
+    This adapter keeps the new normalized config as the primary source of
+    truth while still satisfying those helpers.
+    """
 
     def __init__(
         self,
@@ -71,11 +93,35 @@ class _LegacyConfigAdapter:
         *,
         overrides: Mapping[str, Any] | None = None,
     ):
+        base_cfg = run_cfg.base_cfg
+        public_values: dict[str, Any] = {}
+        if isinstance(base_cfg, Mapping):
+            public_values.update(dict(base_cfg))
+        elif hasattr(base_cfg, "__dict__"):
+            public_values.update(vars(base_cfg))
+
+        # Materialize normalized fields as real attributes so legacy helpers
+        # that inspect `vars(cfg)` or `cfg.__dict__` see the expected keys.
+        for field_name in run_cfg.__dataclass_fields__:
+            if field_name == "base_cfg":
+                continue
+            public_values[field_name] = getattr(run_cfg, field_name)
+
+        public_values.update(dict(overrides or {}))
+
         self._run_cfg = run_cfg
         self._overrides = dict(overrides or {})
+        self._public_values = public_values
+        self.__dict__.update(public_values)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Read one value using run-config fields before falling back."""
+        """Read one value using run-config fields before falling back.
+
+        The normalized run config wins over ``base_cfg`` so stage-local
+        overrides are always reflected in the helper calls.
+        """
+        if key in self._public_values:
+            return self._public_values[key]
         if key in self._overrides:
             return self._overrides[key]
         if hasattr(self._run_cfg, key):
@@ -91,7 +137,11 @@ class _LegacyConfigAdapter:
 
 
 def _build_cache_options(run_cfg: SPNIRunConfig) -> CacheReplaceOptions:
-    """Translate the orchestration cache policy into legacy cache options."""
+    """Translate the orchestration cache policy into legacy cache options.
+
+    This isolates the legacy cache object in one place instead of rebuilding it
+    independently in every helper call site.
+    """
 
     policy = run_cfg.cache_policy
     return CacheReplaceOptions(
@@ -110,7 +160,11 @@ def _build_legacy_cfg(
     *,
     random_seed: int | None = None,
 ) -> _LegacyConfigAdapter:
-    """Build a legacy-config adapter for current data helpers."""
+    """Build a legacy-config adapter for current data helpers.
+
+    Some calls need temporary per-stage overrides, such as swapping in the
+    interdiction seed for evaluation-time data generation.
+    """
 
     overrides: dict[str, Any] = {}
     if random_seed is not None:
@@ -126,6 +180,8 @@ def generate_base_data(run_cfg: SPNIRunConfig, graph_bundle: GraphBundle):
     - keep base data generation separate from splitting
     - return raw arrays in a small internal bundle or tuple
     """
+    # The existing synthetic data helper remains the source of truth for raw
+    # feature/cost generation. This stage simply wraps and documents its output.
     legacy_cfg = _build_legacy_cfg(run_cfg)
     features, costs = gen_syn_data(legacy_cfg, opt_model=graph_bundle.opt_model)
     return _BaseData(
@@ -148,9 +204,13 @@ def split_base_data(run_cfg: SPNIRunConfig, features, costs):
     - define and preserve sample ordering conventions
     - return a structured split result
     """
+    # Costs are normalized once here so every later stage works with the same
+    # scale and the original factor is preserved for reporting.
     normalization_constant = float(np.max(costs))
     normalized_costs = costs / normalization_constant
 
+    # The first split peels off the final test set. The remaining trainval
+    # pool is then subdivided by index so adverse data is generated only once.
     trainval_features, test_features, trainval_costs, test_costs = \
         train_test_split(
             features,
@@ -198,6 +258,8 @@ def build_spni_training_data(
     loaders: dict[str, _TrainingDataViews] = {}
 
     for interdiction_policy in ("adversarial", "random"):
+        # The policy name is forwarded directly into the existing adverse-data
+        # generator so the new layer does not reimplement scenario logic.
         loaders[interdiction_policy] = build_spni_training_view(
             run_cfg,
             graph_bundle,
@@ -215,9 +277,15 @@ def build_spni_training_view(
     *,
     interdiction_policy: str,
 ) -> _TrainingDataViews:
-    """Create one SPNI loader family for the requested interdiction policy."""
+    """Create one SPNI loader family for the requested interdiction policy.
+
+    This function is the bridge between the typed orchestration layer and the
+    current adverse-data generator plus loader stack.
+    """
     legacy_cfg = _build_legacy_cfg(run_cfg)
     cache_options = _build_cache_options(run_cfg)
+    # The generator is responsible for either building or loading interdiction
+    # scenarios, depending on the configured cache policy.
     data_generator = SPNIAdverseDataGenerator(
         legacy_cfg,
         graph_bundle.opt_model,
@@ -236,6 +304,8 @@ def build_spni_training_view(
         cfg=legacy_cfg,
     )
 
+    # One generated trainval pool is sliced into train/validation subsets using
+    # the stable indices computed by `split_base_data(...)`.
     train_dataset = AdvDataset(
         graph_bundle.opt_model,
         features_all[split_data.train_indices],
@@ -280,6 +350,8 @@ def build_nonadverse_views(adverse_train_loader, adverse_val_loader):
     - derive baseline loaders from scenario-zero data
     - preserve batch size and sampler configuration
     """
+    # The legacy loaders already know how to expose a scenario-zero view, so
+    # the baseline family stays behaviorally aligned by reusing that API.
     return (
         adverse_train_loader.get_nonadverse_loader(),
         adverse_val_loader.get_nonadverse_loader(),
@@ -297,6 +369,8 @@ def assemble_dataset_bundle(
     - create all loader variants required by the training stage
     - create evaluation interdiction arrays for the comparison stage
     """
+    # The dataset stage is intentionally linear: generate raw data, split it,
+    # build training views, then prepare the evaluation-only interdiction data.
     base_data = generate_base_data(run_cfg, graph_bundle)
     split_data = split_base_data(run_cfg, base_data.features, base_data.costs)
     training_views = build_spni_training_data(run_cfg, graph_bundle, split_data)
@@ -306,6 +380,8 @@ def assemble_dataset_bundle(
         training_views["adversarial"].val_loader,
     )
 
+    # Evaluation-time interdiction samples are generated from the interdiction
+    # seed so solver comparisons use a dedicated, reproducible sample set.
     interdiction_features, interdiction_costs = gen_syn_data(
         _build_legacy_cfg(run_cfg, random_seed=run_cfg.intd_seed),
         opt_model=graph_bundle.opt_model,

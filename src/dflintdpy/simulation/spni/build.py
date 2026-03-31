@@ -1,7 +1,14 @@
 """Graph and optimization-model construction for SPNI runs.
 
-This module should own only the object-construction part of the simulation
-workflow. It must not generate data, train predictors, or evaluate outcomes.
+This module owns the first concrete stage of the SPNI pipeline: producing the
+graph object and its shortest-path optimization model. It stays intentionally
+small so graph construction can be tested independently from the rest of the
+simulation flow.
+
+Non-goals:
+- no dataset generation
+- no predictor training
+- no evaluation or summary logic
 """
 
 from __future__ import annotations
@@ -17,7 +24,11 @@ from dflintdpy.simulation.spni.types import GraphBundle
 
 
 def _get_grid_cls():
-    """Return the grid class used for synthetic SPNI graphs."""
+    """Return the grid class used for synthetic SPNI graphs.
+
+    The import stays local so importing the orchestration layer does not
+    eagerly import solver-heavy graph modules.
+    """
 
     from dflintdpy.models.grid import Grid
 
@@ -25,7 +36,10 @@ def _get_grid_cls():
 
 
 def _get_shortest_path_model_cls():
-    """Return the shortest-path solver class used by the build stage."""
+    """Return the shortest-path solver class used by the build stage.
+
+    The local import keeps the pipeline module light to import in tests.
+    """
 
     from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
@@ -40,6 +54,8 @@ def _load_sourceless_real_world_module():
     with that existing import path without reconstructing the helper here.
     """
 
+    # The repository currently carries this helper only as compiled bytecode,
+    # so the build stage has to resolve it lazily at runtime.
     cache_dir = Path(__file__).resolve().parents[2] / "utils" / "__pycache__"
     candidates = sorted(cache_dir.glob("real_world_spni_data_handling*.pyc"))
     if not candidates:
@@ -59,7 +75,11 @@ def _load_sourceless_real_world_module():
 
 
 def _resolve_real_world_graph_loader() -> Callable[[str], Any]:
-    """Return the legacy CSV-to-graph helper used by real-world SPNI runs."""
+    """Return the legacy CSV-to-graph helper used by real-world SPNI runs.
+
+    The orchestration layer does not reimplement CSV parsing; it reuses the
+    legacy helper and makes the import path explicit here.
+    """
 
     module_name = "dflintdpy.utils.real_world_spni_data_handling"
     try:
@@ -78,7 +98,11 @@ def _resolve_real_world_graph_loader() -> Callable[[str], Any]:
 
 
 def _safe_len(value: Any) -> int | None:
-    """Return `len(value)` as an int when available, else `None`."""
+    """Return ``len(value)`` as an int when available, else ``None``.
+
+    Diagnostics should never fail just because a graph object does not expose
+    a normal container interface.
+    """
 
     try:
         return int(len(value))
@@ -95,6 +119,8 @@ def build_graph(run_cfg: SPNIRunConfig):
     - return the graph instance only, without wrapping it in an opt model
     """
 
+    # Real-world runs defer to the legacy CSV loader; synthetic runs build the
+    # in-memory grid directly from the normalized config.
     if run_cfg.load_real_world_graph is not None:
         csv_to_graph = _resolve_real_world_graph_loader()
         return csv_to_graph(run_cfg.load_real_world_graph)
@@ -111,6 +137,8 @@ def build_opt_model(run_cfg: SPNIRunConfig, graph):
     graph object itself.
     """
 
+    # The model currently depends only on the graph, but keeping the normalized
+    # config in the signature makes the stage API consistent across modules.
     del run_cfg
     shortest_path_model_cls = _get_shortest_path_model_cls()
     return shortest_path_model_cls(graph)
@@ -123,11 +151,15 @@ def build_problem_bundle(run_cfg: SPNIRunConfig) -> GraphBundle:
     creation while still returning one typed stage artifact for the pipeline.
     """
 
+    # Build the graph first, then immediately wrap it in the solver model that
+    # later stages expect to receive.
     graph = build_graph(run_cfg)
     opt_model = build_opt_model(run_cfg, graph)
 
     graph_source = run_cfg.load_real_world_graph
     graph_kind = "real_world" if graph_source is not None else "synthetic"
+    # These diagnostics are intentionally lightweight and JSON-friendly so they
+    # can be surfaced in tests and logs without serializing the graph itself.
     diagnostics = {
         "graph_class": type(graph).__name__,
         "opt_model_class": type(opt_model).__name__,

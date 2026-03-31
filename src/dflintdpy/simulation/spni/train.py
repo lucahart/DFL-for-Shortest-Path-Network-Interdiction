@@ -1,7 +1,14 @@
 """Predictor training orchestration for SPNI simulations.
 
-This module should coordinate the existing trainer helpers and predictor setup
-functions. It should not own the trainer core or the predictor math itself.
+This module wraps the existing legacy setup helpers and trainer classes in a
+typed stage API. It deliberately does not replace the trainer implementations;
+its job is to make family selection, cache tags, and training logs explicit.
+
+Responsibilities:
+- adapt the normalized run config back to legacy setup helpers
+- keep predictor-family-to-loader mapping centralized
+- capture trainer fit logs in a typed structure
+- return one canonical predictor bundle for the pipeline
 """
 
 from __future__ import annotations
@@ -18,7 +25,7 @@ from dflintdpy.simulation.spni.types import (
     PredictorBundle,
     TrainingLogBundle,
 )
-from dflintdpy.utils.read_write import CacheReplaceOptions
+from dflintdpy.utils.read_write import CacheReplaceOptions, read_cache
 
 _PREDICTOR_CACHE_TAGS = {
     "pfl": "pfl",
@@ -47,13 +54,36 @@ _DFL_FAMILY_SPECS = {
 
 
 class _LegacyConfigAdapter:
-    """Expose normalized run-config values through the legacy `.get(...)` API."""
+    """Expose normalized run-config values through the legacy ``.get(...)`` API.
+
+    The legacy setup helpers still expect config-like objects that answer
+    ``.get(...)`` calls. This adapter lets the training stage keep using the
+    typed config while delegating to those helpers unchanged.
+    """
 
     def __init__(self, run_cfg: SPNIRunConfig):
+        base_cfg = run_cfg.base_cfg
+        public_values: dict[str, Any] = {}
+        if isinstance(base_cfg, Mapping):
+            public_values.update(dict(base_cfg))
+        elif hasattr(base_cfg, "__dict__"):
+            public_values.update(vars(base_cfg))
+
+        # Predictor caching hashes the config through `vars(cfg)`, so the
+        # normalized run-config fields must exist as real adapter attributes.
+        for field_name in run_cfg.__dataclass_fields__:
+            if field_name == "base_cfg":
+                continue
+            public_values[field_name] = getattr(run_cfg, field_name)
+
         self._run_cfg = run_cfg
+        self._public_values = public_values
+        self.__dict__.update(public_values)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Read one value from the normalized config or its base config."""
+        if key in self._public_values:
+            return self._public_values[key]
         if hasattr(self._run_cfg, key):
             return getattr(self._run_cfg, key)
 
@@ -67,7 +97,11 @@ class _LegacyConfigAdapter:
 
 
 def _build_cache_options(run_cfg: SPNIRunConfig) -> CacheReplaceOptions:
-    """Translate the normalized cache policy into legacy cache options."""
+    """Translate the normalized cache policy into legacy cache options.
+
+    Training is one of the legacy cache touch-points, so the mapping stays
+    explicit here instead of being reconstructed ad hoc in helper lambdas.
+    """
     policy = run_cfg.cache_policy
     return CacheReplaceOptions(
         replace_data=policy.replace_data,
@@ -80,8 +114,24 @@ def _build_cache_options(run_cfg: SPNIRunConfig) -> CacheReplaceOptions:
     )
 
 
+def _ensure_legacy_setup_cache_api() -> None:
+    """Patch missing cache helpers onto the legacy setup module.
+
+    The legacy predictor setup helpers reference ``read_cache(...)`` directly,
+    but the module does not import it. The SPNI wrapper repairs that namespace
+    before delegating so the compatibility path can keep working without
+    rewriting the legacy helper bodies.
+    """
+    if not hasattr(legacy_setup_module, "read_cache"):
+        legacy_setup_module.read_cache = read_cache
+
+
 def _build_training_data(train_loader: Any, val_loader: Any) -> dict[str, Any]:
-    """Build the legacy training-data mapping expected by setup helpers."""
+    """Build the legacy training-data mapping expected by setup helpers.
+
+    The old setup helpers consume a small dictionary instead of a typed bundle,
+    so this adapter keeps the translation in one place.
+    """
     return {
         "train_loader": train_loader,
         "val_loader": val_loader,
@@ -89,7 +139,11 @@ def _build_training_data(train_loader: Any, val_loader: Any) -> dict[str, Any]:
 
 
 def _normalize_log_values(values: Sequence[Any] | None) -> list[float] | None:
-    """Convert trainer log sequences into plain Python float lists."""
+    """Convert trainer log sequences into plain Python float lists.
+
+    Plain lists are easier to serialize, compare in tests, and expose through
+    diagnostics than arbitrary tensor or NumPy-backed sequences.
+    """
     if values is None:
         return None
     return [float(value) for value in values]
@@ -103,7 +157,11 @@ def _build_log_bundle(
         Sequence[Any] | None,
     ] | None,
 ) -> TrainingLogBundle:
-    """Convert one captured trainer fit result into a typed log bundle."""
+    """Convert one captured trainer fit result into a typed log bundle.
+
+    When a cached predictor is loaded instead of trained, the legacy trainer
+    may never call ``fit(...)``. In that case the bundle records empty logs.
+    """
     if fit_logs is None:
         return TrainingLogBundle(
             train_loss=[],
@@ -125,7 +183,12 @@ def _build_log_bundle(
 def _capture_trainer_fit_logs(
     trainer_cls: type[Any],
 ) -> Iterator[dict[str, Any]]:
-    """Record the legacy trainer's `fit(...)` return value once per call."""
+    """Record the legacy trainer's ``fit(...)`` return value once per call.
+
+    The setup helpers currently hide the trainer instance internally, so the
+    stage uses a narrow monkeypatch around the trainer class to observe the fit
+    logs without rewriting the helper flow.
+    """
     capture: dict[str, Any] = {"fit_logs": None}
     original_fit = trainer_cls.fit
 
@@ -145,7 +208,11 @@ def _run_with_fit_capture(
     trainer_cls: type[Any],
     runner,
 ) -> tuple[Any, TrainingLogBundle, bool]:
-    """Run one legacy setup helper and capture trainer logs when available."""
+    """Run one legacy setup helper and capture trainer logs when available.
+
+    The boolean in the return tuple indicates whether an actual fit occurred,
+    which is useful when distinguishing cached models from freshly trained ones.
+    """
     with _capture_trainer_fit_logs(trainer_cls) as capture:
         predictor = runner()
     fit_logs = capture["fit_logs"]
@@ -164,8 +231,11 @@ def train_pfl_predictor(
     - return the predictor plus its log bundle
     - keep cache-tag handling explicit and centralized
     """
+    _ensure_legacy_setup_cache_api()
     legacy_cfg = _LegacyConfigAdapter(run_cfg)
     cache_options = _build_cache_options(run_cfg)
+    # PFL uses the baseline adverse-generated loaders, matching the current
+    # legacy setup path.
     training_data = _build_training_data(
         dataset_bundle.train_loader_adversarial,
         dataset_bundle.val_loader_adversarial,
@@ -207,9 +277,12 @@ def train_dfl_predictor(
             f"Expected one of: {supported}."
         )
 
+    _ensure_legacy_setup_cache_api()
     legacy_cfg = _LegacyConfigAdapter(run_cfg)
     cache_options = _build_cache_options(run_cfg)
     spec = _DFL_FAMILY_SPECS[variant_name]
+    # The spec table keeps the family-to-loader/cache mapping centralized and
+    # stable across tests and compatibility wrappers.
     training_data = _build_training_data(
         getattr(dataset_bundle, spec["train_loader_attr"]),
         getattr(dataset_bundle, spec["val_loader_attr"]),
@@ -243,6 +316,8 @@ def train_all_predictors(
     - attach structured logs and diagnostics
     - return one canonical predictor bundle
     """
+    # The pipeline always materializes the full predictor family set so later
+    # evaluation and summary stages can assume a complete bundle.
     pfl, pfl_logs = train_pfl_predictor(run_cfg, graph_bundle, dataset_bundle)
     dfl, dfl_logs = train_dfl_predictor(
         run_cfg,

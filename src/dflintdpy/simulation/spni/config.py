@@ -1,13 +1,15 @@
 """Configuration utilities for the SPNI orchestration layer.
 
-This module owns the small amount of logic needed before the simulation
-pipeline can do any expensive work:
-- reading legacy config objects safely
-- validating orchestration-relevant fields
-- normalizing optional runtime flags
-- making seed and cache behavior explicit
+This module turns the loose legacy ``HP``-style configuration into one frozen,
+typed run contract that every later stage can trust. The goal is to front-load
+validation and normalization before any expensive graph generation, training,
+or solver work starts.
 
-It does not build graphs, train models, or evaluate simulations.
+Responsibilities:
+- read config values from legacy objects or mappings without mutating them
+- validate and normalize the subset of fields the SPNI pipeline actually uses
+- make cache policy and seed derivation explicit
+- provide lightweight summaries of a normalized run
 """
 
 from __future__ import annotations
@@ -23,8 +25,10 @@ import numpy as np
 class CachePolicy:
     """Explicit cache behavior for one simulation run.
 
-    The orchestration layer uses this dataclass to carry cache intent across
-    stages without touching the filesystem directly.
+    Legacy SPNI code threaded cache flags through global helpers and script
+    locals. This dataclass centralizes that intent so later stages can adapt
+    it back to the legacy interfaces without losing which cache knobs were
+    requested for the run.
     """
 
     replace_data: bool = False
@@ -40,8 +44,9 @@ class CachePolicy:
 class SeedBundle:
     """Deterministic seed assignment for one simulation run.
 
-    This makes the sweep seed and its derived per-stage seeds explicit so
-    reruns, logging, and debugging stay straightforward.
+    SPNI uses one sweep seed to derive the seeds for individual subsystems.
+    Keeping all four values together makes reruns, CSV ordering, and debugging
+    deterministic and easy to inspect.
     """
 
     sweep_seed: int
@@ -54,8 +59,10 @@ class SeedBundle:
 class SPNIRunConfig:
     """Normalized orchestration config for one SPNI simulation run.
 
-    The rest of the orchestration layer should use this dataclass instead of
-    reaching back into a mutable legacy `HP` object.
+    This is the canonical config object consumed by the pipeline stages. It
+    stores the validated fields needed for graph generation, data generation,
+    training, evaluation, and compatibility reporting, while still keeping the
+    original ``base_cfg`` available for helper adapters that expect it.
     """
 
     base_cfg: Any
@@ -97,6 +104,8 @@ def _read_cfg_value(base_cfg: Any, key: str, default: Any = None) -> Any:
     3. `getattr(cfg, key, default)` for plain attribute containers
     """
 
+    # Prefer legacy `.get(...)` when present so adapters and config objects
+    # behave the same way as the original scripts.
     getter = getattr(base_cfg, "get", None)
     if callable(getter):
         return getter(key, default)
@@ -106,7 +115,11 @@ def _read_cfg_value(base_cfg: Any, key: str, default: Any = None) -> Any:
 
 
 def _require_cfg_value(base_cfg: Any, key: str) -> Any:
-    """Return one required config value or raise a precise error."""
+    """Return one required config value or raise a precise error.
+
+    Missing configuration fields should fail early here rather than later in a
+    lower-level stage with a less actionable error message.
+    """
 
     value = _read_cfg_value(base_cfg, key, None)
     if value is None:
@@ -115,7 +128,11 @@ def _require_cfg_value(base_cfg: Any, key: str) -> Any:
 
 
 def _coerce_int(value: Any, key: str, *, minimum: int | None = None) -> int:
-    """Coerce one numeric field to `int` and enforce an optional minimum."""
+    """Coerce one numeric field to ``int`` and enforce an optional minimum.
+
+    The explicit boolean rejection avoids silently accepting ``True`` or
+    ``False`` where a real numeric parameter was expected.
+    """
 
     if isinstance(value, bool):
         raise ValueError(f"{key} must be an integer, not a boolean.")
@@ -134,7 +151,10 @@ def _coerce_float(
     *,
     minimum: float | None = None,
 ) -> float:
-    """Coerce one numeric field to `float` and enforce an optional minimum."""
+    """Coerce one numeric field to ``float`` and enforce an optional minimum.
+
+    This keeps numeric validation centralized and consistent across fields.
+    """
 
     try:
         normalized = float(value)
@@ -146,7 +166,11 @@ def _coerce_float(
 
 
 def _normalize_grid_size(value: Any) -> tuple[int, int]:
-    """Normalize `grid_size` into a validated `(rows, cols)` tuple."""
+    """Normalize ``grid_size`` into a validated ``(rows, cols)`` tuple.
+
+    Grid dimensions must be positive integers because they feed directly into
+    graph construction.
+    """
 
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ValueError("grid_size must be a length-2 tuple or list.")
@@ -156,7 +180,11 @@ def _normalize_grid_size(value: Any) -> tuple[int, int]:
 
 
 def _normalize_pred_model(value: Any) -> str | None:
-    """Normalize the optional predictor-model label."""
+    """Normalize the optional predictor-model label.
+
+    Empty strings are rejected so later stages do not need to guess whether a
+    blank value means "unset" or "invalid."
+    """
 
     if value is None:
         return None
@@ -169,7 +197,11 @@ def _normalize_pred_model(value: Any) -> str | None:
 def _normalize_cache_policy(
     policy: CachePolicy | Mapping[str, Any] | None,
 ) -> CachePolicy:
-    """Normalize one cache-policy input into the canonical dataclass."""
+    """Normalize one cache-policy input into the canonical dataclass.
+
+    Accepting either a dataclass or a mapping keeps the pipeline ergonomic for
+    both new typed callers and older config-building code.
+    """
 
     if policy is None:
         return CachePolicy()
@@ -187,6 +219,8 @@ def _seed_triplet_from_sweep_seed(seed: int) -> tuple[int, int, int]:
     state used elsewhere in the process.
     """
 
+    # A private RNG instance preserves the legacy derivation pattern without
+    # perturbing any global NumPy RNG state in the process.
     rng = np.random.RandomState(seed)
     values = rng.randint(0, 150, 3).tolist()
     return int(values[0]), int(values[1]), int(values[2])
@@ -222,6 +256,8 @@ def build_run_config(
     explicit `CachePolicy` so later stages have one stable source of truth.
     """
 
+    # Normalize optional knobs up front so the returned config is immediately
+    # safe for every later stage to consume.
     normalized_cache_policy = _normalize_cache_policy(cache_policy)
     metadata = dict(_read_cfg_value(base_cfg, "metadata", {}) or {})
     metadata.setdefault("source_type", type(base_cfg).__name__)
@@ -243,6 +279,8 @@ def build_run_config(
     if load_real_world_graph is not None:
         load_real_world_graph = str(load_real_world_graph)
 
+    # The returned dataclass deliberately duplicates the fields the pipeline
+    # needs so later stages never have to fish values back out of `base_cfg`.
     return SPNIRunConfig(
         base_cfg=base_cfg,
         grid_size=_normalize_grid_size(_require_cfg_value(base_cfg, "grid_size")),
@@ -376,6 +414,8 @@ def derive_seed_bundle(
         )
 
     resolved_seed = _coerce_int(sweep_seed, "sweep_seed")
+    # Sweep runs intentionally mirror the legacy simulator's seed derivation so
+    # the new pipeline stays behaviorally aligned with prior experiments.
     random_seed, intd_seed, loader_seed = \
         _seed_triplet_from_sweep_seed(resolved_seed)
     return SeedBundle(
@@ -406,6 +446,8 @@ def derive_seed_sweep(
 
     total = _coerce_int(num_seeds, "num_seeds", minimum=1)
     start_seed = _resolve_sweep_start_seed(run_cfg)
+    # Consecutive sweep seeds preserve the ordering used by the historical
+    # simulator scripts and keep aggregation deterministic.
     bundles = [
         derive_seed_bundle(run_cfg, sweep_seed=start_seed + offset)
         for offset in range(total)

@@ -1,9 +1,16 @@
 """Canonical SPNI orchestration API.
 
-The package-level entrypoints exported here are the supported path for new
-single-run and seed-sweep SPNI workflows. Legacy script modules may remain as
-compatibility wrappers, but they should delegate into this package rather than
-own orchestration themselves.
+This package is the typed façade for the SPNI workflow. New code should import
+its entrypoints from here instead of reaching into the legacy script layer.
+
+Export groups:
+- configuration contracts such as :class:`SPNIRunConfig` and
+  :class:`CachePolicy`
+- stage artifact dataclasses passed between pipeline steps
+- top-level orchestration functions for single runs and seed sweeps
+
+Legacy script modules may still exist for compatibility, but they are expected
+to delegate into this package rather than own orchestration themselves.
 """
 
 from dflintdpy.simulation.spni.config import (
@@ -12,6 +19,8 @@ from dflintdpy.simulation.spni.config import (
     SeedBundle,
 )
 from dflintdpy.simulation.spni.pipeline import (
+    cli,
+    main,
     run_seed_sweep,
     run_single_simulation,
 )
@@ -29,6 +38,7 @@ from dflintdpy.simulation.spni.types import (
 )
 
 __all__ = [
+    # Config and run-shaping helpers.
     "CachePolicy",
     "DatasetBundle",
     "EvaluationBundle",
@@ -42,6 +52,9 @@ __all__ = [
     "SummaryBundle",
     "SweepResult",
     "TrainingLogBundle",
+    # Canonical orchestration entrypoints.
+    "cli",
+    "main",
     "run_seed_sweep",
     "run_single_simulation",
 ]

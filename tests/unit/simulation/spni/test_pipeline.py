@@ -288,3 +288,151 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
     assert result.aggregated_summary["num_runs"] == 2, \
         "run_seed_sweep should aggregate the resulting run summaries."
     pass
+
+
+####################
+### test main(...) ###
+####################
+
+
+def test_spni_pipeline_main_dispatches_seed_sweep_with_cfg_overrides(
+    monkeypatch,
+):
+    """Verify that main dispatches seed sweeps with config overrides."""
+    # Arrange a seed-sweep runner stub and a mutable base config.
+    base_cfg = SimpleNamespace(num_seeds=3, budget=1, grid_size=(2, 2))
+    recorded: dict[str, object] = {}
+    expected_result = SimpleNamespace(kind="seed-sweep")
+
+    def _fake_run_seed_sweep(cfg, *, num_seeds, **options):
+        recorded["cfg"] = cfg
+        recorded["num_seeds"] = num_seeds
+        recorded["options"] = options
+        return expected_result
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_seed_sweep",
+        _fake_run_seed_sweep,
+    )
+
+    # Act by running the convenience entrypoint in seed-sweep mode.
+    result = pipeline_module.main(
+        mode="seed_sweep",
+        cfg=base_cfg,
+        num_seeds=7,
+        budget=9,
+        compute_wrong_asym_intd=True,
+    )
+
+    # Assert that the dispatch preserved immutability and forwarded overrides.
+    assert result is expected_result, \
+        "main should return the result from run_seed_sweep."
+    assert recorded["num_seeds"] == 7, \
+        "main should forward the explicit num_seeds override."
+    assert recorded["options"] == {"compute_wrong_asym_intd": True}, \
+        "main should forward run options separately from config overrides."
+    assert recorded["cfg"] is not base_cfg, \
+        "main should deep-copy the caller's base config before mutation."
+    assert recorded["cfg"].budget == 9, \
+        "main should apply config overrides to the copied config."
+    assert base_cfg.budget == 1, \
+        "main should not mutate the caller-owned base config."
+    pass
+
+
+def test_spni_pipeline_main_dispatches_single_run_mode(monkeypatch):
+    """Verify that main can dispatch directly to single-run execution."""
+    # Arrange a single-run stub and a small config override.
+    recorded: dict[str, object] = {}
+    expected_result = SimpleNamespace(kind="single-run")
+
+    def _fake_run_single_simulation(cfg, **options):
+        recorded["cfg"] = cfg
+        recorded["options"] = options
+        return expected_result
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_single_simulation",
+        _fake_run_single_simulation,
+    )
+
+    # Act by running the convenience entrypoint in single-run mode.
+    result = pipeline_module.main(
+        mode="single",
+        cfg=SimpleNamespace(num_seeds=4, deg=2),
+        deg=5,
+        compute_asym_intd=False,
+    )
+
+    # Assert that single-run dispatch keeps num_seeds out of the call.
+    assert result is expected_result, \
+        "main should return the result from run_single_simulation."
+    assert recorded["cfg"].deg == 5, \
+        "main should apply config overrides before single-run dispatch."
+    assert recorded["options"] == {"compute_asym_intd": False}, \
+        "main should forward only run options to single-run execution."
+    pass
+
+
+def test_spni_pipeline_main_rejects_unknown_mode():
+    """Verify that main rejects unsupported top-level modes."""
+    # Act and assert that unsupported modes fail clearly.
+    with pytest.raises(ValueError, match="Unsupported SPNI run mode"):
+        pipeline_module.main(mode="future_sweep")
+    pass
+
+
+###################
+### test cli(...) ###
+###################
+
+
+def test_spni_pipeline_cli_parses_overrides_and_dispatches(monkeypatch):
+    """Verify that cli parses one-line overrides before calling main."""
+    # Arrange a main stub and silence the terminal print.
+    recorded: dict[str, object] = {}
+    expected_result = SimpleNamespace(diagnostics={"num_runs": 2})
+
+    def _fake_main(**kwargs):
+        recorded["kwargs"] = kwargs
+        return expected_result
+
+    monkeypatch.setattr(pipeline_module, "main", _fake_main)
+    monkeypatch.setattr(
+        pipeline_module,
+        "print",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
+
+    # Act by executing the CLI with typed override values.
+    result = pipeline_module.cli(
+        [
+            "--mode",
+            "seed_sweep",
+            "--num-seeds",
+            "2",
+            "--compute-wrong-asym-intd",
+            "--set",
+            "budget=5",
+            "--set",
+            "grid_size=(4, 6)",
+        ]
+    )
+
+    # Assert that the parsed values are forwarded with the right types.
+    assert result is expected_result, \
+        "cli should return the result from main."
+    assert recorded["kwargs"]["mode"] == "seed_sweep", \
+        "cli should forward the requested mode."
+    assert recorded["kwargs"]["num_seeds"] == 2, \
+        "cli should parse num_seeds as an integer."
+    assert recorded["kwargs"]["compute_wrong_asym_intd"] is True, \
+        "cli should parse boolean flags for wrong-model evaluation."
+    assert recorded["kwargs"]["budget"] == 5, \
+        "cli should parse integer config overrides."
+    assert recorded["kwargs"]["grid_size"] == (4, 6), \
+        "cli should parse tuple config overrides with literal_eval."
+    pass

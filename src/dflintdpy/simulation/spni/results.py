@@ -1,10 +1,14 @@
 """Summary and export adapters for SPNI simulations.
 
-This module should own all translation from raw numerical outputs into:
-- summary metrics
-- legacy `all_data` mappings
-- flat CSV rows
-- multi-run aggregated summaries
+This module is the reporting boundary of the SPNI pipeline. It translates the
+typed evaluation outputs into the summary structures and legacy export formats
+that the rest of the repository still expects.
+
+Responsibilities:
+- derive summary metrics and summary-table payloads from raw evaluation arrays
+- rebuild the legacy ``all_data`` mapping in one centralized location
+- flatten typed results into CSV-style row dictionaries
+- aggregate multiple simulations into one sweep-level summary
 """
 
 from __future__ import annotations
@@ -117,12 +121,20 @@ _PREDICTION_STAT_KEYS = {
 
 
 def _as_float_array(values: Any) -> np.ndarray:
-    """Normalize one numerical payload into a float array copy."""
+    """Normalize one numerical payload into a float array copy.
+
+    Copying here prevents later summary calculations from mutating upstream
+    arrays by accident.
+    """
     return np.asarray(values, dtype=float).copy()
 
 
 def _safe_nanmean(values: Any) -> float:
-    """Return a warning-free mean that tolerates empty and NaN-only arrays."""
+    """Return a warning-free mean that tolerates empty and NaN-only arrays.
+
+    Summary code frequently works with partially missing arrays, especially in
+    asymmetric experiments, so these helpers avoid noisy runtime warnings.
+    """
     arr = _as_float_array(values)
     if arr.size == 0 or np.isnan(arr).all():
         return float("nan")
@@ -130,7 +142,11 @@ def _safe_nanmean(values: Any) -> float:
 
 
 def _safe_nanstd(values: Any) -> float:
-    """Return a warning-free std that tolerates empty and NaN-only arrays."""
+    """Return a warning-free std that tolerates empty and NaN-only arrays.
+
+    Returning ``nan`` for undefined variability is more informative than
+    raising or emitting warnings during reporting.
+    """
     arr = _as_float_array(values)
     if arr.size == 0 or np.isnan(arr).all():
         return float("nan")
@@ -138,7 +154,11 @@ def _safe_nanstd(values: Any) -> float:
 
 
 def _safe_percentage(num: Any, denom: Any) -> np.ndarray:
-    """Compute percentage safely and replace NaN/Inf with zeros."""
+    """Compute percentage safely and replace NaN/Inf with zeros.
+
+    The legacy reporting code expects finite numeric arrays even when the
+    denominator contains zeros or missing values.
+    """
     num_arr = _as_float_array(num)
     denom_arr = _as_float_array(denom)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -147,7 +167,11 @@ def _safe_percentage(num: Any, denom: Any) -> np.ndarray:
 
 
 def _safe_percentage_sum(num: Any, denom: Any) -> float:
-    """Compute an aggregate percentage safely for one simulation."""
+    """Compute an aggregate percentage safely for one simulation.
+
+    This mirrors the scalar aggregate calculation used in prior reporting
+    scripts while guarding against divide-by-zero issues.
+    """
     num_arr = _as_float_array(num)
     denom_arr = _as_float_array(denom)
     denom_sum = float(np.nansum(denom_arr))
@@ -160,12 +184,20 @@ def _safe_percentage_sum(num: Any, denom: Any) -> float:
 
 
 def _array_length(values: Sequence[Any] | np.ndarray) -> int:
-    """Return the first-axis length of one legacy export array."""
+    """Return the first-axis length of one legacy export array.
+
+    Result flattening assumes every export column is sample-aligned and uses
+    the first array length as the row count.
+    """
     return int(_as_float_array(values).shape[0])
 
 
 def _predictor_output_array(predictor: Any, features) -> np.ndarray:
-    """Evaluate one predictor on the testing features when possible."""
+    """Evaluate one predictor on the testing features when possible.
+
+    The helper first tries the model as a plain callable and falls back to a
+    minimal torch invocation path for modules that expect tensor inputs.
+    """
     if predictor is None:
         return np.asarray([], dtype=float)
 
@@ -173,6 +205,8 @@ def _predictor_output_array(predictor: Any, features) -> np.ndarray:
     try:
         outputs = predictor(features)
     except Exception:
+        # Some predictors are torch modules that do not accept NumPy arrays
+        # directly, so fall back to a tensor-based inference path.
         try:
             import torch
         except Exception:
@@ -188,7 +222,10 @@ def _predictor_output_array(predictor: Any, features) -> np.ndarray:
 
 
 def _predictor_prediction_stats(predictor: Any, features) -> tuple[float, float]:
-    """Return mean/std statistics for one predictor output family."""
+    """Return mean/std statistics for one predictor output family.
+
+    These statistics reproduce the legacy "prediction mean/std" reporting block.
+    """
     outputs = _predictor_output_array(predictor, features)
     if outputs.size == 0:
         return float("nan"), float("nan")
@@ -199,7 +236,11 @@ def _extract_all_data(
     dataset_bundle: DatasetBundle,
     evaluation_bundle: EvaluationBundle,
 ) -> dict[str, np.ndarray]:
-    """Translate the typed evaluation payload into the legacy `all_data` map."""
+    """Translate the typed evaluation payload into the legacy ``all_data`` map.
+
+    The key maps above are the authoritative mapping between typed evaluation
+    families and the historical column names used by downstream analysis code.
+    """
     normalization_constant = float(dataset_bundle.normalization_constant)
     all_data: dict[str, np.ndarray] = {}
 
@@ -234,7 +275,11 @@ def _build_prediction_mean_std(
     dataset_bundle: DatasetBundle,
     predictor_bundle: PredictorBundle,
 ) -> dict[str, float]:
-    """Derive the legacy prediction-statistics dictionary."""
+    """Derive the legacy prediction-statistics dictionary.
+
+    The output preserves the historical field names so older result consumers
+    can keep working while the internals move to typed bundles.
+    """
     train_costs = getattr(
         getattr(dataset_bundle.train_loader_adversarial, "dataset", None),
         "costs",
@@ -264,7 +309,11 @@ def _build_metrics(
     run_cfg: SPNIRunConfig,
     all_data: Mapping[str, np.ndarray],
 ) -> dict[str, Any]:
-    """Recreate the legacy scalar metric dictionary."""
+    """Recreate the legacy scalar metric dictionary.
+
+    Metric definitions stay centralized here so compatibility wrappers and new
+    pipeline callers see the same summary values.
+    """
     metrics = {
         "metric_1": _safe_nanmean(all_data["o_p"]) - _safe_nanmean(all_data["o_s"]),
         "metric_2": _safe_nanmean(all_data["o_p"]) - _safe_nanmean(all_data["o_r"]),
@@ -290,7 +339,11 @@ def _build_metrics(
 
 
 def _build_table_1(all_data: Mapping[str, np.ndarray]) -> dict[str, float]:
-    """Build the legacy Table 1 summary payload."""
+    """Build the legacy Table 1 summary payload.
+
+    Table 1 groups no-interdiction, symmetric, and asymmetric summaries by
+    predictor family.
+    """
     table_1: dict[str, float] = {}
     for family, prefix in _TABLE_1_PREFIX_MAP.items():
         no_key = next(key for key, value in _UNINTERDICTED_KEY_MAP.items()
@@ -311,7 +364,11 @@ def _build_table_2(
     run_cfg: SPNIRunConfig,
     all_data: Mapping[str, np.ndarray],
 ) -> dict[str, float]:
-    """Build the legacy Table 2 summary payload when enabled."""
+    """Build the legacy Table 2 summary payload when enabled.
+
+    Wrong-model comparisons are optional, so the entire table is omitted when
+    that experiment family is disabled.
+    """
     if not run_cfg.compute_wrong_asym_intd:
         return {}
 
@@ -325,7 +382,11 @@ def _build_table_2(
 
 
 def _to_python_value(value: Any) -> Any:
-    """Convert NumPy scalar values into plain Python values for rows."""
+    """Convert NumPy scalar values into plain Python values for rows.
+
+    CSV-style row payloads should contain plain Python types rather than NumPy
+    scalar wrappers.
+    """
     if isinstance(value, np.ndarray):
         return value.tolist()
     if isinstance(value, (np.integer, np.floating)):
@@ -338,7 +399,11 @@ def _result_rows(
     *,
     simulation_index: int,
 ) -> list[dict[str, Any]]:
-    """Build flat CSV-style rows for one simulation result."""
+    """Build flat CSV-style rows for one simulation result.
+
+    Each row corresponds to one sample and carries every legacy ``all_data``
+    column so CSV exports and downstream analysis can stay sample-aligned.
+    """
     all_data = to_legacy_all_data(result.summary_bundle)
     if not all_data:
         return []
@@ -357,7 +422,11 @@ def _result_rows(
 
 
 def _combine_all_data(simulations: Sequence[Mapping[str, np.ndarray]]) -> dict[str, np.ndarray]:
-    """Concatenate per-run `all_data` mappings into one combined export map."""
+    """Concatenate per-run ``all_data`` mappings into one combined export map.
+
+    The union of keys is used so optional wrong-model columns can be carried
+    through only when present.
+    """
     if not simulations:
         return {}
 
@@ -379,7 +448,11 @@ def _combine_all_data(simulations: Sequence[Mapping[str, np.ndarray]]) -> dict[s
 def _compute_percentage_increases_from_samples(
     all_data: Mapping[str, np.ndarray],
 ) -> dict[str, np.ndarray]:
-    """Compute safe per-sample percentage increases for one combined export."""
+    """Compute safe per-sample percentage increases for one combined export.
+
+    These arrays are useful for plotting or detailed diagnostics across the
+    full concatenated sweep sample set.
+    """
     return {
         "no_intd_p": _safe_percentage(all_data["o_p"], all_data["o_o"]),
         "no_intd_s": _safe_percentage(all_data["o_s"], all_data["o_o"]),
@@ -399,7 +472,10 @@ def _compute_percentage_increases_from_samples(
 def _compute_percentage_increases_from_simulations(
     simulations: Sequence[Mapping[str, np.ndarray]],
 ) -> dict[str, np.ndarray]:
-    """Compute safe per-simulation aggregate percentage increases."""
+    """Compute safe per-simulation aggregate percentage increases.
+
+    This produces one aggregate percentage value per simulation and per family.
+    """
     calculations: dict[str, list[float]] = {
         "no_intd_p": [],
         "no_intd_s": [],
@@ -416,6 +492,8 @@ def _compute_percentage_increases_from_simulations(
     }
 
     for sim in simulations:
+        # Each percentage is computed from run-level sums so the aggregation
+        # matches the legacy analysis convention.
         calculations["no_intd_p"].append(_safe_percentage_sum(sim["o_p"], sim["o_o"]))
         calculations["no_intd_s"].append(_safe_percentage_sum(sim["o_s"], sim["o_o"]))
         calculations["no_intd_r"].append(_safe_percentage_sum(sim["o_r"], sim["o_o"]))
@@ -443,10 +521,12 @@ def build_summary(
 ) -> SummaryBundle:
     """Build the derived summary structures for one run.
 
-    Future implementation responsibilities:
-    - compute the same summary outputs currently produced by the scripts
-    - keep metric derivation centralized and testable
+    This is the main entrypoint for the results stage. It computes the exact
+    compatibility payloads needed by legacy reporting while keeping all summary
+    logic centralized in one testable module.
     """
+    # Derive the legacy export map first; the remaining summaries are all small
+    # transformations of those canonical arrays.
     all_data = _extract_all_data(dataset_bundle, evaluation_bundle)
     prediction_mean_std = _build_prediction_mean_std(
         dataset_bundle,
@@ -470,11 +550,10 @@ def build_summary(
 
 
 def to_legacy_all_data(summary_bundle: SummaryBundle) -> dict:
-    """Expose the current `all_data` structure for compatibility.
+    """Expose the current ``all_data`` structure for compatibility.
 
-    Future implementation responsibilities:
-    - preserve current analysis-script expectations during migration
-    - keep legacy column names in one module rather than many scripts
+    This remains the single sanctioned path for translating summary bundles
+    back into the historical export shape.
     """
     return {
         key: _as_float_array(values)
@@ -485,9 +564,8 @@ def to_legacy_all_data(summary_bundle: SummaryBundle) -> dict:
 def flatten_result_rows(result: SimulationResult) -> list[dict]:
     """Flatten one simulation result into CSV-ready row dictionaries.
 
-    Future implementation responsibilities:
-    - keep simulation and sample indices stable
-    - preserve explicit missing-value semantics
+    The row layout is intentionally simple: one simulation index, one sample
+    index, and every legacy export column.
     """
     simulation_index = int(result.diagnostics.get("simulation_index", 0))
     return _result_rows(result, simulation_index=simulation_index)
@@ -496,9 +574,10 @@ def flatten_result_rows(result: SimulationResult) -> list[dict]:
 def aggregate_sweep_results(results: list[SimulationResult]) -> dict:
     """Aggregate multiple run results into a sweep-level summary.
 
-    Future implementation responsibilities:
-    - compute per-run and per-sample aggregate views
-    - expose the exact data needed by later plotting and analysis code
+    The aggregate contains three complementary views:
+    - concatenated ``all_data`` arrays across the whole sweep
+    - flat per-sample rows for CSV-style exports
+    - per-run summary arrays for metrics and tables
     """
     simulations = [
         to_legacy_all_data(result.summary_bundle)
@@ -513,6 +592,8 @@ def aggregate_sweep_results(results: list[SimulationResult]) -> dict:
     table_1: dict[str, np.ndarray] = {}
     table_2: dict[str, np.ndarray] = {}
     for result in results:
+        # Preserve the per-run summary values as arrays so later consumers can
+        # compute their own means, confidence intervals, or plots.
         for key, value in result.summary_bundle.metrics.items():
             metrics.setdefault(key, []).append(value)
         for key, value in result.summary_bundle.table_1.items():

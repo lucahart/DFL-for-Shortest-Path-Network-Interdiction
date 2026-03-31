@@ -5,6 +5,7 @@ import pytest
 
 from dflintdpy.simulation.spni.config import SPNIRunConfig
 from dflintdpy.simulation.spni.types import GraphBundle
+from dflintdpy.utils.read_write import _unique_hash
 
 import dflintdpy.simulation.spni.data as data_module
 
@@ -85,6 +86,27 @@ def base_costs() -> np.ndarray:
 ############################
 ### Helper functionality ###
 ############################
+
+
+def test_spni_data_legacy_config_adapter_exposes_hashable_intd_keys(run_cfg):
+    """Verify that the data-stage adapter exposes keys needed for intd hashes."""
+    # Arrange a legacy config adapter with one temporary seed override.
+    cfg = data_module._build_legacy_cfg(
+        run_cfg,
+        random_seed=run_cfg.intd_seed,
+    )
+
+    # Act by hashing the adapter with the legacy interdiction key subset.
+    hash_value = _unique_hash(cfg, type="intd")
+
+    # Assert that the adapter exposes the expected public config fields.
+    assert isinstance(hash_value, str) and len(hash_value) == 64, \
+        "The data-stage adapter should support non-empty intd hashing."
+    assert cfg.budget == run_cfg.budget, \
+        "The adapter should expose normalized budget values as attributes."
+    assert cfg.random_seed == run_cfg.intd_seed, \
+        "Temporary overrides should be visible as real adapter attributes."
+    pass
 
 
 class _GeneratorStub:
