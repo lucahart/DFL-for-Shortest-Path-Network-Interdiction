@@ -2,7 +2,67 @@ import pandas as pd
 import numpy as np
 import json
 from pathlib import Path
+from collections.abc import Mapping, Sequence
 from typing import List, Dict, Any
+
+from dflintdpy.simulation.spni.results import (
+    LEGACY_ALL_DATA_KEYS,
+    WRONG_MODEL_ALL_DATA_KEYS,
+    aggregate_sweep_results,
+)
+from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
+
+
+LEGACY_CSV_DATA_KEYS = tuple(
+    dict.fromkeys((*LEGACY_ALL_DATA_KEYS, *WRONG_MODEL_ALL_DATA_KEYS))
+)
+
+
+def _to_python_value(value: Any) -> Any:
+    """Convert NumPy values into CSV-safe native Python values."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.integer, np.floating)):
+        return value.item()
+    return value
+
+
+def _rows_from_legacy_results(results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Convert legacy result dictionaries into flat CSV row dictionaries."""
+    rows: list[dict[str, Any]] = []
+    for sim_idx, result in enumerate(results):
+        all_data = result["all_data"]
+        num_samples = len(all_data["o_o"])
+        for sample_idx in range(num_samples):
+            row = {
+                "simulation_index": sim_idx,
+                "sample_index": sample_idx,
+            }
+            for key, values in all_data.items():
+                row[key] = _to_python_value(values[sample_idx])
+            rows.append(row)
+    return rows
+
+
+def _coerce_results_rows(
+    results: SweepResult | Sequence[SimulationResult] | Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Normalize typed or legacy results into flat CSV row dictionaries."""
+    if isinstance(results, SweepResult):
+        rows = aggregate_sweep_results(results.results)["rows"]
+        return rows, len(results.results)
+
+    result_list = list(results)
+    if not result_list:
+        return [], 0
+
+    first = result_list[0]
+    if isinstance(first, SimulationResult):
+        rows = aggregate_sweep_results(result_list)["rows"]
+        return rows, len(result_list)
+
+    rows = _rows_from_legacy_results(result_list)
+    return rows, len(result_list)
 
 
 def save_results_to_csv(results: List[Dict[str, Any]], output_path: str) -> None:
@@ -16,37 +76,16 @@ def save_results_to_csv(results: List[Dict[str, Any]], output_path: str) -> None
     output_path : str
         Path where the CSV file will be saved
     """
-    rows = []
-    
-    for sim_idx, result in enumerate(results):
-        all_data = result['all_data']
-        
-        # Process each of the 100 samples
-        num_samples = len(all_data['o_o'])
-        
-        for sample_idx in range(num_samples):
-            row = {
-                'simulation_index': sim_idx,
-                'sample_index': sample_idx,
-            }
-            
-            # Add all_data entries
-            for key in all_data.keys():
-                value = all_data[key][sample_idx]
-                # Convert numpy types to native Python types
-                if isinstance(value, np.ndarray):
-                    row[key] = value.tolist()
-                elif isinstance(value, (np.integer, np.floating)):
-                    row[key] = value.item()
-                else:
-                    row[key] = value
-            
-            rows.append(row)
-    
+    rows, num_results = _coerce_results_rows(results)
+
     # Create DataFrame and save
     df = pd.DataFrame(rows)
     df.to_csv(output_path, index=False)
-    print(f"Saved {len(results)} simulations with {num_samples} samples each to {output_path}")
+    num_samples = 0 if df.empty else int(df["sample_index"].max()) + 1
+    print(
+        f"Saved {num_results} simulations with {num_samples} "
+        f"samples each to {output_path}"
+    )
 
 
 def load_results_from_csv(input_path: str) -> List[Dict[str, Any]]:
@@ -67,12 +106,11 @@ def load_results_from_csv(input_path: str) -> List[Dict[str, Any]]:
     
     # Group by simulation_index
     results = []
-    data_keys = [
-        'o_o', 'o_p', 'o_s', 'o_r', 'o_mr', 'o_ma', 'o_m', 'o_a',
-        's_o', 's_p', 's_s', 's_r', 's_mr', 's_ma', 's_m', 's_a',
-        'a_o', 'a_p', 'a_s', 'a_r', 'a_mr', 'a_ma', 'a_m', 'a_a',
-        'a_p_o', 'a_s_o', 'a_r_o', 'a_a_o',
+    dynamic_keys = [
+        key for key in df.columns
+        if key not in {"simulation_index", "sample_index"}
     ]
+    data_keys = list(dict.fromkeys((*LEGACY_CSV_DATA_KEYS, *dynamic_keys)))
     
     for sim_idx in sorted(df['simulation_index'].unique()):
         sim_data = df[df['simulation_index'] == sim_idx].sort_values('sample_index')

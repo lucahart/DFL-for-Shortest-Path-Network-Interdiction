@@ -3,8 +3,50 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+from collections.abc import Mapping, Sequence
 from collections import defaultdict
+from dflintdpy.simulation.spni.results import (
+    aggregate_sweep_results,
+    to_legacy_all_data,
+)
+from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 from dflintdpy.utils.read_write_results import load_results_from_csv
+
+
+def _coerce_legacy_simulations(
+    simulations: SweepResult | Sequence[SimulationResult] | Sequence[Mapping],
+):
+    """Normalize typed or legacy simulation payloads into legacy all-data dicts."""
+    if isinstance(simulations, SweepResult):
+        return [to_legacy_all_data(result.summary_bundle)
+                for result in simulations.results]
+
+    simulation_list = list(simulations)
+    if not simulation_list:
+        return []
+
+    first = simulation_list[0]
+    if isinstance(first, SimulationResult):
+        return [
+            to_legacy_all_data(result.summary_bundle)
+            for result in simulation_list
+        ]
+    if isinstance(first, Mapping) and "all_data" in first:
+        return [simulation["all_data"] for simulation in simulation_list]
+    return simulation_list
+
+
+def _typed_aggregate_summary(
+    simulations: SweepResult | Sequence[SimulationResult] | Sequence[Mapping],
+):
+    """Return a typed aggregate summary when simulations come from the pipeline."""
+    if isinstance(simulations, SweepResult):
+        return aggregate_sweep_results(simulations.results)
+
+    simulation_list = list(simulations)
+    if simulation_list and isinstance(simulation_list[0], SimulationResult):
+        return aggregate_sweep_results(simulation_list)
+    return None
 
 def parse_filename(filename):
     """Extract parameters from filename."""
@@ -124,6 +166,11 @@ def load_data(
 
 def combine_simulations(simulations):
     """Combine per-simulation arrays into a single all-data dictionary."""
+    typed_summary = _typed_aggregate_summary(simulations)
+    if typed_summary is not None:
+        return typed_summary["all_data"]
+
+    simulations = _coerce_legacy_simulations(simulations)
     if not simulations:
         return {}
 
@@ -172,6 +219,11 @@ def compute_percentage_increases_from_samples(all_data):
 
 def compute_percentage_increases_from_simulations(simulations):
     """Compute per-simulation percentage increases aggregated by sums."""
+    typed_summary = _typed_aggregate_summary(simulations)
+    if typed_summary is not None:
+        return typed_summary["percentage_increases"]["simulations"]
+
+    simulations = _coerce_legacy_simulations(simulations)
     calculations = defaultdict(list)
 
     for sim_data in simulations:

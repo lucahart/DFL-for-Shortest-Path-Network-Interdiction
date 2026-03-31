@@ -354,11 +354,11 @@ Completed in:
 
 ## Phase 13: Update Results and Analysis Consumers
 
-- [ ] Update result-writing code to consume typed pipeline results first.
-- [ ] Keep compatibility adapters for existing CSV workflows.
-- [ ] Update analysis code to depend on exported summary structure rather than
+- [x] Update result-writing code to consume typed pipeline results first.
+- [x] Keep compatibility adapters for existing CSV workflows.
+- [x] Update analysis code to depend on exported summary structure rather than
   script-local dict assembly.
-- [ ] Add integration tests for save-load-analyze flows.
+- [x] Add integration tests for save-load-analyze flows.
 
 Implementation notes:
 - `read_write_results.py` and `analyse_results.py` should become adapters,
@@ -366,6 +366,12 @@ Implementation notes:
 
 Exit criteria:
 - Reporting and analysis are cleanly downstream of the new pipeline.
+
+Completed in:
+- `src/dflintdpy/utils/read_write_results.py`
+- `src/dflintdpy/utils/analyse_results.py`
+- `tests/unit/utils/test_read_write_results.py`
+- `tests/integration/utils/test_results_analysis_flow.py`
 
 ---
 
