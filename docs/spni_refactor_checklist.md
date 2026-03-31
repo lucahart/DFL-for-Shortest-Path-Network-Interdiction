@@ -308,11 +308,11 @@ Completed in:
 
 ## Phase 11: Migrate `Asym_SPNI_Simulator.py`
 
-- [ ] Replace the current sweep script body with a thin wrapper around
+- [x] Replace the current sweep script body with a thin wrapper around
   `run_seed_sweep(...)`.
-- [ ] Move persistence and analysis calls behind explicit post-processing
+- [x] Move persistence and analysis calls behind explicit post-processing
   steps.
-- [ ] Keep behavior compatible if external callers depend on the current
+- [x] Keep behavior compatible if external callers depend on the current
   script.
 
 Implementation notes:
@@ -322,6 +322,10 @@ Implementation notes:
 
 Exit criteria:
 - The legacy sweep script becomes a thin entrypoint.
+
+Completed in:
+- `src/dflintdpy/scripts/Asym_SPNI_Simulator.py`
+- `tests/unit/scripts/test_Asym_SPNI_Simulator.py`
 
 ---
 
