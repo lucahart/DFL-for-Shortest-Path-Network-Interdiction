@@ -195,66 +195,82 @@ def build_spni_training_data(
     - build training and validation loaders for both variants
     - preserve the generator objects for debugging and cache inspection
     """
-    legacy_cfg = _build_legacy_cfg(run_cfg)
-    cache_options = _build_cache_options(run_cfg)
     loaders: dict[str, _TrainingDataViews] = {}
 
     for interdiction_policy in ("adversarial", "random"):
-        data_generator = SPNIAdverseDataGenerator(
-            legacy_cfg,
-            graph_bundle.opt_model,
-            budget=run_cfg.budget,
-            normalization_constant=split_data.normalization_constant,
-            num_scenarios=run_cfg.num_scenarios,
+        loaders[interdiction_policy] = build_spni_training_view(
+            run_cfg,
+            graph_bundle,
+            split_data,
             interdiction_policy=interdiction_policy,
-            cache_options=cache_options,
-            gen_intd_seed=run_cfg.intd_seed,
-            max_cnt=run_cfg.benders_max_count,
-            eps=run_cfg.benders_eps,
-        )
-        features_all, costs_all, interdictions_all = data_generator.generate(
-            split_data.trainval_features,
-            split_data.trainval_costs,
-            cfg=legacy_cfg,
-        )
-
-        train_dataset = AdvDataset(
-            graph_bundle.opt_model,
-            features_all[split_data.train_indices],
-            costs_all[split_data.train_indices],
-            interdictions_all[split_data.train_indices],
-        )
-        val_dataset = AdvDataset(
-            graph_bundle.opt_model,
-            features_all[split_data.val_indices],
-            costs_all[split_data.val_indices],
-            interdictions_all[split_data.val_indices],
-        )
-        train_loader = AdvLoader(
-            train_dataset,
-            batch_size=run_cfg.batch_size,
-            seed=run_cfg.loader_seed,
-            shuffle=True,
-        )
-        val_loader = AdvLoader(
-            val_dataset,
-            batch_size=run_cfg.batch_size,
-            seed=run_cfg.loader_seed,
-            shuffle=False,
-        )
-        loaders[interdiction_policy] = _TrainingDataViews(
-            train_loader=train_loader,
-            val_loader=val_loader,
-            data_generator=data_generator,
-            diagnostics={
-                "interdiction_policy": interdiction_policy,
-                "num_scenarios": int(run_cfg.num_scenarios),
-                "train_count": int(split_data.train_indices.shape[0]),
-                "val_count": int(split_data.val_indices.shape[0]),
-            },
         )
 
     return loaders
+
+
+def build_spni_training_view(
+    run_cfg: SPNIRunConfig,
+    graph_bundle: GraphBundle,
+    split_data,
+    *,
+    interdiction_policy: str,
+) -> _TrainingDataViews:
+    """Create one SPNI loader family for the requested interdiction policy."""
+    legacy_cfg = _build_legacy_cfg(run_cfg)
+    cache_options = _build_cache_options(run_cfg)
+    data_generator = SPNIAdverseDataGenerator(
+        legacy_cfg,
+        graph_bundle.opt_model,
+        budget=run_cfg.budget,
+        normalization_constant=split_data.normalization_constant,
+        num_scenarios=run_cfg.num_scenarios,
+        interdiction_policy=interdiction_policy,
+        cache_options=cache_options,
+        gen_intd_seed=run_cfg.intd_seed,
+        max_cnt=run_cfg.benders_max_count,
+        eps=run_cfg.benders_eps,
+    )
+    features_all, costs_all, interdictions_all = data_generator.generate(
+        split_data.trainval_features,
+        split_data.trainval_costs,
+        cfg=legacy_cfg,
+    )
+
+    train_dataset = AdvDataset(
+        graph_bundle.opt_model,
+        features_all[split_data.train_indices],
+        costs_all[split_data.train_indices],
+        interdictions_all[split_data.train_indices],
+    )
+    val_dataset = AdvDataset(
+        graph_bundle.opt_model,
+        features_all[split_data.val_indices],
+        costs_all[split_data.val_indices],
+        interdictions_all[split_data.val_indices],
+    )
+    train_loader = AdvLoader(
+        train_dataset,
+        batch_size=run_cfg.batch_size,
+        seed=run_cfg.loader_seed,
+        shuffle=True,
+    )
+    val_loader = AdvLoader(
+        val_dataset,
+        batch_size=run_cfg.batch_size,
+        seed=run_cfg.loader_seed,
+        shuffle=False,
+    )
+    return _TrainingDataViews(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        data_generator=data_generator,
+        diagnostics={
+            "interdiction_policy": interdiction_policy,
+            "num_scenarios": int(run_cfg.num_scenarios),
+            "train_count": int(split_data.train_indices.shape[0]),
+            "val_count": int(split_data.val_indices.shape[0]),
+        },
+    )
 
 
 def build_nonadverse_views(adverse_train_loader, adverse_val_loader):

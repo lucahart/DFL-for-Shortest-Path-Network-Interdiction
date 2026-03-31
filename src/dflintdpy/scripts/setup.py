@@ -1,11 +1,9 @@
-
 import random
 import pyepo
 import torch
 import numpy as np
 from torch import nn
 from copy import deepcopy
-from sklearn.model_selection import train_test_split
 
 from dflintdpy.data.config import HP
 from dflintdpy.data.data_gen import gen_syn_data
@@ -18,15 +16,31 @@ from dflintdpy.utils.read_write import (
     Artefacts,
     CacheReplaceOptions,
     get_cache_replace_options,
-    read_cache,
-    write_data,
     write_pred,
 )
-from dflintdpy.data.adverse.adverse_data_generator import (
-    SPNIAdverseDataGenerator,
+from dflintdpy.simulation.spni.config import CachePolicy, build_run_config
+from dflintdpy.simulation.spni.data import (
+    build_spni_training_view,
+    generate_base_data,
+    split_base_data,
 )
-from dflintdpy.data.adverse.adverse_dataset import AdvDataset
-from dflintdpy.data.adverse.adverse_loader import AdvLoader
+from dflintdpy.simulation.spni.types import GraphBundle
+
+
+def _cache_policy_from_options(
+        cache_options: CacheReplaceOptions | None,
+) -> CachePolicy:
+    """Translate legacy cache-replace options into the SPNI cache policy."""
+    options = cache_options or get_cache_replace_options()
+    return CachePolicy(
+        replace_data=options.replace_data,
+        replace_intd_adv=options.replace_intd_adv,
+        replace_intd_rnd=options.replace_intd_rnd,
+        replace_pred=options.replace_pred,
+        replace_result=options.replace_result,
+        replace_fig=options.replace_fig,
+        archive_replaced=options.archive_replaced,
+    )
 
 def set_seed(cfg: HP) -> None:    # Set the random seed for reproducibility
     np.random.seed(cfg.get("random_seed"))
@@ -43,96 +57,38 @@ def gen_train_data(
         cache_options: CacheReplaceOptions | None = None,
 ) -> dict:
     """
-    Sets up the graph and data loaders for the shortest path problem.
-    ``interdiction_policy`` controls whether scenario generation uses
-    adversarial or random interdictions.
+    Compatibility wrapper around the SPNI dataset-assembly stage.
+
+    This preserves the legacy return structure while delegating the dataset
+    orchestration into `simulation.spni.data`.
     """
-
-    cache_options = cache_options or get_cache_replace_options()
-    replace_data = cache_options.for_artifact(Artefacts.DATA)
-
-    # Load data from cache if available and not forced to replace.
-    data = None if replace_data else read_cache(cfg, Artefacts.DATA)
-    if data is None: # TODO: num_seeds is not in the data information. What is loaded and how does it handle that the data is missing?
-        # Generate synthetic data for training and testing
-        features, costs = gen_syn_data(cfg, opt_model)
-
-        # Save generated data if path is provided
-        write_data(cfg, features, costs, replace=replace_data)
-        print(f"Saved data to file.")
-    else:
-        features, costs = data["feats"], data["costs"]
-
-
-    # Normalize costs
-    normalization_constant = costs.max()
-    costs = costs / normalization_constant
-
-    # Split the data into training and testing sets
-    X_train, X_test, c_train, c_test = train_test_split(
-        features, 
-        costs, 
-        test_size=cfg.get("num_test_samples"), 
-        random_state=cfg.get("random_seed")
+    run_cfg = build_run_config(
+        cfg,
+        cache_policy=_cache_policy_from_options(cache_options),
     )
-
-    # Generate adversarial examples for the validation set
-    adversarial_generator = SPNIAdverseDataGenerator(
-        cfg, 
-        opt_model, 
-        budget=cfg.get("budget"), 
-        normalization_constant=normalization_constant,
-        num_scenarios=cfg.get("num_scenarios"),
+    graph_bundle = GraphBundle(
+        graph=None,
+        opt_model=opt_model,
+        graph_kind="compatibility",
+        graph_source="scripts.setup.gen_train_data",
+    )
+    base_data = generate_base_data(run_cfg, graph_bundle)
+    split_data = split_base_data(run_cfg, base_data.features, base_data.costs)
+    training_view = build_spni_training_view(
+        run_cfg,
+        graph_bundle,
+        split_data,
         interdiction_policy=interdiction_policy,
-        cache_options=cache_options,
-        gen_intd_seed=cfg.get("intd_seed"), # 157 if not specified otherwise
     )
 
-    X_train, c_train, i_train = adversarial_generator.generate(
-        X_train, 
-        c_train,
-        cfg=cfg
-    )
-    
-    # Split the training data into training and validation data
-    idxs = np.arange(X_train.shape[0])
-    X_train, X_val, idxs_train, idxs_val = train_test_split(
-        X_train, 
-        idxs, 
-        test_size=cfg.get("num_val_samples"), 
-        random_state=cfg.get("random_seed")
-    )
-    c_train, c_val = c_train[idxs_train], c_train[idxs_val]
-    i_train, i_val = i_train[idxs_train], i_train[idxs_val]
-
-
-    # Create data sets
-    train_dataset = AdvDataset(opt_model, X_train, c_train, i_train)
-    val_dataset = AdvDataset(opt_model, X_val, c_val, i_val)
-
-    # Create data loaders for training and validation
-    train_loader = AdvLoader(
-        train_dataset,
-        batch_size=cfg.get("batch_size"),
-        seed=cfg.get("loader_seed"),
-        shuffle=True,
-    )
-    val_loader = AdvLoader(
-        val_dataset,
-        batch_size=cfg.get("batch_size"),
-        seed=cfg.get("loader_seed"),
-        shuffle=False,
-    )
-
-    # Return the train and validation data loaders and the test data
     return {
-        "train_loader": train_loader,
-        "val_loader": val_loader
+        "train_loader": training_view.train_loader,
+        "val_loader": training_view.val_loader
     }, {
-        "feats": X_test,
-        "costs": c_test
-    }, normalization_constant,{
-        "data_generator": adversarial_generator
+        "feats": split_data.test_features,
+        "costs": split_data.test_costs
+    }, split_data.normalization_constant,{
+        "data_generator": training_view.data_generator
     }
 
 

@@ -331,10 +331,10 @@ Completed in:
 
 ## Phase 12: Reduce `setup.py` to Compatibility Helpers
 
-- [ ] Move remaining orchestration logic out of
+- [x] Move remaining orchestration logic out of
   `src/dflintdpy/scripts/setup.py`.
-- [ ] Keep only thin wrappers if other code imports it.
-- [ ] Ensure dataset and training responsibilities now live in
+- [x] Keep only thin wrappers if other code imports it.
+- [x] Ensure dataset and training responsibilities now live in
   `simulation/spni/data.py` and `simulation/spni/train.py`.
 
 Implementation notes:
@@ -344,6 +344,11 @@ Implementation notes:
 
 Exit criteria:
 - `setup.py` is no longer the owner of core SPNI workflow assembly.
+
+Completed in:
+- `src/dflintdpy/scripts/setup.py`
+- `src/dflintdpy/simulation/spni/data.py`
+- `tests/unit/scripts/test_setup.py`
 
 ---
 
