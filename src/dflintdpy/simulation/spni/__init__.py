@@ -1,8 +1,9 @@
-"""SPNI orchestration scaffold.
+"""Canonical SPNI orchestration API.
 
-The modules in this package are intentionally non-invasive scaffolding for a
-future refactor. They document the intended interfaces and responsibilities of
-the SPNI orchestration layer without changing the current scripts.
+The package-level entrypoints exported here are the supported path for new
+single-run and seed-sweep SPNI workflows. Legacy script modules may remain as
+compatibility wrappers, but they should delegate into this package rather than
+own orchestration themselves.
 """
 
 from dflintdpy.simulation.spni.config import (

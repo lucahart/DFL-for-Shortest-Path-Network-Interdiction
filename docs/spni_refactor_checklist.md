@@ -377,17 +377,29 @@ Completed in:
 
 ## Phase 14: Deprecate or Remove Stale Orchestration Code
 
-- [ ] Reassess duplicate entrypoints after wrappers are proven stable.
-- [ ] Reassess stale exploratory scripts such as `spni_synthetic_data.py`.
-- [ ] Document the canonical SPNI orchestration entrypoints.
-- [ ] Remove dead code only after compatibility coverage is in place.
+- [x] Reassess duplicate entrypoints after wrappers are proven stable.
+- [x] Reassess stale exploratory scripts such as `spni_synthetic_data.py`.
+- [x] Document the canonical SPNI orchestration entrypoints.
+- [x] Remove dead code only after compatibility coverage is in place.
 
 Implementation notes:
 - This cleanup phase should happen only after all prior phases are stable.
+- The canonical orchestration entrypoints are now
+  `simulation.spni.pipeline.run_single_simulation(...)` and
+  `simulation.spni.pipeline.run_seed_sweep(...)`.
+- `scripts/asym_spni_single_sim.py` and `scripts/Asym_SPNI_Simulator.py`
+  remain only as compatibility wrappers for downstream callers.
+- No dedicated `spni_synthetic_data.py` entrypoint remains in `scripts/`;
+  the still-present `read_synthetic_data.py` helper is not part of the SPNI
+  orchestration path.
 
 Exit criteria:
 - One canonical SPNI orchestration path remains.
 - Old scripts are either wrappers or clearly deprecated.
+
+Completed in:
+- `docs/spni_orchestration_refactor_spec.md`
+- `src/dflintdpy/simulation/spni/__init__.py`
 
 ---
 

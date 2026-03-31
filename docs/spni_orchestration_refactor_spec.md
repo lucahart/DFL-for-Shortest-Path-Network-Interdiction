@@ -569,6 +569,16 @@ Target ownership split:
 - lower-level legacy helpers may remain behind typed wrappers when rewriting
   them is out of scope for this refactor
 
+Canonical entrypoints after migration:
+- `dflintdpy.simulation.spni.run_single_simulation(...)`
+- `dflintdpy.simulation.spni.run_seed_sweep(...)`
+- `scripts/asym_spni_single_sim.py` is compatibility-only and should not gain
+  new orchestration logic
+- `scripts/Asym_SPNI_Simulator.py` is compatibility-only and should not regain
+  ownership of the seed loop
+- no separate SPNI synthetic-data orchestration script remains; helper scripts
+  like `read_synthetic_data.py` are outside the SPNI orchestration path
+
 ### Current `scripts/asym_spni_single_sim.py`
 
 Future role:
