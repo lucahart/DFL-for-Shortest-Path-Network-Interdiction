@@ -36,6 +36,27 @@ from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 
 RunHandler = Callable[..., SimulationResult | SweepResult]
 
+_SCENARIO_SWEEP_PERCENTAGE_KEYS = {
+    "unintd": {
+        "PO": "no_intd_p",
+        "DFL": "no_intd_s",
+        "R-DFL": "no_intd_r",
+        "A-DFL": "no_intd_a",
+    },
+    "intd": {
+        "PO": "sym_intd_p",
+        "DFL": "sym_intd_s",
+        "R-DFL": "sym_intd_r",
+        "A-DFL": "sym_intd_a",
+    },
+    "asym": {
+        "PO": "asym_intd_p",
+        "DFL": "asym_intd_s",
+        "R-DFL": "asym_intd_r",
+        "A-DFL": "asym_intd_a",
+    },
+}
+
 
 def _normalize_run_config(
     run_cfg_or_base_cfg: SPNIRunConfig | Any,
@@ -81,6 +102,9 @@ def _build_base_cfg(cfg: Any | None = None):
 
 def _set_cfg_value(cfg: Any, key: str, value: Any) -> None:
     """Set one config attribute using the legacy setter when available."""
+    if isinstance(cfg, dict):
+        cfg[key] = value
+        return
     setter = getattr(cfg, "set", None)
     if callable(setter):
         setter(key, value)
@@ -110,6 +134,16 @@ def _apply_cfg_overrides(cfg: Any, **overrides) -> Any:
     return cfg
 
 
+def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
+    """Read one config-style value from mappings or legacy config objects."""
+    if isinstance(cfg, dict):
+        return cfg.get(key, default)
+    getter = getattr(cfg, "get", None)
+    if callable(getter):
+        return getter(key, default)
+    return getattr(cfg, key, default)
+
+
 def _mode_handlers() -> dict[str, RunHandler]:
     """Return the supported top-level SPNI execution modes."""
     return {
@@ -136,6 +170,56 @@ def _resolve_run_options(
     if num_seeds is not None:
         options["num_seeds"] = int(num_seeds)
     return options
+
+
+def _normalize_scenarios(scenarios: Sequence[int]) -> list[int]:
+    """Return validated integer scenario counts in caller-specified order."""
+    resolved = [int(scenario) for scenario in scenarios]
+    if not resolved:
+        raise ValueError("Scenario sweeps require at least one scenario count.")
+    return resolved
+
+
+def _init_scenario_stats(
+    scenarios: Sequence[int],
+) -> tuple[dict[int, dict[str, dict[str, list[float]]]], dict[int, dict[str, dict[str, list[float]]]]]:
+    """Build the nested plot-stat containers used by scenario sweeps."""
+    sim_stats = {
+        int(scenario): {
+            condition: {
+                method: []
+                for method in methods
+            }
+            for condition, methods in _SCENARIO_SWEEP_PERCENTAGE_KEYS.items()
+        }
+        for scenario in scenarios
+    }
+    sample_stats = {
+        int(scenario): {
+            condition: {
+                method: []
+                for method in methods
+            }
+            for condition, methods in _SCENARIO_SWEEP_PERCENTAGE_KEYS.items()
+        }
+        for scenario in scenarios
+    }
+    return sim_stats, sample_stats
+
+
+def _copy_percentage_stats(
+    target: dict[int, dict[str, dict[str, list[float]]]],
+    scenario: int,
+    percentages: dict[str, Any],
+) -> None:
+    """Populate one scenario bucket from aggregated percentage arrays."""
+    for condition, method_map in _SCENARIO_SWEEP_PERCENTAGE_KEYS.items():
+        for method, percentage_key in method_map.items():
+            values = percentages.get(percentage_key, [])
+            target[scenario][condition][method] = [
+                float(value)
+                for value in list(values)
+            ]
 
 
 def _parse_override(raw_override: str) -> tuple[str, Any]:
@@ -348,6 +432,77 @@ def run_seed_sweep(
             "side_effects_enabled": False,
         },
     )
+
+
+def run_scenario_sweep(
+    run_cfg_or_base_cfg: SPNIRunConfig | Any,
+    *,
+    scenarios: Sequence[int],
+    num_seeds: int | None = None,
+    compute_asym_intd: bool | None = None,
+    compute_wrong_asym_intd: bool | None = None,
+    load_real_world_graph: str | None = None,
+) -> dict[str, Any]:
+    """Run seed sweeps across scenario counts and return plot-ready stats.
+
+    This is the canonical replacement for the legacy
+    ``scripts.plot_scenario_sweep.run_sweep(...)`` helper. Each scenario count
+    reuses ``run_seed_sweep(...)`` and then adapts the aggregated percentage
+    metrics into the legacy nested dictionaries expected by the plotting code.
+    """
+    resolved_scenarios = _normalize_scenarios(scenarios)
+    resolved_num_seeds = int(
+        _cfg_get(run_cfg_or_base_cfg, "num_seeds", 1)
+        if num_seeds is None else num_seeds
+    )
+    sim_stats, sample_stats = _init_scenario_stats(resolved_scenarios)
+    sweep_results: dict[int, SweepResult] = {}
+    base_cfg = _build_base_cfg(run_cfg_or_base_cfg)
+    run_options = _resolve_run_options(
+        num_seeds=None,
+        compute_asym_intd=compute_asym_intd,
+        compute_wrong_asym_intd=compute_wrong_asym_intd,
+        load_real_world_graph=load_real_world_graph,
+    )
+
+    for scenario in resolved_scenarios:
+        scenario_cfg = _apply_cfg_overrides(
+            _build_base_cfg(base_cfg),
+            num_scenarios=int(scenario),
+        )
+        sweep_result = run_seed_sweep(
+            scenario_cfg,
+            num_seeds=resolved_num_seeds,
+            **run_options,
+        )
+        sweep_results[int(scenario)] = sweep_result
+        percentage_increases = sweep_result.aggregated_summary.get(
+            "percentage_increases",
+            {},
+        )
+        _copy_percentage_stats(
+            sim_stats,
+            int(scenario),
+            percentage_increases.get("simulations", {}),
+        )
+        _copy_percentage_stats(
+            sample_stats,
+            int(scenario),
+            percentage_increases.get("samples", {}),
+        )
+
+    return {
+        "scenarios": resolved_scenarios,
+        "num_seeds": resolved_num_seeds,
+        "sweep_results": sweep_results,
+        "sim_stats": sim_stats,
+        "sample_stats": sample_stats,
+        "diagnostics": {
+            "num_scenarios_swept": len(resolved_scenarios),
+            "scenario_counts": resolved_scenarios,
+            "side_effects_enabled": False,
+        },
+    }
 
 
 def cli(argv: Sequence[str] | None = None) -> SimulationResult | SweepResult:
