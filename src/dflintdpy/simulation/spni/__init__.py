@@ -21,6 +21,7 @@ from dflintdpy.simulation.spni.config import (
 from dflintdpy.simulation.spni.pipeline import (
     cli,
     main,
+    run_scenario_sweep,
     run_seed_sweep,
     run_single_simulation,
 )
@@ -59,6 +60,7 @@ __all__ = [
     # Canonical orchestration entrypoints.
     "cli",
     "main",
+    "run_scenario_sweep",
     "run_seed_sweep",
     "run_single_simulation",
     "SweepStoragePaths",

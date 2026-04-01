@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -152,11 +151,18 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_delegates_without_side_effects(
     """Verify that `run_sweep(...)` delegates and leaves side effects off."""
     # Arrange a pipeline stub plus side-effect sentinels.
     calls: list[dict[str, object]] = []
-    persisted_calls: list[dict[str, object]] = []
     analyzed_calls: list[str] = []
     result = _sweep_result()
 
     def _fake_run_seed_sweep(cfg, *, num_seeds, **options):
+        result.diagnostics.update(
+            {
+                "present_results": bool(options["present_results"]),
+                "legacy_output_path": None,
+                "sample_boxplot_path": None,
+                "simulation_boxplot_path": None,
+            }
+        )
         calls.append(
             {
                 "cfg": cfg,
@@ -166,28 +172,10 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_delegates_without_side_effects(
         )
         return result
 
-    def _fake_persist_sweep_outputs(sweep_result, *, output_path=None):
-        persisted_calls.append(
-            {
-                "sweep_result": sweep_result,
-                "output_path": output_path,
-            }
-        )
-        return SimpleNamespace(
-            results_path=Path("results.csv"),
-            sample_boxplot_path=Path("sample_boxplot.png"),
-            simulation_boxplot_path=Path("simulation_boxplot.png"),
-        )
-
     def _fake_analyze_results():
         analyzed_calls.append("called")
 
     monkeypatch.setattr(script_module, "run_seed_sweep", _fake_run_seed_sweep)
-    monkeypatch.setattr(
-        script_module,
-        "persist_sweep_outputs",
-        _fake_persist_sweep_outputs,
-    )
     monkeypatch.setattr(
         script_module,
         "analyze_results",
@@ -207,6 +195,7 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_delegates_without_side_effects(
     # options.
     sweep_result = script_module.run_sweep(
         cfg,
+        present_results=False,
         compute_asym_intd_2=False,
         compute_asym_intd=True,
     )
@@ -221,14 +210,14 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_delegates_without_side_effects(
     assert calls[0]["num_seeds"] == 2, \
         "run_sweep should derive num_seeds from the legacy config by default."
     assert calls[0]["options"] == {
+        "present_results": False,
+        "output_path": None,
         "compute_asym_intd": True,
         "compute_wrong_asym_intd": False,
     }, "run_sweep should map legacy runtime flags onto pipeline options."
-    assert persisted_calls == [], \
-        "run_sweep should not persist results unless requested explicitly."
     assert analyzed_calls == [], \
         "run_sweep should not analyze results unless requested explicitly."
-    assert sweep_result.diagnostics["persist_results"] is False, \
+    assert sweep_result.diagnostics["present_results"] is False, \
         "run_sweep should record that persistence was disabled."
     assert sweep_result.diagnostics["legacy_output_path"] is None, \
         "run_sweep should leave the legacy output path unset when skipped."
@@ -244,35 +233,32 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_persists_legacy_results(
 ):
     """Verify that `run_sweep(...)` persists sweep outputs on demand."""
     # Arrange a pipeline stub and side-effect capture hooks.
-    persisted_calls: list[dict[str, object]] = []
+    calls: list[dict[str, object]] = []
     analyzed_calls: list[str] = []
     result = _sweep_result()
 
     def _fake_run_seed_sweep(cfg, *, num_seeds, **options):
-        return result
-
-    def _fake_persist_sweep_outputs(sweep_result, *, output_path=None):
-        persisted_calls.append(
+        result.diagnostics.update(
             {
-                "sweep_result": sweep_result,
-                "output_path": output_path,
+                "present_results": bool(options["present_results"]),
+                "legacy_output_path": str(options["output_path"]),
+                "sample_boxplot_path": "custom-results_boxplot.png",
+                "simulation_boxplot_path": "custom-results_boxplot_sims.png",
             }
         )
-        return SimpleNamespace(
-            results_path=Path(output_path),
-            sample_boxplot_path=Path("custom-results_boxplot.png"),
-            simulation_boxplot_path=Path("custom-results_boxplot_sims.png"),
+        calls.append(
+            {
+                "cfg": cfg,
+                "num_seeds": num_seeds,
+                "options": options,
+            }
         )
+        return result
 
     def _fake_analyze_results():
         analyzed_calls.append("called")
 
     monkeypatch.setattr(script_module, "run_seed_sweep", _fake_run_seed_sweep)
-    monkeypatch.setattr(
-        script_module,
-        "persist_sweep_outputs",
-        _fake_persist_sweep_outputs,
-    )
     monkeypatch.setattr(
         script_module,
         "analyze_results",
@@ -284,7 +270,7 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_persists_legacy_results(
     sweep_result = script_module.run_sweep(
         result.run_config,
         num_seeds=2,
-        persist_results=True,
+        present_results=True,
         analyze=True,
         output_path=output_path,
     )
@@ -292,16 +278,22 @@ def test_scripts_Asym_SPNI_Simulator_run_sweep_persists_legacy_results(
     # Assert that the new storage pipeline saw the typed sweep and paths.
     assert sweep_result is result, \
         "run_sweep should return the same SweepResult after persistence."
-    assert len(persisted_calls) == 1, \
-        "run_sweep should persist one sweep output bundle when requested."
-    assert persisted_calls[0]["sweep_result"] is result, \
-        "run_sweep should pass the typed SweepResult into storage."
-    assert persisted_calls[0]["output_path"] == output_path, \
+    assert len(calls) == 1, \
+        "run_sweep should delegate to the typed seed sweep once."
+    assert calls[0]["options"] == {
+        "present_results": True,
+        "output_path": output_path,
+        "compute_asym_intd": True,
+        "compute_wrong_asym_intd": True,
+    }, "run_sweep should forward persistence options to run_seed_sweep."
+    assert calls[0]["num_seeds"] == 2, \
+        "run_sweep should forward the resolved seed count."
+    assert calls[0]["cfg"] is result.run_config, \
+        "run_sweep should forward the chosen config to the typed pipeline."
+    assert sweep_result.diagnostics["legacy_output_path"] == output_path, \
         "run_sweep should honor an explicit legacy output path."
     assert analyzed_calls == ["called"], \
         "run_sweep should trigger analysis only when requested explicitly."
-    assert sweep_result.diagnostics["legacy_output_path"] == output_path, \
-        "run_sweep should record the path used for legacy persistence."
     assert sweep_result.diagnostics["sample_boxplot_path"] == (
         "custom-results_boxplot.png"
     ), "run_sweep should record the saved sample-boxplot path."

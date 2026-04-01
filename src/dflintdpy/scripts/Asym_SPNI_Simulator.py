@@ -7,7 +7,6 @@ from typing import Any
 
 from dflintdpy.data.config import HP
 from dflintdpy.simulation.spni.pipeline import run_seed_sweep
-from dflintdpy.simulation.spni.storage import persist_sweep_outputs
 from dflintdpy.simulation.spni.results import to_legacy_all_data
 from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 from dflintdpy.utils.analyse_results import analyze_results
@@ -49,7 +48,7 @@ def run_sweep(
     num_seeds: int | None = None,
     compute_asym_intd_2: bool = True,
     compute_asym_intd: bool = True,
-    persist_results: bool = False,
+    present_results: bool = True,
     analyze: bool = False,
     output_path: str | Path | None = None,
     apply_default_cache_policy: bool = False,
@@ -76,33 +75,19 @@ def run_sweep(
     sweep_result = run_seed_sweep(
         cfg,
         num_seeds=resolved_num_seeds,
+        present_results=present_results,
+        output_path=str(output_path) if output_path is not None else None,
         compute_asym_intd=compute_asym_intd,
         compute_wrong_asym_intd=compute_asym_intd_2,
     )
 
     legacy_results = _legacy_results_payload(sweep_result)
-    resolved_output_path: str | None = None
-    sample_boxplot_path: str | None = None
-    simulation_boxplot_path: str | None = None
-    if persist_results:
-        stored_paths = persist_sweep_outputs(
-            sweep_result,
-            output_path=output_path,
-        )
-        resolved_output_path = str(stored_paths.results_path)
-        sample_boxplot_path = str(stored_paths.sample_boxplot_path)
-        simulation_boxplot_path = str(stored_paths.simulation_boxplot_path)
-
     if analyze:
         analyze_results()
 
     sweep_result.diagnostics.update(
         {
-            "persist_results": bool(persist_results),
             "analysis_requested": bool(analyze),
-            "legacy_output_path": resolved_output_path,
-            "sample_boxplot_path": sample_boxplot_path,
-            "simulation_boxplot_path": simulation_boxplot_path,
             "legacy_results_count": len(legacy_results),
         }
     )
@@ -113,7 +98,7 @@ def main() -> SweepResult:
     """Run the legacy sweep with explicit persistence enabled."""
     sweep_result = run_sweep(
         HP(),
-        persist_results=True,
+        present_results=True,
         apply_default_cache_policy=True,
     )
     print("Done with all simulations.")

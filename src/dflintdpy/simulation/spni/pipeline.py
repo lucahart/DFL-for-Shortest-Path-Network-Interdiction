@@ -31,10 +31,11 @@ from dflintdpy.simulation.spni.results import (
     aggregate_sweep_results,
     build_summary,
 )
+from dflintdpy.simulation.spni.storage import persist_sweep_outputs
 from dflintdpy.simulation.spni.train import train_all_predictors
 from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 
-RunHandler = Callable[..., SimulationResult | SweepResult]
+RunHandler = Callable[..., SimulationResult | SweepResult | dict[str, Any]]
 
 _SCENARIO_SWEEP_PERCENTAGE_KEYS = {
     "unintd": {
@@ -149,6 +150,7 @@ def _mode_handlers() -> dict[str, RunHandler]:
     return {
         "single": run_single_simulation,
         "seed_sweep": run_seed_sweep,
+        "scenario_sweep": run_scenario_sweep,
     }
 
 
@@ -158,6 +160,7 @@ def _resolve_run_options(
     compute_asym_intd: bool | None,
     compute_wrong_asym_intd: bool | None,
     load_real_world_graph: str | None,
+    present_results: bool | None = None,
 ) -> dict[str, Any]:
     """Normalize optional run-mode flags for the convenience entrypoints."""
     options: dict[str, Any] = {}
@@ -167,6 +170,8 @@ def _resolve_run_options(
         options["compute_wrong_asym_intd"] = bool(compute_wrong_asym_intd)
     if load_real_world_graph is not None:
         options["load_real_world_graph"] = str(load_real_world_graph)
+    if present_results is not None:
+        options["present_results"] = bool(present_results)
     if num_seeds is not None:
         options["num_seeds"] = int(num_seeds)
     return options
@@ -240,6 +245,19 @@ def _parse_override(raw_override: str) -> tuple[str, Any]:
     return key, value
 
 
+def _parse_scenarios_arg(raw_scenarios: str | None) -> list[int] | None:
+    """Parse one comma-separated scenario list from the CLI."""
+    if raw_scenarios is None:
+        return None
+    return _normalize_scenarios(
+        [
+            part.strip()
+            for part in raw_scenarios.split(",")
+            if part.strip()
+        ]
+    )
+
+
 def _apply_seed_bundle(
     run_cfg: SPNIRunConfig,
     *,
@@ -266,12 +284,14 @@ def main(
     *,
     mode: str = "seed_sweep",
     cfg: Any | None = None,
+    scenarios: Sequence[int] | None = None,
     num_seeds: int | None = None,
     compute_asym_intd: bool | None = None,
     compute_wrong_asym_intd: bool | None = None,
     load_real_world_graph: str | None = None,
+    present_results: bool | None = None,
     **cfg_overrides,
-) -> SimulationResult | SweepResult:
+) -> SimulationResult | SweepResult | dict[str, Any]:
     """Run one SPNI entrypoint with optional config overrides.
 
     This is the convenience function intended for terminal one-liners and
@@ -281,10 +301,11 @@ def main(
 
     Parameters:
     - ``mode`` selects the top-level execution path. Supported values are
-      ``"single"`` and ``"seed_sweep"``.
+      ``"single"``, ``"seed_sweep"``, and ``"scenario_sweep"``.
     - ``cfg`` optionally provides a legacy base config object. When omitted,
       the default ``HP()`` config is used.
-    - ``num_seeds`` applies only to seed sweeps.
+    - ``scenarios`` applies only to scenario sweeps.
+    - ``num_seeds`` applies to seed and scenario sweeps.
     - the remaining named parameters are forwarded as pipeline run options
     - arbitrary ``cfg_overrides`` are written onto the copied base config
       before the selected run mode executes
@@ -306,6 +327,7 @@ def main(
         compute_asym_intd=compute_asym_intd,
         compute_wrong_asym_intd=compute_wrong_asym_intd,
         load_real_world_graph=load_real_world_graph,
+        present_results=present_results,
     )
 
     handler = handlers[mode]
@@ -322,7 +344,28 @@ def main(
             **run_options,
         )
 
+    if mode == "scenario_sweep":
+        resolved_num_seeds = int(
+            run_options.pop(
+                "num_seeds",
+                getattr(resolved_cfg, "num_seeds", 1),
+            )
+        )
+        run_options.pop("present_results", None)
+        resolved_scenarios = scenarios
+        if resolved_scenarios is None:
+            resolved_scenarios = [
+                getattr(resolved_cfg, "num_scenarios", 1)
+            ]
+        return handler(
+            resolved_cfg,
+            scenarios=_normalize_scenarios(resolved_scenarios),
+            num_seeds=resolved_num_seeds,
+            **run_options,
+        )
+
     run_options.pop("num_seeds", None)
+    run_options.pop("present_results", None)
     return handler(resolved_cfg, **run_options)
 
 
@@ -397,6 +440,9 @@ def run_seed_sweep(
     run_cfg_or_base_cfg: SPNIRunConfig | Any,
     *,
     num_seeds: int,
+    present_results: bool = True,
+    output_path: str | None = None,
+    figure_directory: str | None = None,
     **options,
 ) -> SweepResult:
     """Run a multi-seed SPNI sweep and return an aggregated result object.
@@ -422,16 +468,42 @@ def run_seed_sweep(
         result = run_single_simulation(seeded_run_cfg)
         results.append(result)
 
-    return SweepResult(
+    aggregated_summary = aggregate_sweep_results(results)
+    sweep_result = SweepResult(
         run_config=run_cfg,
         results=results,
-        aggregated_summary=aggregate_sweep_results(results),
+        aggregated_summary=aggregated_summary,
         diagnostics={
             "num_runs": len(results),
             "sweep_seeds": [bundle.sweep_seed for bundle in seed_sweep],
-            "side_effects_enabled": False,
+            "present_results": bool(present_results),
+            "side_effects_enabled": bool(present_results),
         },
     )
+    if present_results:
+        stored_paths = persist_sweep_outputs(
+            sweep_result,
+            output_path=output_path,
+            figure_directory=figure_directory,
+        )
+        sweep_result.diagnostics.update(
+            {
+                "legacy_output_path": str(stored_paths.results_path),
+                "sample_boxplot_path": str(stored_paths.sample_boxplot_path),
+                "simulation_boxplot_path": str(
+                    stored_paths.simulation_boxplot_path
+                ),
+            }
+        )
+    else:
+        sweep_result.diagnostics.update(
+            {
+                "legacy_output_path": None,
+                "sample_boxplot_path": None,
+                "simulation_boxplot_path": None,
+            }
+        )
+    return sweep_result
 
 
 def run_scenario_sweep(
@@ -473,6 +545,7 @@ def run_scenario_sweep(
         sweep_result = run_seed_sweep(
             scenario_cfg,
             num_seeds=resolved_num_seeds,
+            present_results=False,
             **run_options,
         )
         sweep_results[int(scenario)] = sweep_result
@@ -505,10 +578,12 @@ def run_scenario_sweep(
     }
 
 
-def cli(argv: Sequence[str] | None = None) -> SimulationResult | SweepResult:
+def cli(
+    argv: Sequence[str] | None = None,
+) -> SimulationResult | SweepResult | dict[str, Any]:
     """Parse one-line terminal arguments and run the requested SPNI mode."""
     parser = argparse.ArgumentParser(
-        description="Run SPNI single simulations or seed sweeps.",
+        description="Run SPNI single runs, seed sweeps, or scenario sweeps.",
     )
     parser.add_argument(
         "--mode",
@@ -520,7 +595,15 @@ def cli(argv: Sequence[str] | None = None) -> SimulationResult | SweepResult:
         "--num-seeds",
         type=int,
         default=None,
-        help="Number of seeds to run when mode=seed_sweep.",
+        help="Number of seeds to run when mode=seed_sweep or scenario_sweep.",
+    )
+    parser.add_argument(
+        "--scenarios",
+        default=None,
+        help=(
+            "Comma-separated scenario counts to run when "
+            "mode=scenario_sweep."
+        ),
     )
     parser.add_argument(
         "--compute-asym-intd",
@@ -542,6 +625,13 @@ def cli(argv: Sequence[str] | None = None) -> SimulationResult | SweepResult:
         help="Optional path to a real-world graph CSV.",
     )
     parser.add_argument(
+        "--present-results",
+        dest="present_results",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Persist sweep CSVs and boxplots when mode=seed_sweep.",
+    )
+    parser.add_argument(
         "--set",
         dest="overrides",
         action="append",
@@ -558,15 +648,22 @@ def cli(argv: Sequence[str] | None = None) -> SimulationResult | SweepResult:
 
     result = main(
         mode=parsed.mode,
+        scenarios=_parse_scenarios_arg(parsed.scenarios),
         num_seeds=parsed.num_seeds,
         compute_asym_intd=parsed.compute_asym_intd,
         compute_wrong_asym_intd=parsed.compute_wrong_asym_intd,
         load_real_world_graph=parsed.load_real_world_graph,
+        present_results=parsed.present_results,
         **cfg_overrides,
+    )
+    diagnostics = (
+        result.get("diagnostics", {})
+        if isinstance(result, dict)
+        else result.diagnostics
     )
     print(
         f"Completed SPNI {parsed.mode}: "
-        f"{result.diagnostics}"
+        f"{diagnostics}"
     )
     return result
 

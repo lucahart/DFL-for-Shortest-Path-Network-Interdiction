@@ -80,6 +80,40 @@ def _dataset_bundle(label: str) -> DatasetBundle:
     )
 
 
+def _percentage_increases(offset: float) -> dict[str, dict[str, np.ndarray]]:
+    """Return deterministic percentage arrays for scenario-sweep tests."""
+    return {
+        "simulations": {
+            "no_intd_p": np.array([offset + 1.0], dtype=float),
+            "no_intd_s": np.array([offset + 2.0], dtype=float),
+            "no_intd_r": np.array([offset + 3.0], dtype=float),
+            "no_intd_a": np.array([offset + 4.0], dtype=float),
+            "sym_intd_p": np.array([offset + 5.0], dtype=float),
+            "sym_intd_s": np.array([offset + 6.0], dtype=float),
+            "sym_intd_r": np.array([offset + 7.0], dtype=float),
+            "sym_intd_a": np.array([offset + 8.0], dtype=float),
+            "asym_intd_p": np.array([offset + 9.0], dtype=float),
+            "asym_intd_s": np.array([offset + 10.0], dtype=float),
+            "asym_intd_r": np.array([offset + 11.0], dtype=float),
+            "asym_intd_a": np.array([offset + 12.0], dtype=float),
+        },
+        "samples": {
+            "no_intd_p": np.array([offset + 13.0, offset + 14.0], dtype=float),
+            "no_intd_s": np.array([offset + 15.0, offset + 16.0], dtype=float),
+            "no_intd_r": np.array([offset + 17.0, offset + 18.0], dtype=float),
+            "no_intd_a": np.array([offset + 19.0, offset + 20.0], dtype=float),
+            "sym_intd_p": np.array([offset + 21.0, offset + 22.0], dtype=float),
+            "sym_intd_s": np.array([offset + 23.0, offset + 24.0], dtype=float),
+            "sym_intd_r": np.array([offset + 25.0, offset + 26.0], dtype=float),
+            "sym_intd_a": np.array([offset + 27.0, offset + 28.0], dtype=float),
+            "asym_intd_p": np.array([offset + 29.0, offset + 30.0], dtype=float),
+            "asym_intd_s": np.array([offset + 31.0, offset + 32.0], dtype=float),
+            "asym_intd_r": np.array([offset + 33.0, offset + 34.0], dtype=float),
+            "asym_intd_a": np.array([offset + 35.0, offset + 36.0], dtype=float),
+        },
+    }
+
+
 #######################################
 ### test run_single_simulation(...) ###
 #######################################
@@ -204,6 +238,7 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
     """Verify that the sweep pipeline reuses single-run execution in order."""
     # Arrange an ordered seed sweep and a recording single-run stub.
     calls: list[int] = []
+    persisted_calls: list[SweepResult] = []
     seed_bundles = [
         SeedBundle(sweep_seed=31, random_seed=41, intd_seed=51, loader_seed=61),
         SeedBundle(sweep_seed=32, random_seed=42, intd_seed=52, loader_seed=62),
@@ -274,6 +309,17 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
         "run_single_simulation",
         _fake_run_single_simulation,
     )
+    monkeypatch.setattr(
+        pipeline_module,
+        "persist_sweep_outputs",
+        lambda sweep_result, **kwargs: (
+            persisted_calls.append(sweep_result) or SimpleNamespace(
+                results_path="results.csv",
+                sample_boxplot_path="sample_boxplot.png",
+                simulation_boxplot_path="simulation_boxplot.png",
+            )
+        ),
+    )
 
     # Act by running the multi-seed sweep.
     result = pipeline_module.run_seed_sweep(run_cfg, num_seeds=2)
@@ -287,6 +333,184 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
         "run_seed_sweep should preserve one SimulationResult per seed bundle."
     assert result.aggregated_summary["num_runs"] == 2, \
         "run_seed_sweep should aggregate the resulting run summaries."
+    assert persisted_calls == [result], \
+        "run_seed_sweep should persist outputs by default."
+    assert result.diagnostics["present_results"] is True, \
+        "run_seed_sweep should record that presentation was enabled."
+    assert result.diagnostics["legacy_output_path"] == "results.csv", \
+        "run_seed_sweep should record the saved CSV path."
+    pass
+
+
+def test_spni_pipeline_run_seed_sweep_skips_persistence_when_disabled(
+    monkeypatch,
+    run_cfg,
+):
+    """Verify that explicit persistence opt-out suppresses saved outputs."""
+    # Arrange one deterministic sweep and a persistence sentinel.
+    seed_bundles = [
+        SeedBundle(sweep_seed=31, random_seed=41, intd_seed=51, loader_seed=61),
+    ]
+    persisted_calls: list[SweepResult] = []
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "derive_seed_sweep",
+        lambda cfg, num_seeds: seed_bundles,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_single_simulation",
+        lambda cfg: SimulationResult(
+            run_config=cfg,
+            seed_bundle=SeedBundle(
+                sweep_seed=cfg.seed,
+                random_seed=cfg.random_seed,
+                intd_seed=cfg.intd_seed,
+                loader_seed=cfg.loader_seed,
+            ),
+            graph_bundle=GraphBundle(
+                graph=SimpleNamespace(name="graph"),
+                opt_model=SimpleNamespace(name="opt-model"),
+                graph_kind="synthetic",
+            ),
+            dataset_bundle=_dataset_bundle("unit"),
+            predictor_bundle=PredictorBundle(
+                pfl=SimpleNamespace(label="pfl"),
+                dfl=SimpleNamespace(label="dfl"),
+                rdfl=SimpleNamespace(label="rdfl"),
+                adfl=SimpleNamespace(label="adfl"),
+            ),
+            evaluation_bundle=EvaluationBundle(
+                uninterdicted={},
+                symmetric={},
+                asymmetric={},
+                wrong_model_asymmetry={},
+            ),
+            summary_bundle=SummaryBundle(
+                prediction_mean_std={},
+                metrics={},
+                table_1={},
+                table_2={},
+                all_data={
+                    "o_o": np.array([1.0], dtype=float),
+                    "o_p": np.array([2.0], dtype=float),
+                    "o_s": np.array([3.0], dtype=float),
+                    "o_r": np.array([4.0], dtype=float),
+                    "o_a": np.array([5.0], dtype=float),
+                    "s_o": np.array([1.0], dtype=float),
+                    "s_p": np.array([2.0], dtype=float),
+                    "s_s": np.array([3.0], dtype=float),
+                    "s_r": np.array([4.0], dtype=float),
+                    "s_a": np.array([5.0], dtype=float),
+                    "a_o": np.array([1.0], dtype=float),
+                    "a_p": np.array([2.0], dtype=float),
+                    "a_s": np.array([3.0], dtype=float),
+                    "a_r": np.array([4.0], dtype=float),
+                    "a_a": np.array([5.0], dtype=float),
+                },
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "persist_sweep_outputs",
+        lambda sweep_result, **kwargs: persisted_calls.append(sweep_result),
+    )
+
+    # Act by disabling persistence on the typed seed sweep.
+    result = pipeline_module.run_seed_sweep(
+        run_cfg,
+        num_seeds=1,
+        present_results=False,
+    )
+
+    # Assert that no storage side effects were triggered.
+    assert persisted_calls == [], \
+        "run_seed_sweep should skip persistence when disabled explicitly."
+    assert result.diagnostics["present_results"] is False, \
+        "run_seed_sweep should record when presentation is disabled."
+    assert result.diagnostics["legacy_output_path"] is None, \
+        "run_seed_sweep should leave the CSV path unset when skipped."
+    pass
+
+
+#####################################
+### test run_scenario_sweep(...) ###
+#####################################
+
+
+def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
+    monkeypatch,
+):
+    """Verify that scenario sweeps delegate per scenario and map stats."""
+    # Arrange a compact base config and a recording sweep stub.
+    base_cfg = SimpleNamespace(num_seeds=4, num_scenarios=9, budget=1)
+    calls: list[dict[str, object]] = []
+
+    def _fake_run_seed_sweep(
+        cfg,
+        *,
+        num_seeds,
+        present_results,
+        **options,
+    ):
+        calls.append(
+            {
+                "cfg": cfg,
+                "num_seeds": num_seeds,
+                "present_results": present_results,
+                "options": options,
+            }
+        )
+        return SweepResult(
+            run_config=cfg,
+            results=[],
+            aggregated_summary={
+                "percentage_increases": _percentage_increases(
+                    float(cfg.num_scenarios)
+                ),
+            },
+            diagnostics={"num_runs": num_seeds},
+        )
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_seed_sweep",
+        _fake_run_seed_sweep,
+    )
+
+    # Act by running the scenario sweep over two counts.
+    result = pipeline_module.run_scenario_sweep(
+        base_cfg,
+        scenarios=[2, 5],
+        num_seeds=3,
+        compute_asym_intd=False,
+    )
+
+    # Assert that each scenario delegated to a non-persisting seed sweep.
+    assert [call["cfg"].num_scenarios for call in calls] == [2, 5], \
+        "run_scenario_sweep should override num_scenarios per sweep item."
+    assert all(call["num_seeds"] == 3 for call in calls), \
+        "run_scenario_sweep should forward the requested seed count."
+    assert all(call["present_results"] is False for call in calls), \
+        "run_scenario_sweep should suppress seed-sweep persistence."
+    assert all(
+        call["options"] == {"compute_asym_intd": False}
+        for call in calls
+    ), "run_scenario_sweep should forward run options unchanged."
+    assert result["sim_stats"][2]["unintd"]["PO"] == [3.0], \
+        "run_scenario_sweep should map simulation percentages by scenario."
+    assert result["sim_stats"][5]["asym"]["A-DFL"] == [17.0], \
+        "run_scenario_sweep should map asymmetric simulation stats."
+    assert result["sample_stats"][2]["intd"]["DFL"] == [25.0, 26.0], \
+        "run_scenario_sweep should map per-sample symmetric stats."
+    assert result["sample_stats"][5]["asym"]["R-DFL"] == [38.0, 39.0], \
+        "run_scenario_sweep should map per-sample asymmetric stats."
+    assert result["diagnostics"]["scenario_counts"] == [2, 5], \
+        "run_scenario_sweep should record the swept scenario counts."
+    assert base_cfg.num_scenarios == 9, \
+        "run_scenario_sweep should not mutate the caller-owned config."
     pass
 
 
@@ -376,6 +600,55 @@ def test_spni_pipeline_main_dispatches_single_run_mode(monkeypatch):
     pass
 
 
+def test_spni_pipeline_main_dispatches_scenario_sweep_mode(monkeypatch):
+    """Verify that main can dispatch directly to scenario-sweep execution."""
+    # Arrange a scenario-sweep stub and a mutable base config.
+    base_cfg = SimpleNamespace(num_seeds=3, num_scenarios=4, budget=1)
+    recorded: dict[str, object] = {}
+    expected_result = {"diagnostics": {"scenario_counts": [2, 3]}}
+
+    def _fake_run_scenario_sweep(cfg, *, scenarios, num_seeds, **options):
+        recorded["cfg"] = cfg
+        recorded["scenarios"] = scenarios
+        recorded["num_seeds"] = num_seeds
+        recorded["options"] = options
+        return expected_result
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_scenario_sweep",
+        _fake_run_scenario_sweep,
+    )
+
+    # Act by running the convenience entrypoint in scenario-sweep mode.
+    result = pipeline_module.main(
+        mode="scenario_sweep",
+        cfg=base_cfg,
+        scenarios=[2, 3],
+        num_seeds=7,
+        budget=9,
+        compute_wrong_asym_intd=True,
+        present_results=True,
+    )
+
+    # Assert that main forwards scenarios and drops seed-only presentation.
+    assert result is expected_result, \
+        "main should return the result from run_scenario_sweep."
+    assert recorded["scenarios"] == [2, 3], \
+        "main should forward explicit scenario counts unchanged."
+    assert recorded["num_seeds"] == 7, \
+        "main should forward the explicit num_seeds override."
+    assert recorded["options"] == {"compute_wrong_asym_intd": True}, \
+        "main should forward only supported run options to scenario sweeps."
+    assert recorded["cfg"] is not base_cfg, \
+        "main should deep-copy the caller's config before dispatch."
+    assert recorded["cfg"].budget == 9, \
+        "main should apply config overrides to the copied config."
+    assert base_cfg.budget == 1, \
+        "main should not mutate the caller-owned base config."
+    pass
+
+
 def test_spni_pipeline_main_rejects_unknown_mode():
     """Verify that main rejects unsupported top-level modes."""
     # Act and assert that unsupported modes fail clearly.
@@ -435,4 +708,53 @@ def test_spni_pipeline_cli_parses_overrides_and_dispatches(monkeypatch):
         "cli should parse integer config overrides."
     assert recorded["kwargs"]["grid_size"] == (4, 6), \
         "cli should parse tuple config overrides with literal_eval."
+    pass
+
+
+def test_spni_pipeline_cli_parses_scenario_sweep_arguments(monkeypatch):
+    """Verify that cli parses scenario-sweep arguments before dispatch."""
+    # Arrange a main stub and silence the terminal print.
+    recorded: dict[str, object] = {}
+    expected_result = {"diagnostics": {"scenario_counts": [2, 3, 5]}}
+
+    def _fake_main(**kwargs):
+        recorded["kwargs"] = kwargs
+        return expected_result
+
+    monkeypatch.setattr(pipeline_module, "main", _fake_main)
+    monkeypatch.setattr(
+        pipeline_module,
+        "print",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
+
+    # Act by executing the CLI in scenario-sweep mode.
+    result = pipeline_module.cli(
+        [
+            "--mode",
+            "scenario_sweep",
+            "--scenarios",
+            "2,3,5",
+            "--num-seeds",
+            "4",
+            "--compute-asym-intd",
+            "--set",
+            "budget=5",
+        ]
+    )
+
+    # Assert that the parsed values are forwarded with the right types.
+    assert result is expected_result, \
+        "cli should return the result from main for scenario sweeps."
+    assert recorded["kwargs"]["mode"] == "scenario_sweep", \
+        "cli should forward the requested scenario-sweep mode."
+    assert recorded["kwargs"]["scenarios"] == [2, 3, 5], \
+        "cli should parse comma-separated scenario counts as integers."
+    assert recorded["kwargs"]["num_seeds"] == 4, \
+        "cli should parse the scenario-sweep seed count as an integer."
+    assert recorded["kwargs"]["compute_asym_intd"] is True, \
+        "cli should parse boolean flags for scenario sweeps as well."
+    assert recorded["kwargs"]["budget"] == 5, \
+        "cli should keep config overrides available in scenario-sweep mode."
     pass

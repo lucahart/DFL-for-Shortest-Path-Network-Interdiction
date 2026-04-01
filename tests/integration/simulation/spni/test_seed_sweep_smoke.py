@@ -46,6 +46,7 @@ def _dataset_bundle(label: str) -> DatasetBundle:
 def test_spni_pipeline_seed_sweep_smoke_returns_two_ordered_runs(monkeypatch):
     """Verify that a tiny two-seed sweep stays ordered and aggregates cleanly."""
     # Arrange a compact base config and a lightweight single-run stub.
+    persisted_calls: list[object] = []
     base_cfg = {
         "grid_size": (2, 2),
         "num_features": 2,
@@ -129,6 +130,17 @@ def test_spni_pipeline_seed_sweep_smoke_returns_two_ordered_runs(monkeypatch):
         "run_single_simulation",
         _fake_run_single_simulation,
     )
+    monkeypatch.setattr(
+        pipeline_module,
+        "persist_sweep_outputs",
+        lambda sweep_result, **kwargs: (
+            persisted_calls.append(sweep_result) or SimpleNamespace(
+                results_path="results.csv",
+                sample_boxplot_path="sample_boxplot.png",
+                simulation_boxplot_path="simulation_boxplot.png",
+            )
+        ),
+    )
 
     # Act by running the tiny two-seed sweep.
     result = pipeline_module.run_seed_sweep(base_cfg, num_seeds=2)
@@ -145,4 +157,6 @@ def test_spni_pipeline_seed_sweep_smoke_returns_two_ordered_runs(monkeypatch):
         result.aggregated_summary["all_data"]["o_o"],
         np.array([5.0, 6.0], dtype=float),
     ), "Sweep aggregation should combine ordered run outputs without drift."
+    assert persisted_calls == [result], \
+        "Seed sweeps should persist outputs by default."
     pass

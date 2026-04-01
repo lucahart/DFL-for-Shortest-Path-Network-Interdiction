@@ -128,6 +128,26 @@ class _FailedAsymmetricInterdictorStub:
         return None, None
 
 
+class _TimeoutAsymmetricInterdictorStub:
+    """Stub asymmetric interdictor that raises a timeout-style error."""
+
+    def __init__(
+        self,
+        graph,
+        budget,
+        true_costs,
+        true_delays,
+        est_costs,
+        est_delays,
+        lsd,
+    ):
+        del graph, budget, true_costs, true_delays, est_costs, est_delays, lsd
+
+    def solve(self):
+        """Raise the error shape produced by a solver time limit."""
+        raise RuntimeError("SPNI solve did not complete successfully.")
+
+
 class _SequencedAsymmetricInterdictorStub:
     """Return a planned sequence of asymmetric-solver outcomes."""
 
@@ -237,6 +257,51 @@ def test_data_gen_gen_syn_data_uses_explicit_seed_when_opt_model_is_provided(
 ##################################
 ### test compare_asym_intd ###
 ##################################
+
+
+def test_compare_asym_intd_preserves_alignment_when_solver_times_out(
+    compare_cfg,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that a runtime timeout becomes NaN placeholders."""
+    # Arrange: make the asymmetric solver raise the timeout-style error.
+    monkeypatch.setattr(
+        compare_module,
+        "AsymmetricInterdictor",
+        _TimeoutAsymmetricInterdictorStub,
+    )
+    opt_model = _CompareOptModelStub()
+    test_data = {
+        "feats": np.array([[1.0, 2.0]], dtype=float),
+        "costs": np.array([[3.0, 4.0]], dtype=float),
+    }
+    interdictions = {
+        "costs": np.array([[0.5, 0.25]], dtype=float),
+    }
+
+    # Act: run the asymmetric comparison on one sample.
+    est_objs, true_objs = compare_module.compare_asym_intd(
+        compare_cfg,
+        opt_model,
+        test_data,
+        interdictions,
+        normalization_constant=1.0,
+    )
+
+    # Assert: the failed sample should stay aligned as NaN placeholders.
+    assert est_objs.shape == (1,), (
+        "compare_asym_intd did not preserve the estimated axis."
+    )
+    assert true_objs.shape == (1,), (
+        "compare_asym_intd did not preserve the true axis."
+    )
+    assert np.isnan(est_objs[0]), (
+        "compare_asym_intd did not replace the estimated value with NaN."
+    )
+    assert np.isnan(true_objs[0]), (
+        "compare_asym_intd did not replace the true value with NaN."
+    )
+    pass
 
 
 def test_compare_asym_intd_skips_failed_asymmetric_solve(

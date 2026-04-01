@@ -261,7 +261,11 @@ def compare_asym_intd(
             est_delays=interdiction, 
             lsd=cfg.get("lsd")
         )
-        x_intd, _ = asym_interdictor.solve()
+        # Preserve sample alignment when the staged asymmetric solve times out.
+        try:
+            x_intd, _ = asym_interdictor.solve()
+        except RuntimeError:
+            continue
         if x_intd is None:
             continue
 
