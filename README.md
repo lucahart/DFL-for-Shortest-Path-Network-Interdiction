@@ -51,6 +51,9 @@ General Information:
 
 ### Reproduction of Paper Simulations
 
+- SPNI terminal and cfg-based run guide:
+  [docs/spni_run_guide.md](docs/spni_run_guide.md)
+
 
 ### General Code Usage
 
