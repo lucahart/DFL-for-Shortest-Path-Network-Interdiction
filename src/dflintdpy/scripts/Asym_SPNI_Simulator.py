@@ -7,11 +7,11 @@ from typing import Any
 
 from dflintdpy.data.config import HP
 from dflintdpy.simulation.spni.pipeline import run_seed_sweep
+from dflintdpy.simulation.spni.storage import persist_sweep_outputs
 from dflintdpy.simulation.spni.results import to_legacy_all_data
 from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 from dflintdpy.utils.analyse_results import analyze_results
 from dflintdpy.utils.read_write import set_cache_replace_options
-from dflintdpy.utils.read_write_results import save_results_to_csv
 
 
 def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
@@ -20,29 +20,6 @@ def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
     if callable(getter):
         return getter(key, default)
     return getattr(cfg, key, default)
-
-
-def _default_output_path(cfg: Any, num_seeds: int) -> str:
-    """Rebuild the legacy sweep-results filename format."""
-    m_size, n_size = _cfg_get(cfg, "grid_size", (0, 0))
-    return (
-        "results_train_"
-        f"{_cfg_get(cfg, 'num_train_samples', 0)}"
-        "_valid_"
-        f"{_cfg_get(cfg, 'num_val_samples', 0)}"
-        "_test_"
-        f"{_cfg_get(cfg, 'num_test_samples', 0)}"
-        "_m_"
-        f"{m_size}"
-        "_n_"
-        f"{n_size}"
-        "_deg_"
-        f"{_cfg_get(cfg, 'deg', 0)}"
-        "_noise_"
-        f"{_cfg_get(cfg, 'noise_width', 0)}"
-        "_seeds_"
-        f"{int(num_seeds)}.csv"
-    )
 
 
 def _legacy_result_dict(result: SimulationResult) -> dict[str, Any]:
@@ -105,11 +82,16 @@ def run_sweep(
 
     legacy_results = _legacy_results_payload(sweep_result)
     resolved_output_path: str | None = None
+    sample_boxplot_path: str | None = None
+    simulation_boxplot_path: str | None = None
     if persist_results:
-        resolved_output_path = str(
-            output_path or _default_output_path(cfg, resolved_num_seeds)
+        stored_paths = persist_sweep_outputs(
+            sweep_result,
+            output_path=output_path,
         )
-        save_results_to_csv(legacy_results, output_path=resolved_output_path)
+        resolved_output_path = str(stored_paths.results_path)
+        sample_boxplot_path = str(stored_paths.sample_boxplot_path)
+        simulation_boxplot_path = str(stored_paths.simulation_boxplot_path)
 
     if analyze:
         analyze_results()
@@ -119,6 +101,8 @@ def run_sweep(
             "persist_results": bool(persist_results),
             "analysis_requested": bool(analyze),
             "legacy_output_path": resolved_output_path,
+            "sample_boxplot_path": sample_boxplot_path,
+            "simulation_boxplot_path": simulation_boxplot_path,
             "legacy_results_count": len(legacy_results),
         }
     )
@@ -126,11 +110,10 @@ def run_sweep(
 
 
 def main() -> SweepResult:
-    """Run the legacy sweep with explicit persistence and analysis enabled."""
+    """Run the legacy sweep with explicit persistence enabled."""
     sweep_result = run_sweep(
         HP(),
         persist_results=True,
-        analyze=True,
         apply_default_cache_policy=True,
     )
     print("Done with all simulations.")

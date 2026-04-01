@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from dflintdpy.simulation.spni.config import CachePolicy, SPNIRunConfig, SeedBundle
+from dflintdpy.simulation.spni.storage import persist_sweep_outputs
 from dflintdpy.simulation.spni.types import (
     DatasetBundle,
     EvaluationBundle,
@@ -182,5 +183,53 @@ def test_utils_results_analysis_save_load_analyze_flow_works_for_typed_sweeps(
         typed_percentages["asym_intd_p"],
         loaded_percentages["asym_intd_p"],
         err_msg="Typed and loaded simulations should yield identical analysis.",
+    )
+    pass
+
+
+def test_utils_results_analysis_persist_sweep_outputs_saves_csv_and_figures(
+    tmp_path: Path,
+):
+    """Verify that typed sweep persistence saves both CSV and figure outputs."""
+    # Arrange one compact typed sweep and explicit output locations.
+    results = [
+        _simulation_result(10, 0.0),
+        _simulation_result(11, 5.0),
+    ]
+    sweep_result = SweepResult(
+        run_config=results[0].run_config,
+        results=results,
+        aggregated_summary={},
+    )
+    output_path = tmp_path / "results" / "typed_results.csv"
+    figure_directory = tmp_path / "figures"
+
+    # Act by persisting the typed sweep end-to-end.
+    stored_paths = persist_sweep_outputs(
+        sweep_result,
+        output_path=output_path,
+        figure_directory=figure_directory,
+    )
+    loaded = load_results_from_csv(stored_paths.results_path)
+
+    # Assert that the storage pipeline created the expected artefacts.
+    assert stored_paths.results_path == output_path, \
+        "persist_sweep_outputs should honor an explicit CSV output path."
+    assert stored_paths.results_path.exists(), \
+        "persist_sweep_outputs should create the CSV results file."
+    assert stored_paths.sample_boxplot_path.exists(), \
+        "persist_sweep_outputs should save the sample boxplot."
+    assert stored_paths.simulation_boxplot_path.exists(), \
+        "persist_sweep_outputs should save the simulation boxplot."
+    assert stored_paths.sample_boxplot_path.parent == figure_directory, \
+        "persist_sweep_outputs should honor the figure directory override."
+    assert stored_paths.simulation_boxplot_path.parent == figure_directory, \
+        "persist_sweep_outputs should keep both figures together."
+    assert len(loaded) == 2, \
+        "persist_sweep_outputs should preserve the number of simulations."
+    np.testing.assert_allclose(
+        loaded[0]["o_o"],
+        results[0].summary_bundle.all_data["o_o"],
+        err_msg="Persisted CSV results should remain analysis-compatible.",
     )
     pass

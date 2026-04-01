@@ -24,6 +24,10 @@ from dflintdpy.simulation.spni.pipeline import (
     run_seed_sweep,
     run_single_simulation,
 )
+from dflintdpy.simulation.spni.storage import (
+    SweepStoragePaths,
+    persist_sweep_outputs,
+)
 from dflintdpy.simulation.spni.types import (
     DatasetBundle,
     EvaluationBundle,
@@ -57,4 +61,6 @@ __all__ = [
     "main",
     "run_seed_sweep",
     "run_single_simulation",
+    "SweepStoragePaths",
+    "persist_sweep_outputs",
 ]
