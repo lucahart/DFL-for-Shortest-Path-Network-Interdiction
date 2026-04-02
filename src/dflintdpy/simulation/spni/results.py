@@ -119,6 +119,23 @@ _PREDICTION_STAT_KEYS = {
     "adfl": "adv_spo",
 }
 
+_PERCENTAGE_BASELINES = {
+    "no_intd_p": ("o_p", "o_o"),
+    "no_intd_s": ("o_s", "o_o"),
+    "no_intd_r": ("o_r", "o_o"),
+    "no_intd_a": ("o_a", "o_o"),
+    "sym_intd_p": ("s_p", "s_o"),
+    "sym_intd_s": ("s_s", "s_o"),
+    "sym_intd_r": ("s_r", "s_o"),
+    "sym_intd_a": ("s_a", "s_o"),
+    # Each asymmetric predictor induces its own interdiction, so it must be
+    # compared against the oracle follower under that same interdiction.
+    "asym_intd_p": ("a_p", "a_p_o"),
+    "asym_intd_s": ("a_s", "a_s_o"),
+    "asym_intd_r": ("a_r", "a_r_o"),
+    "asym_intd_a": ("a_a", "a_a_o"),
+}
+
 
 def _as_float_array(values: Any) -> np.ndarray:
     """Normalize one numerical payload into a float array copy.
@@ -454,18 +471,8 @@ def _compute_percentage_increases_from_samples(
     full concatenated sweep sample set.
     """
     return {
-        "no_intd_p": _safe_percentage(all_data["o_p"], all_data["o_o"]),
-        "no_intd_s": _safe_percentage(all_data["o_s"], all_data["o_o"]),
-        "no_intd_r": _safe_percentage(all_data["o_r"], all_data["o_o"]),
-        "no_intd_a": _safe_percentage(all_data["o_a"], all_data["o_o"]),
-        "sym_intd_p": _safe_percentage(all_data["s_p"], all_data["s_o"]),
-        "sym_intd_s": _safe_percentage(all_data["s_s"], all_data["s_o"]),
-        "sym_intd_r": _safe_percentage(all_data["s_r"], all_data["s_o"]),
-        "sym_intd_a": _safe_percentage(all_data["s_a"], all_data["s_o"]),
-        "asym_intd_p": _safe_percentage(all_data["a_p"], all_data["a_o"]),
-        "asym_intd_s": _safe_percentage(all_data["a_s"], all_data["a_o"]),
-        "asym_intd_r": _safe_percentage(all_data["a_r"], all_data["a_o"]),
-        "asym_intd_a": _safe_percentage(all_data["a_a"], all_data["a_o"]),
+        key: _safe_percentage(all_data[num_key], all_data[denom_key])
+        for key, (num_key, denom_key) in _PERCENTAGE_BASELINES.items()
     }
 
 
@@ -477,35 +484,17 @@ def _compute_percentage_increases_from_simulations(
     This produces one aggregate percentage value per simulation and per family.
     """
     calculations: dict[str, list[float]] = {
-        "no_intd_p": [],
-        "no_intd_s": [],
-        "no_intd_r": [],
-        "no_intd_a": [],
-        "sym_intd_p": [],
-        "sym_intd_s": [],
-        "sym_intd_r": [],
-        "sym_intd_a": [],
-        "asym_intd_p": [],
-        "asym_intd_s": [],
-        "asym_intd_r": [],
-        "asym_intd_a": [],
+        key: []
+        for key in _PERCENTAGE_BASELINES
     }
 
     for sim in simulations:
         # Each percentage is computed from run-level sums so the aggregation
         # matches the legacy analysis convention.
-        calculations["no_intd_p"].append(_safe_percentage_sum(sim["o_p"], sim["o_o"]))
-        calculations["no_intd_s"].append(_safe_percentage_sum(sim["o_s"], sim["o_o"]))
-        calculations["no_intd_r"].append(_safe_percentage_sum(sim["o_r"], sim["o_o"]))
-        calculations["no_intd_a"].append(_safe_percentage_sum(sim["o_a"], sim["o_o"]))
-        calculations["sym_intd_p"].append(_safe_percentage_sum(sim["s_p"], sim["s_o"]))
-        calculations["sym_intd_s"].append(_safe_percentage_sum(sim["s_s"], sim["s_o"]))
-        calculations["sym_intd_r"].append(_safe_percentage_sum(sim["s_r"], sim["s_o"]))
-        calculations["sym_intd_a"].append(_safe_percentage_sum(sim["s_a"], sim["s_o"]))
-        calculations["asym_intd_p"].append(_safe_percentage_sum(sim["a_p"], sim["a_o"]))
-        calculations["asym_intd_s"].append(_safe_percentage_sum(sim["a_s"], sim["a_o"]))
-        calculations["asym_intd_r"].append(_safe_percentage_sum(sim["a_r"], sim["a_o"]))
-        calculations["asym_intd_a"].append(_safe_percentage_sum(sim["a_a"], sim["a_o"]))
+        for key, (num_key, denom_key) in _PERCENTAGE_BASELINES.items():
+            calculations[key].append(
+                _safe_percentage_sum(sim[num_key], sim[denom_key])
+            )
 
     return {
         key: np.asarray(values, dtype=float)

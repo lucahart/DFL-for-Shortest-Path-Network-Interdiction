@@ -77,6 +77,7 @@ python -m dflintdpy.simulation.spni.pipeline
 Supported modes:
 
 - `--mode seed_sweep`: multi-seed SPNI sweep
+- `--mode scenario_sweep`: scenario-count sweep over seed sweeps
 - `--mode single`: one SPNI run
 
 ## Common CLI options
@@ -89,14 +90,17 @@ python -m dflintdpy.simulation.spni.pipeline [options]
 
 Important flags:
 
-- `--mode {single,seed_sweep}`: choose the top-level pipeline mode
-- `--num-seeds N`: number of sweep seeds for `seed_sweep`
+- `--mode {single,seed_sweep,scenario_sweep}`: choose the top-level pipeline
+  mode
+- `--num-seeds N`: number of sweep seeds for `seed_sweep` or
+  `scenario_sweep`
+- `--scenarios A,B,C`: comma-separated scenario counts for `scenario_sweep`
 - `--compute-asym-intd` or `--no-compute-asym-intd`: enable or disable
   asymmetric interdiction evaluation
 - `--compute-wrong-asym-intd` or `--no-compute-wrong-asym-intd`: enable or
   disable wrong-model asymmetric evaluation
 - `--present-results` or `--no-present-results`: save the sweep CSV and the two
-  boxplots
+  boxplots for seed sweeps, or save the scenario-sweep summary figures
 - `--load-real-world-graph PATH`: run on a real graph CSV instead of a
   synthetic graph
 - `--set KEY=VALUE`: override config fields before the run starts
@@ -120,6 +124,19 @@ The returned diagnostics include:
 - `legacy_output_path`
 - `sample_boxplot_path`
 - `simulation_boxplot_path`
+
+For scenario sweeps with `present_results=True`:
+
+- summary figures are written under `figures/`
+- inner seed sweeps still run with `present_results=False`
+- only the outer scenario sweep saves figures
+
+The returned diagnostics include:
+
+- `simulation_plot_path`
+- `asym_simulation_plot_path`
+- `sample_plot_path`
+- `asym_sample_plot_path`
 
 ## Quick test runs
 
@@ -150,6 +167,23 @@ python -m dflintdpy.simulation.spni.pipeline \
   --no-present-results
 ```
 
+### Small scenario sweep test run
+
+```bash
+source ./.venv/bin/activate
+python -m dflintdpy.simulation.spni.pipeline \
+  --mode scenario_sweep \
+  --scenarios 2,3 \
+  --num-seeds 2 \
+  --present-results \
+  --set 'grid_size=(3, 3)' \
+  --set 'num_train_samples=8' \
+  --set 'num_val_samples=4' \
+  --set 'num_test_samples=4' \
+  --set 'po_epochs=1' \
+  --set 'spo_epochs=1'
+```
+
 ### Small single-run test run
 
 ```bash
@@ -168,7 +202,6 @@ source ./.venv/bin/activate
 python -m dflintdpy.simulation.spni.pipeline \
   --mode seed_sweep \
   --num-seeds 2 \
-  --no-present-results \
   --set 'grid_size=(3, 3)' \
   --set 'num_train_samples=8' \
   --set 'num_val_samples=4' \
@@ -199,6 +232,16 @@ python -m dflintdpy.simulation.spni.pipeline --mode single
 ```bash
 source ./.venv/bin/activate
 python -m dflintdpy.simulation.spni.pipeline --num-seeds 5
+```
+
+### Run a scenario sweep with explicit scenario counts
+
+```bash
+source ./.venv/bin/activate
+python -m dflintdpy.simulation.spni.pipeline \
+  --mode scenario_sweep \
+  --scenarios 1,2,4,8 \
+  --num-seeds 3
 ```
 
 ### Run without saving CSVs and boxplots
@@ -272,8 +315,6 @@ print(result.diagnostics)
 
 ### Scenario sweep from `HP()`
 
-`run_scenario_sweep(...)` is currently a Python API, not a CLI mode.
-
 ```bash
 python -c "
 from dflintdpy.data.config import HP
@@ -297,6 +338,7 @@ Important:
 - `run_scenario_sweep(...)` calls `run_seed_sweep(...)` internally with
   `present_results=False`
 - this avoids generating a CSV and figures for every scenario count
+- the outer scenario sweep still saves its summary figures by default
 
 ## Real-graph example
 

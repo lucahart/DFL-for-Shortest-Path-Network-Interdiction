@@ -13,6 +13,24 @@ from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 from dflintdpy.utils.read_write_results import load_results_from_csv
 
 
+_PERCENTAGE_BASELINES = {
+    'no_intd_p': ('o_p', 'o_o'),
+    'no_intd_s': ('o_s', 'o_o'),
+    'no_intd_r': ('o_r', 'o_o'),
+    'no_intd_a': ('o_a', 'o_o'),
+    'sym_intd_p': ('s_p', 's_o'),
+    'sym_intd_s': ('s_s', 's_o'),
+    'sym_intd_r': ('s_r', 's_o'),
+    'sym_intd_a': ('s_a', 's_o'),
+    # Asymmetric percentages must use the oracle follower cost under the same
+    # predictor-specific interdiction, not the separate oracle-vs-oracle run.
+    'asym_intd_p': ('a_p', 'a_p_o'),
+    'asym_intd_s': ('a_s', 'a_s_o'),
+    'asym_intd_r': ('a_r', 'a_r_o'),
+    'asym_intd_a': ('a_a', 'a_a_o'),
+}
+
+
 def _coerce_legacy_simulations(
     simulations: SweepResult | Sequence[SimulationResult] | Sequence[Mapping],
 ):
@@ -198,24 +216,10 @@ def _safe_percentage_sum(num, denom):
 
 def compute_percentage_increases_from_samples(all_data):
     """Compute per-sample percentage increases for boxplots."""
-    calculations = {}
-
-    calculations['no_intd_p'] = _safe_percentage(all_data['o_p'], all_data['o_o'])
-    calculations['no_intd_s'] = _safe_percentage(all_data['o_s'], all_data['o_o'])
-    calculations['no_intd_r'] = _safe_percentage(all_data['o_r'], all_data['o_o'])
-    calculations['no_intd_a'] = _safe_percentage(all_data['o_a'], all_data['o_o'])
-
-    calculations['sym_intd_p'] = _safe_percentage(all_data['s_p'], all_data['s_o'])
-    calculations['sym_intd_s'] = _safe_percentage(all_data['s_s'], all_data['s_o'])
-    calculations['sym_intd_r'] = _safe_percentage(all_data['s_r'], all_data['s_o'])
-    calculations['sym_intd_a'] = _safe_percentage(all_data['s_a'], all_data['s_o'])
-
-    calculations['asym_intd_p'] = _safe_percentage(all_data['a_p'], all_data['a_o'])
-    calculations['asym_intd_s'] = _safe_percentage(all_data['a_s'], all_data['a_o'])
-    calculations['asym_intd_r'] = _safe_percentage(all_data['a_r'], all_data['a_o'])
-    calculations['asym_intd_a'] = _safe_percentage(all_data['a_a'], all_data['a_o'])
-
-    return calculations
+    return {
+        key: _safe_percentage(all_data[num_key], all_data[denom_key])
+        for key, (num_key, denom_key) in _PERCENTAGE_BASELINES.items()
+    }
 
 def compute_percentage_increases_from_simulations(simulations):
     """Compute per-simulation percentage increases aggregated by sums."""
@@ -227,20 +231,10 @@ def compute_percentage_increases_from_simulations(simulations):
     calculations = defaultdict(list)
 
     for sim_data in simulations:
-        calculations['no_intd_p'].append(_safe_percentage_sum(sim_data['o_p'], sim_data['o_o']))
-        calculations['no_intd_s'].append(_safe_percentage_sum(sim_data['o_s'], sim_data['o_o']))
-        calculations['no_intd_r'].append(_safe_percentage_sum(sim_data['o_r'], sim_data['o_o']))
-        calculations['no_intd_a'].append(_safe_percentage_sum(sim_data['o_a'], sim_data['o_o']))
-
-        calculations['sym_intd_p'].append(_safe_percentage_sum(sim_data['s_p'], sim_data['s_o']))
-        calculations['sym_intd_s'].append(_safe_percentage_sum(sim_data['s_s'], sim_data['s_o']))
-        calculations['sym_intd_r'].append(_safe_percentage_sum(sim_data['s_r'], sim_data['s_o']))
-        calculations['sym_intd_a'].append(_safe_percentage_sum(sim_data['s_a'], sim_data['s_o']))
-
-        calculations['asym_intd_p'].append(_safe_percentage_sum(sim_data['a_p'], sim_data['a_o']))
-        calculations['asym_intd_s'].append(_safe_percentage_sum(sim_data['a_s'], sim_data['a_o']))
-        calculations['asym_intd_r'].append(_safe_percentage_sum(sim_data['a_r'], sim_data['a_o']))
-        calculations['asym_intd_a'].append(_safe_percentage_sum(sim_data['a_a'], sim_data['a_o']))
+        for key, (num_key, denom_key) in _PERCENTAGE_BASELINES.items():
+            calculations[key].append(
+                _safe_percentage_sum(sim_data[num_key], sim_data[denom_key])
+            )
 
     return dict(calculations)
 

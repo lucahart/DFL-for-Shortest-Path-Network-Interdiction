@@ -42,15 +42,15 @@ def _simulation_result(seed: int, offset: float) -> SimulationResult:
         "s_s": np.array([17.0 + offset, 34.0 + offset], dtype=float),
         "s_r": np.array([19.0 + offset, 37.0 + offset], dtype=float),
         "s_a": np.array([16.0 + offset, 32.0 + offset], dtype=float),
-        "a_o": np.array([20.0 + offset, 40.0 + offset], dtype=float),
-        "a_p": np.array([24.0 + offset, 48.0 + offset], dtype=float),
-        "a_s": np.array([23.0 + offset, 46.0 + offset], dtype=float),
-        "a_r": np.array([25.0 + offset, 49.0 + offset], dtype=float),
-        "a_a": np.array([22.0 + offset, 44.0 + offset], dtype=float),
-        "a_p_o": np.array([21.0 + offset, 41.0 + offset], dtype=float),
-        "a_s_o": np.array([20.5 + offset, 40.5 + offset], dtype=float),
-        "a_r_o": np.array([20.25 + offset, 40.25 + offset], dtype=float),
-        "a_a_o": np.array([20.75 + offset, 40.75 + offset], dtype=float),
+        "a_o": np.array([30.0 + offset, 50.0 + offset], dtype=float),
+        "a_p": np.array([25.0 + offset, 42.0 + offset], dtype=float),
+        "a_s": np.array([24.0 + offset, 43.0 + offset], dtype=float),
+        "a_r": np.array([26.0 + offset, 44.0 + offset], dtype=float),
+        "a_a": np.array([23.0 + offset, 41.0 + offset], dtype=float),
+        "a_p_o": np.array([20.0 + offset, 40.0 + offset], dtype=float),
+        "a_s_o": np.array([19.0 + offset, 39.0 + offset], dtype=float),
+        "a_r_o": np.array([21.0 + offset, 41.0 + offset], dtype=float),
+        "a_a_o": np.array([18.0 + offset, 38.0 + offset], dtype=float),
         "a_s_p": np.array([1.0 + offset, 2.0 + offset], dtype=float),
     }
     summary_bundle = SummaryBundle(
@@ -184,6 +184,8 @@ def test_utils_results_analysis_save_load_analyze_flow_works_for_typed_sweeps(
         loaded_percentages["asym_intd_p"],
         err_msg="Typed and loaded simulations should yield identical analysis.",
     )
+    assert np.all(typed_percentages["asym_intd_p"] > 0.0), \
+        "Asymmetric percentages should compare predictors to `a_p_o`, not `a_o`."
     pass
 
 

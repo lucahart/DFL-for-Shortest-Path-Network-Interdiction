@@ -130,10 +130,10 @@ def evaluation_bundle() -> EvaluationBundle:
             "sample_indices": np.array([0, 1], dtype=int),
             "estimated_objectives": {
                 "oracle": np.array([20.0, np.nan], dtype=float),
-                "pfl": np.array([18.0, np.nan], dtype=float),
-                "dfl": np.array([17.0, 19.0], dtype=float),
-                "rdfl": np.array([16.0, 18.0], dtype=float),
-                "adfl": np.array([15.0, 17.0], dtype=float),
+                "pfl": np.array([22.0, np.nan], dtype=float),
+                "dfl": np.array([21.0, 22.0], dtype=float),
+                "rdfl": np.array([23.0, 24.0], dtype=float),
+                "adfl": np.array([24.0, 25.0], dtype=float),
             },
             "oracle_objectives": {
                 "oracle": np.array([20.0, np.nan], dtype=float),
@@ -275,7 +275,7 @@ def test_spni_results_build_summary_derives_legacy_tables_and_metrics(
         "metric_1 should match the legacy PO minus SPO no-intd mean gap."
     assert bundle.metrics["asym_nan_rows_po"] == 1, \
         "Asymmetric NaN counts should be surfaced in metrics."
-    assert bundle.table_1["t1_p_a_mean"] == 18.0, \
+    assert bundle.table_1["t1_p_a_mean"] == 22.0, \
         "Table 1 should use NaN-safe asymmetric means."
     assert bundle.table_2["t2_p_s_mean"] == 6.5, \
         "Table 2 should map wrong-model pairings into the legacy keys."
@@ -388,6 +388,10 @@ def test_spni_results_aggregate_sweep_results_preserves_rows_and_safe_math(
                 "a_s": np.array([0.0, 2.0], dtype=float),
                 "a_r": np.array([0.0, 3.0], dtype=float),
                 "a_a": np.array([0.0, 4.0], dtype=float),
+                "a_p_o": np.array([0.0, 0.0], dtype=float),
+                "a_s_o": np.array([0.0, 0.0], dtype=float),
+                "a_r_o": np.array([0.0, 0.0], dtype=float),
+                "a_a_o": np.array([0.0, 0.0], dtype=float),
             },
             metric_1=1.0,
         ),
@@ -407,11 +411,15 @@ def test_spni_results_aggregate_sweep_results_preserves_rows_and_safe_math(
                 "s_s": np.array([4.0, 5.0], dtype=float),
                 "s_r": np.array([5.0, 6.0], dtype=float),
                 "s_a": np.array([6.0, 7.0], dtype=float),
-                "a_o": np.array([2.0, 2.0], dtype=float),
+                "a_o": np.array([6.0, 6.0], dtype=float),
                 "a_p": np.array([3.0, 4.0], dtype=float),
                 "a_s": np.array([4.0, 5.0], dtype=float),
                 "a_r": np.array([5.0, 6.0], dtype=float),
                 "a_a": np.array([6.0, 7.0], dtype=float),
+                "a_p_o": np.array([2.0, 2.0], dtype=float),
+                "a_s_o": np.array([3.0, 3.0], dtype=float),
+                "a_r_o": np.array([4.0, 4.0], dtype=float),
+                "a_a_o": np.array([5.0, 5.0], dtype=float),
             },
             metric_1=2.0,
         ),
@@ -438,4 +446,12 @@ def test_spni_results_aggregate_sweep_results_preserves_rows_and_safe_math(
         aggregated["percentage_increases"]["simulations"]["no_intd_p"],
         np.array([0.0, 75.0], dtype=float),
     ), "Simulation-level safe percentage math should match aggregate sums."
+    assert np.array_equal(
+        aggregated["percentage_increases"]["samples"]["asym_intd_p"],
+        np.array([0.0, 0.0, 50.0, 100.0], dtype=float),
+    ), "Asymmetric sample percentages should use predictor-specific oracles."
+    assert np.array_equal(
+        aggregated["percentage_increases"]["simulations"]["asym_intd_p"],
+        np.array([0.0, 75.0], dtype=float),
+    ), "Asymmetric simulation percentages should not reuse `a_o`."
     pass

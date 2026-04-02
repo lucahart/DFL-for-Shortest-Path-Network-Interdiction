@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import pytest
 
@@ -5,6 +7,7 @@ import dflintdpy.solvers.asymmetric_interdictor as asymmetric_interdictor_module
 from dflintdpy.models.graph import Graph
 from dflintdpy.models.grid import Grid
 from dflintdpy.solvers.asymmetric_interdictor import AsymmetricInterdictor
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 from gurobipy import GRB
 
 
@@ -93,6 +96,30 @@ def _assert_binary_and_budget_feasible(
     assert np.sum(arr) <= budget + 1e-7, \
         "Interdiction vector violates the interdiction budget."
     pass
+
+
+def _bruteforce_oracle_objective(
+    graph: Graph,
+    cost: np.ndarray,
+    delay: np.ndarray,
+    budget: int,
+) -> float:
+    """Return the exact max-min oracle objective by brute force."""
+    sp_solver = ShortestPathGrb(graph)
+    best_value = -np.inf
+
+    for bits in itertools.product([0.0, 1.0], repeat=len(graph.arcs)):
+        interdictions = np.asarray(bits, dtype=float)
+        if interdictions.sum() > budget:
+            continue
+
+        # Solve the true follower problem under this interdiction pattern.
+        path, _ = sp_solver.solve(cost + interdictions * delay)
+        path_arr = np.asarray(path, dtype=float)
+        value = float((cost + interdictions * delay) @ path_arr)
+        best_value = max(best_value, value)
+
+    return float(best_value)
 
 
 class _StageVar:
@@ -921,6 +948,40 @@ def test_asymmetric_interdictor_regression_small_instance_solution_matches_basel
         "Pinned small-instance interdiction pattern changed unexpectedly."
     assert z_star == pytest.approx(11.0), \
         "Pinned small-instance objective changed unexpectedly."
+    pass
+
+
+@pytest.mark.regression
+def test_asymmetric_interdictor_regression_oracle_estimates_match_bruteforce(
+    graph,
+    true_costs,
+    true_delays,
+):
+    """Verify that the oracle-view asymmetric solve matches brute force."""
+    # Arrange an oracle-view asymmetric interdictor on the pinned graph.
+    interdictor = AsymmetricInterdictor(
+        graph=graph,
+        budget=2,
+        true_costs=true_costs,
+        true_delays=true_delays,
+        est_costs=true_costs,
+        est_delays=true_delays,
+        lsd=1e-2,
+    )
+    exact_value = _bruteforce_oracle_objective(
+        graph,
+        true_costs,
+        true_delays,
+        budget=2,
+    )
+
+    # Act by solving the oracle-view asymmetric model end to end.
+    x_star, z_star = interdictor.solve()
+
+    # Assert that the asymmetric oracle objective matches the exact max-min.
+    _assert_binary_and_budget_feasible(x_star, budget=2)
+    assert z_star == pytest.approx(exact_value), \
+        "Oracle-view asymmetric solve fell below the exact max-min value."
     pass
 
 

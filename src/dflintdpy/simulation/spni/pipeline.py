@@ -15,6 +15,7 @@ import argparse
 import ast
 from copy import deepcopy
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from dflintdpy.simulation.spni.build import build_problem_bundle
@@ -31,7 +32,10 @@ from dflintdpy.simulation.spni.results import (
     aggregate_sweep_results,
     build_summary,
 )
-from dflintdpy.simulation.spni.storage import persist_sweep_outputs
+from dflintdpy.simulation.spni.storage import (
+    persist_scenario_sweep_outputs,
+    persist_sweep_outputs,
+)
 from dflintdpy.simulation.spni.train import train_all_predictors
 from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
 
@@ -351,7 +355,6 @@ def main(
                 getattr(resolved_cfg, "num_seeds", 1),
             )
         )
-        run_options.pop("present_results", None)
         resolved_scenarios = scenarios
         if resolved_scenarios is None:
             resolved_scenarios = [
@@ -511,6 +514,8 @@ def run_scenario_sweep(
     *,
     scenarios: Sequence[int],
     num_seeds: int | None = None,
+    present_results: bool = True,
+    figure_directory: str | Path | None = None,
     compute_asym_intd: bool | None = None,
     compute_wrong_asym_intd: bool | None = None,
     load_real_world_graph: str | None = None,
@@ -521,6 +526,8 @@ def run_scenario_sweep(
     ``scripts.plot_scenario_sweep.run_sweep(...)`` helper. Each scenario count
     reuses ``run_seed_sweep(...)`` and then adapts the aggregated percentage
     metrics into the legacy nested dictionaries expected by the plotting code.
+    When ``present_results`` is enabled, the outer sweep saves the summary
+    scenario plots after all scenario counts have finished.
     """
     resolved_scenarios = _normalize_scenarios(scenarios)
     resolved_num_seeds = int(
@@ -564,17 +571,52 @@ def run_scenario_sweep(
             percentage_increases.get("samples", {}),
         )
 
+    diagnostics = {
+        "num_scenarios_swept": len(resolved_scenarios),
+        "scenario_counts": resolved_scenarios,
+        "present_results": bool(present_results),
+        "side_effects_enabled": bool(present_results),
+    }
+    if present_results:
+        stored_paths = persist_scenario_sweep_outputs(
+            run_cfg=base_cfg,
+            scenarios=resolved_scenarios,
+            num_seeds=resolved_num_seeds,
+            sim_stats=sim_stats,
+            sample_stats=sample_stats,
+            figure_directory=figure_directory,
+        )
+        diagnostics.update(
+            {
+                "simulation_plot_path": str(
+                    stored_paths.simulation_plot_path
+                ),
+                "asym_simulation_plot_path": str(
+                    stored_paths.asym_simulation_plot_path
+                ),
+                "sample_plot_path": str(stored_paths.sample_plot_path),
+                "asym_sample_plot_path": str(
+                    stored_paths.asym_sample_plot_path
+                ),
+            }
+        )
+    else:
+        diagnostics.update(
+            {
+                "simulation_plot_path": None,
+                "asym_simulation_plot_path": None,
+                "sample_plot_path": None,
+                "asym_sample_plot_path": None,
+            }
+        )
+
     return {
         "scenarios": resolved_scenarios,
         "num_seeds": resolved_num_seeds,
         "sweep_results": sweep_results,
         "sim_stats": sim_stats,
         "sample_stats": sample_stats,
-        "diagnostics": {
-            "num_scenarios_swept": len(resolved_scenarios),
-            "scenario_counts": resolved_scenarios,
-            "side_effects_enabled": False,
-        },
+        "diagnostics": diagnostics,
     }
 
 
@@ -629,7 +671,10 @@ def cli(
         dest="present_results",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Persist sweep CSVs and boxplots when mode=seed_sweep.",
+        help=(
+            "Persist seed-sweep CSV/boxplots or scenario-sweep summary "
+            "figures."
+        ),
     )
     parser.add_argument(
         "--set",

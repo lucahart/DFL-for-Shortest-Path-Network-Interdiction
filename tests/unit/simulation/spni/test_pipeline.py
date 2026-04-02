@@ -273,6 +273,10 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
                 "a_s": np.array([float(cfg.seed) + 2.0], dtype=float),
                 "a_r": np.array([float(cfg.seed) + 3.0], dtype=float),
                 "a_a": np.array([float(cfg.seed) + 4.0], dtype=float),
+                "a_p_o": np.array([float(cfg.seed)], dtype=float),
+                "a_s_o": np.array([float(cfg.seed)], dtype=float),
+                "a_r_o": np.array([float(cfg.seed)], dtype=float),
+                "a_a_o": np.array([float(cfg.seed)], dtype=float),
             },
         )
         return SimulationResult(
@@ -408,9 +412,13 @@ def test_spni_pipeline_run_seed_sweep_skips_persistence_when_disabled(
                     "a_s": np.array([3.0], dtype=float),
                     "a_r": np.array([4.0], dtype=float),
                     "a_a": np.array([5.0], dtype=float),
+                    "a_p_o": np.array([1.0], dtype=float),
+                    "a_s_o": np.array([1.0], dtype=float),
+                    "a_r_o": np.array([1.0], dtype=float),
+                    "a_a_o": np.array([1.0], dtype=float),
                 },
             ),
-        ),
+        )
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -447,12 +455,14 @@ def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
     # Arrange a compact base config and a recording sweep stub.
     base_cfg = SimpleNamespace(num_seeds=4, num_scenarios=9, budget=1)
     calls: list[dict[str, object]] = []
+    persisted_calls: list[dict[str, object]] = []
 
     def _fake_run_seed_sweep(
         cfg,
         *,
         num_seeds,
         present_results,
+        figure_directory=None,
         **options,
     ):
         calls.append(
@@ -460,6 +470,7 @@ def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
                 "cfg": cfg,
                 "num_seeds": num_seeds,
                 "present_results": present_results,
+                "figure_directory": figure_directory,
                 "options": options,
             }
         )
@@ -479,6 +490,18 @@ def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
         "run_seed_sweep",
         _fake_run_seed_sweep,
     )
+    monkeypatch.setattr(
+        pipeline_module,
+        "persist_scenario_sweep_outputs",
+        lambda **kwargs: (
+            persisted_calls.append(kwargs) or SimpleNamespace(
+                simulation_plot_path="scenario-sim.png",
+                asym_simulation_plot_path="scenario-asym-sim.png",
+                sample_plot_path="scenario-sample.png",
+                asym_sample_plot_path="scenario-asym-sample.png",
+            )
+        ),
+    )
 
     # Act by running the scenario sweep over two counts.
     result = pipeline_module.run_scenario_sweep(
@@ -486,6 +509,7 @@ def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
         scenarios=[2, 5],
         num_seeds=3,
         compute_asym_intd=False,
+        present_results=True,
     )
 
     # Assert that each scenario delegated to a non-persisting seed sweep.
@@ -495,10 +519,26 @@ def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
         "run_scenario_sweep should forward the requested seed count."
     assert all(call["present_results"] is False for call in calls), \
         "run_scenario_sweep should suppress seed-sweep persistence."
+    assert all(call["figure_directory"] is None for call in calls), \
+        "run_scenario_sweep should keep inner figure directories unset."
     assert all(
         call["options"] == {"compute_asym_intd": False}
         for call in calls
     ), "run_scenario_sweep should forward run options unchanged."
+    assert len(persisted_calls) == 1, \
+        "run_scenario_sweep should persist one outer scenario summary."
+    assert persisted_calls[0]["scenarios"] == [2, 5], \
+        "run_scenario_sweep should persist the swept scenario counts."
+    assert persisted_calls[0]["num_seeds"] == 3, \
+        "run_scenario_sweep should persist the resolved seed count."
+    assert persisted_calls[0]["figure_directory"] is None, \
+        "run_scenario_sweep should use the default figure directory."
+    assert persisted_calls[0]["run_cfg"] is not base_cfg, \
+        "run_scenario_sweep should persist against a copied config."
+    assert persisted_calls[0]["sim_stats"] is result["sim_stats"], \
+        "run_scenario_sweep should persist the computed simulation stats."
+    assert persisted_calls[0]["sample_stats"] is result["sample_stats"], \
+        "run_scenario_sweep should persist the computed sample stats."
     assert result["sim_stats"][2]["unintd"]["PO"] == [3.0], \
         "run_scenario_sweep should map simulation percentages by scenario."
     assert result["sim_stats"][5]["asym"]["A-DFL"] == [17.0], \
@@ -509,8 +549,150 @@ def test_spni_pipeline_run_scenario_sweep_collects_plot_ready_stats(
         "run_scenario_sweep should map per-sample asymmetric stats."
     assert result["diagnostics"]["scenario_counts"] == [2, 5], \
         "run_scenario_sweep should record the swept scenario counts."
+    assert result["diagnostics"]["present_results"] is True, \
+        "run_scenario_sweep should record when presentation is enabled."
+    assert result["diagnostics"]["simulation_plot_path"] == \
+        "scenario-sim.png", \
+        "run_scenario_sweep should record the symmetric plot path."
+    assert result["diagnostics"]["asym_sample_plot_path"] == \
+        "scenario-asym-sample.png", \
+        "run_scenario_sweep should record the asymmetric sample plot path."
     assert base_cfg.num_scenarios == 9, \
         "run_scenario_sweep should not mutate the caller-owned config."
+    pass
+
+
+def test_spni_pipeline_run_scenario_sweep_records_result_presentation_paths(
+    monkeypatch,
+):
+    """Verify that scenario sweeps record output paths when presentation runs."""
+    # Arrange a compact base config and a recording sweep stub.
+    base_cfg = SimpleNamespace(num_seeds=4, num_scenarios=9, budget=1)
+    expected_plot_dir = "scenario-figures"
+    calls: list[dict[str, object]] = []
+    persisted_calls: list[dict[str, object]] = []
+
+    def _fake_run_seed_sweep(
+        cfg,
+        *,
+        num_seeds,
+        present_results,
+        figure_directory=None,
+        **options,
+    ):
+        calls.append(
+            {
+                "cfg": cfg,
+                "num_seeds": num_seeds,
+                "present_results": present_results,
+                "figure_directory": figure_directory,
+                "options": options,
+            }
+        )
+        return SweepResult(
+            run_config=cfg,
+            results=[],
+            aggregated_summary={
+                "percentage_increases": {
+                    "simulations": {
+                        "no_intd_p": [1.0],
+                        "no_intd_s": [2.0],
+                        "no_intd_r": [3.0],
+                        "no_intd_a": [4.0],
+                        "sym_intd_p": [5.0],
+                        "sym_intd_s": [6.0],
+                        "sym_intd_r": [7.0],
+                        "sym_intd_a": [8.0],
+                        "asym_intd_p": [9.0],
+                        "asym_intd_s": [10.0],
+                        "asym_intd_r": [11.0],
+                        "asym_intd_a": [12.0],
+                    },
+                    "samples": {
+                        "no_intd_p": [13.0],
+                        "no_intd_s": [14.0],
+                        "no_intd_r": [15.0],
+                        "no_intd_a": [16.0],
+                        "sym_intd_p": [17.0],
+                        "sym_intd_s": [18.0],
+                        "sym_intd_r": [19.0],
+                        "sym_intd_a": [20.0],
+                        "asym_intd_p": [21.0],
+                        "asym_intd_s": [22.0],
+                        "asym_intd_r": [23.0],
+                        "asym_intd_a": [24.0],
+                    },
+                }
+            },
+            diagnostics={"num_runs": num_seeds},
+        )
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_seed_sweep",
+        _fake_run_seed_sweep,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "persist_scenario_sweep_outputs",
+        lambda **kwargs: (
+            persisted_calls.append(kwargs) or SimpleNamespace(
+                simulation_plot_path=(
+                    "scenario-figures/custom_by_simulation.png"
+                ),
+                asym_simulation_plot_path=(
+                    "scenario-figures/custom_asym_by_simulation.png"
+                ),
+                sample_plot_path="scenario-figures/custom_by_sample.png",
+                asym_sample_plot_path=(
+                    "scenario-figures/custom_asym_by_sample.png"
+                ),
+            )
+        ),
+    )
+
+    # Act by running the scenario sweep with presentation enabled.
+    result = pipeline_module.run_scenario_sweep(
+        base_cfg,
+        scenarios=[2],
+        num_seeds=3,
+        present_results=True,
+        figure_directory=expected_plot_dir,
+    )
+
+    # Assert that the presentation branch recorded saved plot locations.
+    assert calls[0]["present_results"] is False, \
+        "run_scenario_sweep should still suppress inner seed persistence."
+    assert calls[0]["figure_directory"] is None, \
+        "run_scenario_sweep should not pass figure directories to seed sweeps."
+    assert len(persisted_calls) == 1, \
+        "run_scenario_sweep should persist one set of scenario figures."
+    assert persisted_calls[0]["scenarios"] == [2], \
+        "run_scenario_sweep should persist the requested scenario list."
+    assert persisted_calls[0]["num_seeds"] == 3, \
+        "run_scenario_sweep should persist the requested seed count."
+    assert persisted_calls[0]["figure_directory"] == expected_plot_dir, \
+        "run_scenario_sweep should forward the outer figure directory."
+    assert persisted_calls[0]["run_cfg"] is not base_cfg, \
+        "run_scenario_sweep should persist against a copied config."
+    assert persisted_calls[0]["sim_stats"] is result["sim_stats"], \
+        "run_scenario_sweep should persist the computed simulation stats."
+    assert persisted_calls[0]["sample_stats"] is result["sample_stats"], \
+        "run_scenario_sweep should persist the computed sample stats."
+    assert result["diagnostics"]["present_results"] is True, \
+        "run_scenario_sweep should record that presentation was enabled."
+    assert result["diagnostics"]["simulation_plot_path"] == (
+        "scenario-figures/custom_by_simulation.png"
+    ), "run_scenario_sweep should record the simulation plot path."
+    assert result["diagnostics"]["asym_simulation_plot_path"] == (
+        "scenario-figures/custom_asym_by_simulation.png"
+    ), "run_scenario_sweep should record the asymmetric plot path."
+    assert result["diagnostics"]["sample_plot_path"] == (
+        "scenario-figures/custom_by_sample.png"
+    ), "run_scenario_sweep should record the sample plot path."
+    assert result["diagnostics"]["asym_sample_plot_path"] == (
+        "scenario-figures/custom_asym_by_sample.png"
+    ), "run_scenario_sweep should record the asymmetric sample plot path."
     pass
 
 
@@ -638,7 +820,10 @@ def test_spni_pipeline_main_dispatches_scenario_sweep_mode(monkeypatch):
         "main should forward explicit scenario counts unchanged."
     assert recorded["num_seeds"] == 7, \
         "main should forward the explicit num_seeds override."
-    assert recorded["options"] == {"compute_wrong_asym_intd": True}, \
+    assert recorded["options"] == {
+        "compute_wrong_asym_intd": True,
+        "present_results": True,
+    }, \
         "main should forward only supported run options to scenario sweeps."
     assert recorded["cfg"] is not base_cfg, \
         "main should deep-copy the caller's config before dispatch."

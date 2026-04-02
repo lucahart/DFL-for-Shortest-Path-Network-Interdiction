@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 
@@ -33,6 +34,30 @@ class SweepStoragePaths:
     results_path: Path
     sample_boxplot_path: Path
     simulation_boxplot_path: Path
+
+
+@dataclass(frozen=True)
+class ScenarioSweepStoragePaths:
+    """Filesystem targets produced by scenario-sweep presentation helpers."""
+
+    simulation_plot_path: Path
+    asym_simulation_plot_path: Path
+    sample_plot_path: Path
+    asym_sample_plot_path: Path
+
+
+_SCENARIO_METHOD_ORDER = ("PO", "DFL", "R-DFL", "A-DFL")
+_SCENARIO_METHOD_COLORS = {
+    "PO": "#FF6B6B",
+    "DFL": "#4ECDC4",
+    "R-DFL": "#FFA552",
+    "A-DFL": "#45B7D1",
+}
+_SCENARIO_CONDITION_TITLES = {
+    "unintd": "Uninterdicted",
+    "intd": "Symmetric Interdiction",
+    "asym": "Asymmetric Interdiction",
+}
 
 
 def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
@@ -153,3 +178,204 @@ def persist_sweep_outputs(
         sample_boxplot_path=sample_boxplot_path,
         simulation_boxplot_path=simulation_boxplot_path,
     )
+
+
+def _default_scenario_sweep_base_name(
+    cfg: Any,
+    *,
+    scenarios: Sequence[int],
+    num_seeds: int,
+) -> str:
+    """Build a deterministic filename stem for one scenario sweep."""
+    m_size, n_size = _cfg_get(cfg, "grid_size", (0, 0))
+    scenario_label = "-".join(str(int(scenario)) for scenario in scenarios)
+    return (
+        "scenario_sweep_train_"
+        f"{_cfg_get(cfg, 'num_train_samples', 0)}"
+        "_valid_"
+        f"{_cfg_get(cfg, 'num_val_samples', 0)}"
+        "_test_"
+        f"{_cfg_get(cfg, 'num_test_samples', 0)}"
+        "_m_"
+        f"{m_size}"
+        "_n_"
+        f"{n_size}"
+        "_deg_"
+        f"{_cfg_get(cfg, 'deg', 0)}"
+        "_noise_"
+        f"{_cfg_get(cfg, 'noise_width', 0)}"
+        "_seeds_"
+        f"{int(num_seeds)}"
+        "_scenarios_"
+        f"{scenario_label}"
+    )
+
+
+def _resolve_scenario_sweep_figure_paths(
+    cfg: Any,
+    *,
+    scenarios: Sequence[int],
+    num_seeds: int,
+    figure_directory: str | Path | None,
+) -> ScenarioSweepStoragePaths:
+    """Return deterministic figure paths for one scenario sweep."""
+    if figure_directory is None:
+        resolved_figure_directory = _project_root() / "figures"
+    else:
+        resolved_figure_directory = Path(figure_directory)
+
+    base_name = _default_scenario_sweep_base_name(
+        cfg,
+        scenarios=scenarios,
+        num_seeds=num_seeds,
+    )
+    return ScenarioSweepStoragePaths(
+        simulation_plot_path=(
+            resolved_figure_directory / f"{base_name}_by_simulation.png"
+        ),
+        asym_simulation_plot_path=(
+            resolved_figure_directory / f"{base_name}_asym_by_simulation.png"
+        ),
+        sample_plot_path=(
+            resolved_figure_directory / f"{base_name}_by_sample.png"
+        ),
+        asym_sample_plot_path=(
+            resolved_figure_directory / f"{base_name}_asym_by_sample.png"
+        ),
+    )
+
+
+def _collect_scenario_mean_std(
+    stats: dict[int, dict[str, dict[str, list[float]]]],
+    scenarios: Sequence[int],
+    condition: str,
+    method: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the mean and std used by scenario-sweep line plots."""
+    means = []
+    stds = []
+    for scenario in scenarios:
+        values = np.asarray(
+            stats[int(scenario)][condition][method],
+            dtype=float,
+        )
+        if values.size == 0:
+            means.append(0.0)
+            stds.append(0.0)
+            continue
+        means.append(float(values.mean()))
+        stds.append(float(values.std()))
+    return np.asarray(means), np.asarray(stds)
+
+
+def plot_scenario_sweep_stats(
+    stats: dict[int, dict[str, dict[str, list[float]]]],
+    *,
+    scenarios: Sequence[int],
+    output_path: str | Path,
+    title: str,
+    conditions: Sequence[str],
+    show: bool = False,
+) -> None:
+    """Render one saved scenario-sweep figure from plot-ready stats."""
+    x_values = np.asarray([int(scenario) for scenario in scenarios], dtype=int)
+    fig, axes = plt.subplots(
+        1,
+        len(conditions),
+        figsize=(7 * len(conditions), 5),
+        sharex=True,
+    )
+    if len(conditions) == 1:
+        axes = [axes]
+
+    for method in _SCENARIO_METHOD_ORDER:
+        for index, condition in enumerate(conditions):
+            mean_values, std_values = _collect_scenario_mean_std(
+                stats,
+                scenarios,
+                condition,
+                method,
+            )
+            axes[index].errorbar(
+                x_values,
+                mean_values,
+                yerr=std_values,
+                marker="o",
+                capsize=4,
+                linewidth=1.8,
+                color=_SCENARIO_METHOD_COLORS[method],
+                label=method,
+            )
+
+    for index, condition in enumerate(conditions):
+        ax = axes[index]
+        ax.set_title(_SCENARIO_CONDITION_TITLES[condition])
+        ax.set_xlabel("Number of Adverse Scenarios")
+        ax.set_ylabel("Percentage cost increase vs oracle (%)")
+        ax.grid(alpha=0.3, linestyle="--")
+        ax.legend()
+
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+
+def persist_scenario_sweep_outputs(
+    *,
+    run_cfg: Any,
+    scenarios: Sequence[int],
+    num_seeds: int,
+    sim_stats: dict[int, dict[str, dict[str, list[float]]]],
+    sample_stats: dict[int, dict[str, dict[str, list[float]]]],
+    figure_directory: str | Path | None = None,
+) -> ScenarioSweepStoragePaths:
+    """Save the default presentation figures for one scenario sweep."""
+    stored_paths = _resolve_scenario_sweep_figure_paths(
+        run_cfg,
+        scenarios=scenarios,
+        num_seeds=num_seeds,
+        figure_directory=figure_directory,
+    )
+    stored_paths.simulation_plot_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    plot_scenario_sweep_stats(
+        sim_stats,
+        scenarios=scenarios,
+        output_path=stored_paths.simulation_plot_path,
+        title="Percentage Increase vs Oracle (Symmetric Simulations)",
+        conditions=("unintd", "intd"),
+    )
+    plot_scenario_sweep_stats(
+        sim_stats,
+        scenarios=scenarios,
+        output_path=stored_paths.asym_simulation_plot_path,
+        title="Percentage Increase vs Oracle (Asymmetric Simulations)",
+        conditions=("asym",),
+    )
+    plot_scenario_sweep_stats(
+        sample_stats,
+        scenarios=scenarios,
+        output_path=stored_paths.sample_plot_path,
+        title="Percentage Increase vs Oracle (Mean+Std over Samples)",
+        conditions=("unintd", "intd"),
+    )
+    plot_scenario_sweep_stats(
+        sample_stats,
+        scenarios=scenarios,
+        output_path=stored_paths.asym_sample_plot_path,
+        title=(
+            "Asymmetric Interdiction: Percentage Increase vs Oracle "
+            "(Mean+Std over Samples)"
+        ),
+        conditions=("asym",),
+    )
+    return stored_paths

@@ -23,9 +23,12 @@ METHOD_COLORS = {
     "A-DFL": "#45B7D1",
 }
 CONDITION_PREFIX_ORACLE = {
-    "unintd": ("o", "o_o"),
-    "intd": ("s", "s_o"),
-    "asym": ("a", "a_o"),
+    "unintd": ("o", {"p": "o_o", "s": "o_o", "r": "o_o", "a": "o_o"}),
+    "intd": ("s", {"p": "s_o", "s": "s_o", "r": "s_o", "a": "s_o"}),
+    "asym": (
+        "a",
+        {"p": "a_p_o", "s": "a_s_o", "r": "a_r_o", "a": "a_a_o"},
+    ),
 }
 CONDITION_TITLES = {
     "unintd": "Uninterdicted",
@@ -109,8 +112,9 @@ def run_sweep(cfg: HP, scenarios: list[int], num_seeds: int) -> tuple[dict, dict
 
             for method in METHOD_ORDER:
                 suffix = METHOD_SUFFIX[method]
-                for condition, (prefix, oracle_key) in CONDITION_PREFIX_ORACLE.items():
+                for condition, (prefix, oracle_keys) in CONDITION_PREFIX_ORACLE.items():
                     pred_key = f"{prefix}_{suffix}"
+                    oracle_key = oracle_keys[suffix]
                     sim_val = _safe_pct_sum(all_data[pred_key], all_data[oracle_key])
                     sim_stats[scenario][condition][method].append(sim_val)
 
