@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import pytest
 import torch
@@ -5,6 +7,9 @@ import torch
 import dflintdpy.data.data_gen as data_gen_module
 import dflintdpy.scripts.compare as compare_module
 from dflintdpy.data.config import HP
+from dflintdpy.models.graph import Graph
+from dflintdpy.solvers.asymmetric_interdictor import AsymmetricInterdictor
+from dflintdpy.solvers.shortest_path_grb import ShortestPathGrb
 
 
 pytestmark = [pytest.mark.regression, pytest.mark.pyepo, pytest.mark.torch]
@@ -189,6 +194,57 @@ class _ConstantPredictor(torch.nn.Module):
         """Return the stored prediction vector."""
         del feats
         return self.output.clone()
+
+
+def _bruteforce_asymmetric_optimum(
+    graph: Graph,
+    true_costs: np.ndarray,
+    true_delays: np.ndarray,
+    est_costs: np.ndarray,
+    est_delays: np.ndarray,
+    budget: int,
+) -> tuple[np.ndarray, float]:
+    """Enumerate the exact asymmetric optimum on a tiny pinned instance.
+
+    The Bayrak-Bailey-style asymmetric objective is evaluated in two steps:
+    first the follower solves the estimated shortest-path problem under a
+    candidate interdiction, then the resulting path is scored with the true
+    costs and true interdiction delays.  This helper brute-forces every binary
+    interdiction pattern that respects the budget so the regression can compare
+    the solver output against the exact optimum on a very small graph.
+    """
+
+    # Reuse one shortest-path model to avoid rebuilding the follower model for
+    # every interdiction pattern in the brute-force search.
+    follower = ShortestPathGrb(graph)
+    true_graph = Graph(
+        arcs=graph.arcs,
+        vertices=np.asarray(graph.vertices, dtype=int),
+        cost=np.asarray(true_costs, dtype=float),
+        source=graph.source,
+        target=graph.target,
+    )
+
+    best_x = None
+    best_value = -np.inf
+
+    for bits in itertools.product([0.0, 1.0], repeat=len(graph.arcs)):
+        x = np.asarray(bits, dtype=float)
+        if np.sum(x) > budget:
+            continue
+
+        # Solve the follower problem on the estimated costs induced by x.
+        est_path, _ = follower.solve(c=est_costs + x * est_delays)
+        est_path = np.asarray(est_path, dtype=float)
+
+        # Score the follower's chosen path using the true realized costs.
+        realized_value = true_graph.evaluate(est_path, interdictions=x * true_delays)
+        if realized_value > best_value + 1e-12:
+            best_value = float(realized_value)
+            best_x = x.copy()
+
+    assert best_x is not None, "Brute-force search did not find a feasible interdiction."
+    return best_x, float(best_value)
 
 
 ########################
@@ -454,3 +510,233 @@ def test_compare_wrong_asym_intd_skips_failed_asymmetric_solve(
         "compare_wrong_asym_intd did not skip the failed solve."
     )
     pass
+
+
+###############################################
+### test asymmetric interdictor regression ###
+###############################################
+
+
+@pytest.mark.gurobi
+def test_asymmetric_interdictor_solve_matches_bruteforce_optimum_on_pinned_smoke_rows():
+    """Verify the staged asymmetric solve matches brute force on smoke data.
+
+    This regression pins two rows extracted from the smoke example used in the
+    SPNI simulation pipeline.  Each row is small enough that we can enumerate
+    every budget-feasible interdiction and compute the exact Bayrak-Bailey
+    asymmetric objective directly.  The solver should return an interdiction
+    whose realized value matches that exact optimum.
+    """
+
+    # Arrange: pin the smoke-run graph and the two failing asymmetric rows.
+    arcs = [
+        (0, 1),
+        (1, 2),
+        (0, 3),
+        (1, 4),
+        (2, 5),
+        (3, 4),
+        (4, 5),
+        (3, 6),
+        (4, 7),
+        (5, 8),
+        (6, 7),
+        (7, 8),
+    ]
+    vertices = np.arange(9, dtype=int)
+    budget = 3
+    smoke_cases = [
+        {
+            "name": "rdfl_sample_2",
+            "true_costs": np.array(
+                [
+                    0.175584829151676,
+                    2.291364129319079,
+                    4.279864951643211,
+                    2.72675497487491,
+                    0.329687401413776,
+                    0.745138856408196,
+                    0.588928066149211,
+                    0.657444355519338,
+                    0.580558209459803,
+                    0.311359544886485,
+                    0.430070902429302,
+                    1.941334068242822,
+                ],
+                dtype=float,
+            ),
+            "true_delays": np.array(
+                [
+                    0.507463273237833,
+                    0.049519210776339,
+                    1.651552225245095,
+                    1.588422536926261,
+                    0.383573102212783,
+                    0.061132073598733,
+                    0.007005195503427,
+                    0.078911330627577,
+                    0.168540777790408,
+                    0.018397212725843,
+                    0.223712742321394,
+                    0.038543699202386,
+                ],
+                dtype=float,
+            ),
+            "est_costs": np.array(
+                [
+                    -7.5838723,
+                    -2.7844884,
+                    4.088116,
+                    1.1665864,
+                    13.470801,
+                    2.7685585,
+                    9.754138,
+                    -9.210021,
+                    4.9252734,
+                    1.7087691,
+                    3.485747,
+                    10.0195875,
+                ],
+                dtype=float,
+            ),
+            "est_delays": np.array(
+                [
+                    0.507463273237833,
+                    0.049519210776339,
+                    1.651552225245095,
+                    1.588422536926261,
+                    0.383573102212783,
+                    0.061132073598733,
+                    0.007005195503427,
+                    0.078911330627577,
+                    0.168540777790408,
+                    0.018397212725843,
+                    0.223712742321394,
+                    0.038543699202386,
+                ],
+                dtype=float,
+            ),
+        },
+        {
+            "name": "adfl_sample_3",
+            "true_costs": np.array(
+                [
+                    1.290870143855197,
+                    0.210464334503301,
+                    0.170737649039095,
+                    0.17603298215584,
+                    0.152117397488633,
+                    2.258647766467982,
+                    0.11728811822947,
+                    0.143886305459124,
+                    2.701155826473943,
+                    6.866769616616532,
+                    7.111411785380134,
+                    0.015052597626595,
+                ],
+                dtype=float,
+            ),
+            "true_delays": np.array(
+                [
+                    3.562099484994831,
+                    0.853045249106831,
+                    5.217163771197206,
+                    1.775753233853224,
+                    0.417954475672238,
+                    0.124740945797335,
+                    0.333238318672095,
+                    0.159219055178098,
+                    0.341956857610789,
+                    0.371803487840877,
+                    0.635130595247592,
+                    0.126781338258611,
+                ],
+                dtype=float,
+            ),
+            "est_costs": np.array(
+                [
+                    17.045324,
+                    7.7953434,
+                    17.416714,
+                    5.6877327,
+                    -19.54382,
+                    24.043865,
+                    -14.742358,
+                    -6.0509624,
+                    -39.97106,
+                    13.975892,
+                    3.639001,
+                    36.526314,
+                ],
+                dtype=float,
+            ),
+            "est_delays": np.array(
+                [
+                    3.562099484994831,
+                    0.853045249106831,
+                    5.217163771197206,
+                    1.775753233853224,
+                    0.417954475672238,
+                    0.124740945797335,
+                    0.333238318672095,
+                    0.159219055178098,
+                    0.341956857610789,
+                    0.371803487840877,
+                    0.635130595247592,
+                    0.126781338258611,
+                ],
+                dtype=float,
+            ),
+        },
+    ]
+
+    for case in smoke_cases:
+        # Build a fresh graph and solver for each pinned row so the comparison
+        # is isolated and the regression remains easy to debug.
+        graph = Graph(
+            arcs=arcs,
+            vertices=vertices,
+            cost=case["true_costs"],
+            source=0,
+            target=8,
+        )
+        solver = AsymmetricInterdictor(
+            graph=graph,
+            budget=budget,
+            true_costs=case["true_costs"],
+            true_delays=case["true_delays"],
+            est_costs=case["est_costs"],
+            est_delays=case["est_delays"],
+            lsd=1e-3,
+        )
+
+        # Compute the exact asymmetric optimum by exhaustively enumerating the
+        # tiny interdiction space for this pinned smoke row.
+        exact_x, exact_value = _bruteforce_asymmetric_optimum(
+            graph=graph,
+            true_costs=case["true_costs"],
+            true_delays=case["true_delays"],
+            est_costs=case["est_costs"],
+            est_delays=case["est_delays"],
+            budget=budget,
+        )
+
+        # Solve the solver under test and normalize the returned vector.
+        solver_x, solver_value = solver.solve()
+        solver_x = np.asarray(solver_x, dtype=float)
+
+        # Assert the solver output against the exact brute-force optimum.
+        assert np.all(np.isin(solver_x, [0.0, 1.0])), (
+            f"{case['name']} returned a non-binary interdiction vector."
+        )
+        assert np.sum(solver_x) <= budget + 1e-7, (
+            f"{case['name']} returned an interdiction that violates budget."
+        )
+        assert solver_value == pytest.approx(
+            exact_value, abs=1e-7
+        ), (
+            f"{case['name']} returned a realized asymmetric value below the "
+            f"exact brute-force optimum: {solver_value} < {exact_value}; "
+            f"one exact maximizer is {exact_x.tolist()}."
+        )
+        pass

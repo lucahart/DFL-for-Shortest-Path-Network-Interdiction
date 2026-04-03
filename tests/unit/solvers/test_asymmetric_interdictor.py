@@ -189,6 +189,14 @@ def _build_second_stage_data(graph: Graph, x_values: dict) -> tuple:
     return x_values, zeros_by_arc, zeros_by_arc.copy(), zeros_by_node
 
 
+def _normalize_stage_x(graph: Graph, x_values: dict) -> dict:
+    """Convert stage-variable dictionaries into plain arc-keyed floats."""
+    return {
+        arc: float(getattr(x_values[arc], "X", x_values[arc]))
+        for arc in graph.arcs
+    }
+
+
 #####################
 ### test __init__ ###
 #####################
@@ -643,8 +651,16 @@ def test_asymmetric_interdictor_solve_spnia_lg_solves_stage_models_in_order(
     solver,
     monkeypatch,
 ):
+    """Verify the two-stage solve returns the best validated incumbent.
+
+    The Bayrak-Bailey workflow uses ``SPNIA_L`` and ``SPNIA_LG`` as staged
+    models, but the public solver should return the candidate with the larger
+    realized asymmetric objective after re-solving the follower problem on the
+    original bilevel objective.
+    """
     # Build deterministic first-stage and second-stage stubs.
     call_order: list[str] = []
+    validation_calls: list[dict] = []
     x_l = {arc: _StageVar(float(idx % 2)) for idx, arc in enumerate(solver.graph.arcs)}
     x_lg = {
         arc: _StageVar(float((idx + 1) % 2))
@@ -672,16 +688,34 @@ def test_asymmetric_interdictor_solve_spnia_lg_solves_stage_models_in_order(
         lambda: (model_lg, *second_stage),
     )
 
+    def _fake_validate(interdictions):
+        """Return pinned realized values for each staged incumbent."""
+        normalized = _normalize_stage_x(solver.graph, interdictions)
+        validation_calls.append(normalized)
+        if normalized == _normalize_stage_x(solver.graph, x_l):
+            return normalized, 8.25
+        return normalized, 10.0
+
+    monkeypatch.setattr(
+        solver,
+        "_evaluate_interdiction_candidate",
+        _fake_validate,
+    )
+
     # Solve the two-stage procedure.
     x_star, z_star = solver.solve_spnia_LG()
 
-    # Check solve order, return values, and time-limit parameter setup.
+    # Check solve order, validated return values, and time limits.
     assert call_order == ["L", "LG"], \
         "Two-stage solve did not optimize the stages in the expected order."
-    assert x_star == {arc: x_lg[arc].X for arc in solver.graph.arcs}, \
-        "Two-stage solve did not return the second-stage interdictions."
-    assert z_star == pytest.approx(model_lg.ObjVal), \
-        "Two-stage solve did not return the second-stage objective."
+    assert validation_calls == [
+        _normalize_stage_x(solver.graph, x_l),
+        _normalize_stage_x(solver.graph, x_lg),
+    ], "Two-stage solve did not validate both stage incumbents in order."
+    assert x_star == _normalize_stage_x(solver.graph, x_lg), \
+        "Two-stage solve did not return the best validated incumbent."
+    assert z_star == pytest.approx(10.0), \
+        "Two-stage solve did not return the validated asymmetric objective."
     assert model_l.param_calls == [("TimeLimit", 120.0)], \
         "First-stage solve did not set the documented time limit."
     assert model_lg.param_calls == [("TimeLimit", 120.0)], \
@@ -689,10 +723,77 @@ def test_asymmetric_interdictor_solve_spnia_lg_solves_stage_models_in_order(
     pass
 
 
+def test_asymmetric_interdictor_solve_spnia_lg_falls_back_to_first_stage_when_second_stage_validates_worse(
+    solver,
+    monkeypatch,
+):
+    """Verify stage 2 cannot replace a better stage-1 Bayrak-Bailey value.
+
+    This is the precise bug pattern from the smoke example: the pessimistic
+    surrogate can report a stronger bound while the returned interdiction
+    re-evaluates to a worse realized asymmetric objective. The solver should
+    therefore keep the stage-1 incumbent when that happens.
+    """
+    # Build deterministic stage stubs whose validated values disagree.
+    call_order: list[str] = []
+    x_l = {arc: _StageVar(float(idx % 2)) for idx, arc in enumerate(solver.graph.arcs)}
+    x_lg = {
+        arc: _StageVar(float((idx + 1) % 2))
+        for idx, arc in enumerate(solver.graph.arcs)
+    }
+    model_l = _StageModel(
+        status=GRB.OPTIMAL,
+        obj_val=7.5,
+        label="L",
+        call_order=call_order,
+    )
+    model_lg = _StageModel(
+        status=GRB.OPTIMAL,
+        obj_val=11.0,
+        label="LG",
+        call_order=call_order,
+    )
+    second_stage = _build_second_stage_data(solver.graph, x_lg)
+
+    # Replace both builders and pin the validated asymmetric values.
+    monkeypatch.setattr(solver, "build_spnia_L", lambda: (model_l, x_l))
+    monkeypatch.setattr(
+        solver,
+        "build_spnia_LG",
+        lambda: (model_lg, *second_stage),
+    )
+
+    def _fake_validate(interdictions):
+        """Map each staged interdiction to a chosen realized objective."""
+        normalized = _normalize_stage_x(solver.graph, interdictions)
+        if normalized == _normalize_stage_x(solver.graph, x_l):
+            return normalized, 9.0
+        return normalized, 6.5
+
+    monkeypatch.setattr(
+        solver,
+        "_evaluate_interdiction_candidate",
+        _fake_validate,
+    )
+
+    # Solve the staged procedure under the pinned validation outcomes.
+    x_star, z_star = solver.solve_spnia_LG()
+
+    # Check that the stage-1 incumbent is kept after re-evaluation.
+    assert call_order == ["L", "LG"], \
+        "Fallback branch did not optimize both staged models."
+    assert x_star == _normalize_stage_x(solver.graph, x_l), \
+        "Fallback branch did not keep the better stage-1 incumbent."
+    assert z_star == pytest.approx(9.0), \
+        "Fallback branch did not return the stage-1 validated objective."
+    pass
+
+
 def test_asymmetric_interdictor_solve_spnia_lg_warm_starts_second_stage(
     solver,
     monkeypatch,
 ):
+    """Verify the second-stage warm start copies the stage-1 interdictions."""
     # Build deterministic stage stubs with known first-stage x values.
     call_order: list[str] = []
     x_l = {arc: _StageVar(float(idx % 2)) for idx, arc in enumerate(solver.graph.arcs)}
@@ -718,6 +819,14 @@ def test_asymmetric_interdictor_solve_spnia_lg_warm_starts_second_stage(
         "build_spnia_LG",
         lambda: (model_lg, *second_stage),
     )
+    monkeypatch.setattr(
+        solver,
+        "_evaluate_interdiction_candidate",
+        lambda interdictions: (
+            _normalize_stage_x(solver.graph, interdictions),
+            1.0,
+        ),
+    )
 
     # Solve the two-stage procedure.
     solver.solve_spnia_LG()
@@ -733,6 +842,7 @@ def test_asymmetric_interdictor_solve_spnia_lg_adds_warm_cut_to_second_stage(
     solver,
     monkeypatch,
 ):
+    """Verify the pessimistic stage still receives the Bayrak-Bailey cut."""
     # Build deterministic stage stubs that allow constraint inspection.
     call_order: list[str] = []
     x_l = {arc: _StageVar(0.0) for arc in solver.graph.arcs}
@@ -758,6 +868,14 @@ def test_asymmetric_interdictor_solve_spnia_lg_adds_warm_cut_to_second_stage(
         "build_spnia_LG",
         lambda: (model_lg, *second_stage),
     )
+    monkeypatch.setattr(
+        solver,
+        "_evaluate_interdiction_candidate",
+        lambda interdictions: (
+            _normalize_stage_x(solver.graph, interdictions),
+            1.0,
+        ),
+    )
 
     # Solve the two-stage procedure.
     solver.solve_spnia_LG()
@@ -773,6 +891,7 @@ def test_asymmetric_interdictor_solve_spnia_lg_returns_none_on_first_stage_timeo
     solver,
     monkeypatch,
 ):
+    """Verify a stage-1 timeout aborts the staged solve immediately."""
     # Build a first-stage stub that times out only after optimize().
     model_l = _LoadedThenTimedOutModel()
     x_l = {arc: _StageVar(0.0) for arc in solver.graph.arcs}
@@ -803,6 +922,7 @@ def test_asymmetric_interdictor_solve_spnia_lg_returns_none_on_second_stage_time
     solver,
     monkeypatch,
 ):
+    """Verify a stage-2 timeout preserves the documented ``None`` contract."""
     # Build deterministic stubs where the second stage times out.
     call_order: list[str] = []
     x_l = {arc: _StageVar(0.0) for arc in solver.graph.arcs}
@@ -827,6 +947,14 @@ def test_asymmetric_interdictor_solve_spnia_lg_returns_none_on_second_stage_time
         solver,
         "build_spnia_LG",
         lambda: (model_lg, *second_stage),
+    )
+    monkeypatch.setattr(
+        solver,
+        "_evaluate_interdiction_candidate",
+        lambda interdictions: (
+            _normalize_stage_x(solver.graph, interdictions),
+            1.0,
+        ),
     )
     result = solver.solve_spnia_LG()
 

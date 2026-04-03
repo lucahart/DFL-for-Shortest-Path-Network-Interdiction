@@ -221,6 +221,69 @@ class AsymmetricInterdictor:
         """
         return self._in_edges[node]
 
+    def _arc_ordered_array(self, values):
+        """
+        Normalize arc-indexed data into one array in ``graph.arcs`` order.
+
+        Parameters
+        ----------
+        values : dict | list | ndarray
+            Arc-indexed data. Dictionaries are read in ``self.graph.arcs``
+            order, while list/array-like inputs are converted directly.
+
+        Returns
+        -------
+        ndarray
+            One float vector aligned with ``self.graph.arcs``.
+        """
+        if isinstance(values, dict):
+            return np.asarray(
+                [values[arc] for arc in self.graph.arcs],
+                dtype=float,
+            )
+        return np.asarray(values, dtype=float)
+
+    def _evaluate_interdiction_candidate(self, interdictions):
+        """
+        Score one interdiction vector under the original asymmetric objective.
+
+        The Bayrak-Bailey bilevel objective is the realized true path length of
+        the follower path chosen under estimated costs. This helper recomputes
+        that follower response explicitly, so public solve methods can validate
+        model incumbents before returning them to the caller.
+
+        Parameters
+        ----------
+        interdictions : dict | list | ndarray
+            Interdiction vector to evaluate. Dictionaries may use arc keys; all
+            other inputs must already be aligned with ``self.graph.arcs``.
+
+        Returns
+        -------
+        x_dict : dict
+            Arc-keyed interdiction vector in ``self.graph.arcs`` order.
+        value : float
+            Realized asymmetric objective value for that interdiction pattern.
+        """
+        x_arr = self._arc_ordered_array(interdictions)
+        est_costs = self._arc_ordered_array(self.est_costs)
+        est_delays = self._arc_ordered_array(self.est_delays)
+        true_costs = self._arc_ordered_array(self.true_costs)
+        true_delays = self._arc_ordered_array(self.true_delays)
+
+        # Re-solve the estimated follower problem so the returned incumbent is
+        # always scored against the original asymmetric objective, not only the
+        # stage-model surrogate objective.
+        follower = ShortestPathGrb(self.graph)
+        est_path, _ = follower.solve(est_costs + x_arr * est_delays)
+        est_path_arr = np.asarray(est_path, dtype=float)
+        value = float((true_costs + x_arr * true_delays) @ est_path_arr)
+
+        x_dict = {
+            arc: float(x_arr[idx])
+            for idx, arc in enumerate(self.graph.arcs)
+        }
+        return x_dict, value
 
     def build_spnia_L(self):
         """
@@ -352,17 +415,20 @@ class AsymmetricInterdictor:
         vector and objective bound. Stage 2 builds ``SPNIA_LG``, warm-starts
         its binary decision variables from stage 1, adds a bounding cut
         based on the optimistic objective, and solves the pessimistic model.
+        Both stage incumbents are then re-evaluated under the original
+        asymmetric bilevel objective before a final incumbent is returned.
 
         Returns
         -------
         x_star : dict | None
-            Arc-keyed interdiction decision returned by the pessimistic
-            model. If either stage hits the configured time limit, the
-            method returns ``None`` instead.
-        z_star : float | None
-            Objective value returned by the pessimistic model. If either
-            stage hits the configured time limit, the method returns
+            Arc-keyed interdiction decision with the best validated realized
+            asymmetric objective among the available stage incumbents. If
+            either stage hits the configured time limit, the method returns
             ``None`` instead.
+        z_star : float | None
+            Realized asymmetric objective value for ``x_star``. If either stage
+            hits the configured time limit, the method returns ``None``
+            instead.
 
         Notes
         -----
@@ -377,6 +443,8 @@ class AsymmetricInterdictor:
             return None, None
         z_star = L.ObjVal
         x_star = {e: xL[e].X for e in self.graph.arcs}
+        validated_x_star, validated_z_star = \
+            self._evaluate_interdiction_candidate(x_star)
 
         # Step 2 – pessimistic with warm-start and cut
         LG, xLG, v, w, u = self.build_spnia_LG()
@@ -397,7 +465,17 @@ class AsymmetricInterdictor:
             print("Warning: Time limit reached during pessimistic SPNIA-LG solve.")
             return None, None
 
-        return {e: xLG[e].X for e in self.graph.arcs}, LG.ObjVal
+        lg_x_star = {e: xLG[e].X for e in self.graph.arcs}
+        lg_x_star, lg_z_star = self._evaluate_interdiction_candidate(lg_x_star)
+
+        # Keep the best incumbent only after re-scoring it against the original
+        # bilevel objective. This prevents a loose second-stage surrogate from
+        # replacing a valid first-stage incumbent with an interdiction vector
+        # whose realized follower cost is worse.
+        if lg_z_star + 1e-8 >= validated_z_star:
+            return lg_x_star, lg_z_star
+
+        return validated_x_star, validated_z_star
     
     def solve(self):
         """
@@ -408,7 +486,7 @@ class AsymmetricInterdictor:
         x_star : list[float]
             Final interdiction vector in ``self.graph.arcs`` order.
         z_star : float
-            Final objective value returned by the pessimistic stage.
+            Realized asymmetric objective value of the returned interdiction.
 
         Raises
         ------
@@ -420,7 +498,8 @@ class AsymmetricInterdictor:
         -----
         ``solve_spnia_LG`` returns an arc-keyed dictionary, while this public
         wrapper converts that dictionary into a plain list whose order matches
-        ``self.graph.arcs``.
+        ``self.graph.arcs``. The reported objective is already re-evaluated on
+        the original Bayrak-Bailey bilevel objective inside ``solve_spnia_LG``.
         """
 
         # Solve the SPNI problem using the two-step procedure
