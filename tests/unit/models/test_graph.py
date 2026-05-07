@@ -1,4 +1,5 @@
 # test_graph.py
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pytest
@@ -8,6 +9,35 @@ from copy import deepcopy
 
 from dflintdpy.models.graph import Graph
 from dflintdpy.models.grid import Grid
+
+
+class _RecordingAxes:
+    """Small matplotlib Axes stand-in for graph visualization tests."""
+
+    def __init__(self):
+        self.axis_off_calls = 0
+        self.title = None
+
+    def set_axis_off(self):
+        self.axis_off_calls += 1
+
+    def set_title(self, title):
+        self.title = title
+
+
+class _RecordingEdgePatch:
+    """Small edge artist stand-in for graph visualization tests."""
+
+    def __init__(self, edge):
+        self.edge = edge
+        self.color = None
+        self.linestyle = None
+
+    def set_color(self, color):
+        self.color = color
+
+    def set_linestyle(self, linestyle):
+        self.linestyle = linestyle
 
 
 @pytest.fixture
@@ -309,6 +339,197 @@ def test_graph_one_hot_to_arcs(
     expected_arcs = [(0, 1), (1, 2), (2, 3), (3, 5)]
 
     assert arcs == expected_arcs, "Decoded arcs do not match expected arcs."
+    pass
+
+
+######################
+### test visualize ###
+######################
+
+def test_graph_visualize_colors_and_dashes_one_hot_edges(monkeypatch):
+    """Test that visualize applies colored and dashed one-hot edge masks."""
+    # Arrange a graph and replace plotting calls with recording stubs.
+    graph = Graph(
+        arcs=[(0, 1), (0, 2), (1, 2)],
+        vertices=[0, 1, 2],
+        cost=np.array([1.0, 2.0, 3.0], dtype=float),
+    )
+    colored_edges = np.array([1.0, 0.0, 1.0], dtype=float)
+    dashed_edges = np.array([0.0, 1.0, 0.0], dtype=float)
+    fake_ax = _RecordingAxes()
+    edge_patches = []
+    edge_draw_calls = []
+    node_draw_calls = []
+    label_draw_calls = []
+    figure_calls = []
+    show_calls = []
+    layout_seeds = []
+
+    def fake_spring_layout(nx_graph, seed=None):
+        layout_seeds.append(seed)
+        return {
+            node: (float(index), 0.0)
+            for index, node in enumerate(nx_graph.nodes())
+        }
+
+    def fake_draw_edges(nx_graph, pos, ax=None, **kwargs):
+        edge_draw_calls.append({
+            "graph": nx_graph,
+            "pos": pos,
+            "ax": ax,
+            "kwargs": kwargs,
+        })
+        edge_patches[:] = [
+            _RecordingEdgePatch(edge)
+            for edge in nx_graph.edges()
+        ]
+        return edge_patches
+
+    monkeypatch.setattr(nx, "spring_layout", fake_spring_layout)
+    monkeypatch.setattr(nx, "draw_networkx_edges", fake_draw_edges)
+    monkeypatch.setattr(
+        nx,
+        "draw_networkx_nodes",
+        lambda *args, **kwargs: node_draw_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        nx,
+        "draw_networkx_labels",
+        lambda *args, **kwargs: label_draw_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        plt,
+        "figure",
+        lambda figsize=None: figure_calls.append(figsize),
+    )
+    monkeypatch.setattr(plt, "gca", lambda: fake_ax)
+    monkeypatch.setattr(plt, "show", lambda: show_calls.append(True))
+
+    # Act by rendering with both optional edge masks.
+    graph.visualize(
+        colored_edges=colored_edges,
+        dashed_edges=dashed_edges,
+        figsize=(7, 4),
+    )
+
+    # Assert the graph was drawn once using the stored graph and default styles.
+    assert layout_seeds == [7], \
+        "visualize should use the stable default layout seed."
+    assert figure_calls == [(7, 4)], \
+        "visualize should create a figure with the requested size."
+    assert show_calls == [True], \
+        "visualize should show the figure when it owns the axes."
+    assert fake_ax.axis_off_calls == 1, \
+        "visualize should hide axes on created plots."
+    assert fake_ax.title == "Graph from Arcs", \
+        "visualize should keep the default graph title."
+    assert len(edge_draw_calls) == 1, \
+        "visualize should draw the base edge artists once."
+    assert edge_draw_calls[0]["graph"] is graph.graph, \
+        "visualize should draw the stored graph object."
+    assert edge_draw_calls[0]["kwargs"]["edge_color"] == "gray", \
+        "visualize should default uncolored graph edges to gray."
+    assert len(node_draw_calls) == 1, \
+        "visualize should draw graph nodes once."
+    assert len(label_draw_calls) == 1, \
+        "visualize should draw graph labels once."
+
+    # Assert one-hot masks were mapped back through graph.arcs.
+    patch_by_edge = {patch.edge: patch for patch in edge_patches}
+    assert patch_by_edge[(0, 1)].color == "red", \
+        "Selected edge (0, 1) should be colored red."
+    assert patch_by_edge[(0, 2)].color == "gray", \
+        "Unselected edge (0, 2) should keep the base edge color."
+    assert patch_by_edge[(1, 2)].color == "red", \
+        "Selected edge (1, 2) should be colored red."
+    assert patch_by_edge[(0, 1)].linestyle == "solid", \
+        "Non-dashed edge (0, 1) should be solid."
+    assert patch_by_edge[(0, 2)].linestyle == "dashed", \
+        "Selected dashed edge (0, 2) should be dashed."
+    assert patch_by_edge[(1, 2)].linestyle == "solid", \
+        "Non-dashed edge (1, 2) should be solid."
+    pass
+
+
+def test_graph_visualize_uses_provided_axis_without_show(monkeypatch):
+    """Test that visualize draws on a provided axis without creating a figure."""
+    # Arrange plotting stubs and a caller-owned axis.
+    graph = Graph(
+        arcs=[(0, 1), (1, 2)],
+        vertices=[0, 1, 2],
+        cost=np.array([1.0, 2.0], dtype=float),
+    )
+    fake_ax = _RecordingAxes()
+    sca_calls = []
+    figure_calls = []
+    show_calls = []
+    edge_draw_calls = []
+
+    monkeypatch.setattr(
+        nx,
+        "spring_layout",
+        lambda nx_graph, seed=None: {node: (node, 0) for node in nx_graph},
+    )
+    monkeypatch.setattr(
+        nx,
+        "draw_networkx_edges",
+        lambda *args, **kwargs: edge_draw_calls.append((args, kwargs)) or [],
+    )
+    monkeypatch.setattr(nx, "draw_networkx_nodes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(nx, "draw_networkx_labels", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plt, "sca", lambda ax: sca_calls.append(ax))
+    monkeypatch.setattr(
+        plt,
+        "figure",
+        lambda figsize=None: figure_calls.append(figsize),
+    )
+    monkeypatch.setattr(plt, "show", lambda: show_calls.append(True))
+
+    # Act by drawing onto the provided axis.
+    graph.visualize(
+        ax=fake_ax,
+        title=None,
+        width=3.0,
+        connectionstyle="arc3,rad=0.15",
+    )
+
+    # Assert matplotlib ownership stays with the caller.
+    assert sca_calls == [fake_ax], \
+        "visualize should activate the provided axis."
+    assert figure_calls == [], \
+        "visualize should not create a figure when an axis is provided."
+    assert show_calls == [], \
+        "visualize should not show a caller-owned axis."
+    assert fake_ax.axis_off_calls == 1, \
+        "visualize should hide axes on provided plots."
+    assert fake_ax.title is None, \
+        "visualize should not set a title when title is None."
+    assert edge_draw_calls[0][1]["width"] == 3.0, \
+        "visualize should forward the requested edge width."
+    assert edge_draw_calls[0][1]["connectionstyle"] == "arc3,rad=0.15", \
+        "visualize should forward extra edge drawing kwargs."
+    pass
+
+
+def test_graph_visualize_rejects_invalid_edge_mask_before_drawing(
+        triangle_graph: Graph,
+        monkeypatch
+    ):
+    """Test that visualize validates optional edge masks before drawing."""
+    # Arrange a plotting stub that would reveal premature figure creation.
+    figure_calls = []
+    monkeypatch.setattr(
+        plt,
+        "figure",
+        lambda figsize=None: figure_calls.append(figsize),
+    )
+
+    # Act and assert that an invalid mask fails before matplotlib is touched.
+    with pytest.raises(ValueError):
+        triangle_graph.visualize(colored_edges=np.array([1.0, 0.0]))
+
+    assert figure_calls == [], \
+        "visualize should validate edge masks before creating a figure."
     pass
 
 

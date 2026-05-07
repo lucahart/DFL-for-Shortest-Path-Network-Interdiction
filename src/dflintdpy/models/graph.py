@@ -543,7 +543,13 @@ class Graph(optModel):
     def visualize(self,
                   colored_edges: np.ndarray | None = None,
                   dashed_edges: np.ndarray | None = None,
-                  figsize: tuple[int, int] = (6,5)
+                  figsize: tuple[int, int] = (6,5),
+                  *,
+                  ax: plt.Axes | None = None,
+                  title: str | None = "Graph from Arcs",
+                  layout_seed: int | None = 7,
+                  width: float = 1.5,
+                  **kwargs
                   ) -> None:
         """
         Display a simple plot of the current graph structure.
@@ -551,26 +557,100 @@ class Graph(optModel):
         Parameters
         ----------
         colored_edges : np.ndarray | None, optional
-            Currently unused placeholder for future edge-highlighting support.
+            A one-hot encoded vector representing the edges to color red. If None,
+            no edges are colored.
         dashed_edges : np.ndarray | None, optional
-            Currently unused placeholder for future edge-style support.
+            A one-hot encoded vector representing the edges to draw as dashed. If
+            None, all edges use a solid line style.
         figsize : tuple[int, int], optional
             Matplotlib figure size.
+        ax : plt.Axes | None, optional
+            Matplotlib axes to draw on. If None, a new figure is created and shown.
+        title : str | None, optional
+            Plot title. If None, no title is set.
+        layout_seed : int | None, optional
+            Seed passed to ``networkx.spring_layout`` for stable node placement.
+        width : float, optional
+            Width of the graph edges.
+        **kwargs
+            Additional keyword arguments forwarded to
+            ``networkx.draw_networkx_edges`` for the base edge drawing.
         """
-        # Create a directed graph
-        G = nx.DiGraph()
+        # Validate optional one-hot masks before creating matplotlib state.
+        colored_arcs = None
+        if colored_edges is not None:
+            colored_arcs = set(Graph.one_hot_to_arcs(
+                self,
+                self._to_1d_numpy(colored_edges),
+            ))
 
-        # Add edges from your list of arcs
-        G.add_edges_from(self.arcs)
+        dashed_arcs = None
+        if dashed_edges is not None:
+            dashed_arcs = set(Graph.one_hot_to_arcs(
+                self,
+                self._to_1d_numpy(dashed_edges),
+            ))
 
-        # Draw the graph
-        plt.figure(figsize=figsize)
-        nx.draw(G, with_labels=True, node_color='lightblue', 
-                node_size=500, font_size=12, font_weight='bold',
-                arrows=True, arrowsize=20, edge_color='gray')
+        # Draw using the stored graph so isolated vertices are preserved.
+        pos = nx.spring_layout(self.graph, seed=layout_seed)
 
-        plt.title("Graph from Arcs")
-        plt.show()
+        if ax is None:
+            plt.figure(figsize=figsize)
+            ax = plt.gca()
+            should_show = True
+        else:
+            plt.sca(ax)
+            should_show = False
+        ax.set_axis_off()
+
+        edge_kwargs = {
+            "edge_color": "gray",
+            "width": width,
+            "arrows": True,
+            "arrowsize": 20,
+        }
+        edge_kwargs.update(kwargs)
+
+        edge_artists = nx.draw_networkx_edges(
+            self.graph,
+            pos,
+            ax=ax,
+            **edge_kwargs,
+        )
+        nx.draw_networkx_nodes(
+            self.graph,
+            pos,
+            ax=ax,
+            node_color="lightblue",
+            node_size=500,
+        )
+        nx.draw_networkx_labels(
+            self.graph,
+            pos,
+            ax=ax,
+            font_size=12,
+            font_weight="bold",
+        )
+
+        # Match each drawn edge artist to the corresponding graph edge.
+        edge_list = list(self.graph.edges())
+        if colored_arcs is not None:
+            base_color = edge_kwargs["edge_color"]
+            for patch, edge in zip(edge_artists, edge_list):
+                patch.set_color("red" if edge in colored_arcs else base_color)
+
+        if dashed_arcs is not None:
+            for patch, edge in zip(edge_artists, edge_list):
+                patch.set_linestyle(
+                    "dashed" if edge in dashed_arcs else "solid"
+                )
+
+        if title is not None:
+            ax.set_title(title)
+
+        if should_show:
+            plt.show()
+        pass
     
     def _getModel(self):
         """
