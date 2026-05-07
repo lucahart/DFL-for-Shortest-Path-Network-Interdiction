@@ -123,10 +123,24 @@ def build_graph(run_cfg: SPNIRunConfig):
     # in-memory grid directly from the normalized config.
     if run_cfg.load_real_world_graph is not None:
         csv_to_graph = _resolve_real_world_graph_loader()
-        return csv_to_graph(run_cfg.load_real_world_graph)
+        graph = csv_to_graph(run_cfg.load_real_world_graph)
+        if run_cfg.source_node is not None or run_cfg.target_node is not None:
+            graph.setObj(
+                graph.cost,
+                source=run_cfg.source_node,
+                target=run_cfg.target_node,
+            )
+        return graph
 
     grid_cls = _get_grid_cls()
-    return grid_cls(*run_cfg.grid_size)
+    graph = grid_cls(*run_cfg.grid_size)
+    if run_cfg.source_node is not None or run_cfg.target_node is not None:
+        graph.setObj(
+            graph.cost,
+            source=run_cfg.source_node,
+            target=run_cfg.target_node,
+        )
+    return graph
 
 
 def build_opt_model(run_cfg: SPNIRunConfig, graph):
@@ -165,6 +179,8 @@ def build_problem_bundle(run_cfg: SPNIRunConfig) -> GraphBundle:
         "opt_model_class": type(opt_model).__name__,
         "num_vertices": _safe_len(getattr(graph, "vertices", None)),
         "num_arcs": _safe_len(getattr(graph, "arcs", None)),
+        "source_node": getattr(graph, "source", None),
+        "target_node": getattr(graph, "target", None),
     }
     if graph_kind == "synthetic":
         diagnostics["grid_size"] = list(run_cfg.grid_size)

@@ -164,6 +164,8 @@ def _resolve_run_options(
     compute_asym_intd: bool | None,
     compute_wrong_asym_intd: bool | None,
     load_real_world_graph: str | None,
+    source_node: int | None = None,
+    target_node: int | None = None,
     present_results: bool | None = None,
 ) -> dict[str, Any]:
     """Normalize optional run-mode flags for the convenience entrypoints."""
@@ -174,6 +176,10 @@ def _resolve_run_options(
         options["compute_wrong_asym_intd"] = bool(compute_wrong_asym_intd)
     if load_real_world_graph is not None:
         options["load_real_world_graph"] = str(load_real_world_graph)
+    if source_node is not None:
+        options["source_node"] = int(source_node)
+    if target_node is not None:
+        options["target_node"] = int(target_node)
     if present_results is not None:
         options["present_results"] = bool(present_results)
     if num_seeds is not None:
@@ -293,6 +299,8 @@ def main(
     compute_asym_intd: bool | None = None,
     compute_wrong_asym_intd: bool | None = None,
     load_real_world_graph: str | None = None,
+    source_node: int | None = None,
+    target_node: int | None = None,
     present_results: bool | None = None,
     **cfg_overrides,
 ) -> SimulationResult | SweepResult | dict[str, Any]:
@@ -331,6 +339,8 @@ def main(
         compute_asym_intd=compute_asym_intd,
         compute_wrong_asym_intd=compute_wrong_asym_intd,
         load_real_world_graph=load_real_world_graph,
+        source_node=source_node,
+        target_node=target_node,
         present_results=present_results,
     )
 
@@ -519,6 +529,8 @@ def run_scenario_sweep(
     compute_asym_intd: bool | None = None,
     compute_wrong_asym_intd: bool | None = None,
     load_real_world_graph: str | None = None,
+    source_node: int | None = None,
+    target_node: int | None = None,
 ) -> dict[str, Any]:
     """Run seed sweeps across scenario counts and return plot-ready stats.
 
@@ -542,6 +554,8 @@ def run_scenario_sweep(
         compute_asym_intd=compute_asym_intd,
         compute_wrong_asym_intd=compute_wrong_asym_intd,
         load_real_world_graph=load_real_world_graph,
+        source_node=source_node,
+        target_node=target_node,
     )
 
     for scenario in resolved_scenarios:
@@ -667,6 +681,18 @@ def cli(
         help="Optional path to a real-world graph CSV.",
     )
     parser.add_argument(
+        "--source-node",
+        type=int,
+        default=None,
+        help="Optional graph source node for shortest-path solves.",
+    )
+    parser.add_argument(
+        "--target-node",
+        type=int,
+        default=None,
+        help="Optional graph target node for shortest-path solves.",
+    )
+    parser.add_argument(
         "--present-results",
         dest="present_results",
         action=argparse.BooleanOptionalAction,
@@ -698,6 +724,8 @@ def cli(
         compute_asym_intd=parsed.compute_asym_intd,
         compute_wrong_asym_intd=parsed.compute_wrong_asym_intd,
         load_real_world_graph=parsed.load_real_world_graph,
+        source_node=parsed.source_node,
+        target_node=parsed.target_node,
         present_results=parsed.present_results,
         **cfg_overrides,
     )

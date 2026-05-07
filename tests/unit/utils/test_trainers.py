@@ -366,6 +366,94 @@ def test_dfl_trainer_train_epoch_updates_original_pred_model_in_place():
     pass
 
 
+def test_dfl_trainer_summarize_gradient_conflicts_matches_alignment_extremes():
+    """Verify cosine and cancellation summaries for aligned/opposed gradients."""
+    aligned = DFLTrainer.summarize_gradient_conflicts(
+        [
+            torch.tensor([1.0, 0.0], dtype=torch.float),
+            torch.tensor([2.0, 0.0], dtype=torch.float),
+        ]
+    )
+    opposed = DFLTrainer.summarize_gradient_conflicts(
+        [
+            torch.tensor([1.0, 0.0], dtype=torch.float),
+            torch.tensor([-1.0, 0.0], dtype=torch.float),
+        ]
+    )
+
+    assert aligned["mean_pairwise_cosine"] == pytest.approx(1.0), (
+        "Aligned gradients should have cosine similarity 1."
+    )
+    assert aligned["cancellation_ratio"] == pytest.approx(1.0), (
+        "Aligned gradients should not cancel."
+    )
+    assert aligned["pair_count"] == 1, (
+        "Two gradients should contribute exactly one pair."
+    )
+    assert opposed["mean_pairwise_cosine"] == pytest.approx(-1.0), (
+        "Opposed gradients should have cosine similarity -1."
+    )
+    assert opposed["cancellation_ratio"] == pytest.approx(0.0), (
+        "Opposed gradients should cancel completely."
+    )
+    pass
+
+
+def test_dfl_trainer_train_epoch_records_gradient_diagnostics():
+    """Verify that DFL training emits per-batch gradient-conflict metrics."""
+    recorded = []
+    scalar_model = _ScalarModel(init_weight=0.0)
+    trainer = DFLTrainer(
+        pred_model=scalar_model,
+        opt_model=SimpleNamespace(),
+        optimizer=torch.optim.SGD(scalar_model.parameters(), lr=0.25),
+        loss_fn=_ScalarSpoLoss(),
+        method_name="spo+",
+        dfl_variant="mixed",
+        diagnostics_callback=recorded.append,
+    )
+    train_loader = _BatchLoader(
+        [
+            (
+                torch.ones((1, 1), dtype=torch.float),
+                torch.tensor([[[2.0], [2.0]]], dtype=torch.float),
+                torch.zeros((1, 2, 1), dtype=torch.float),
+                torch.zeros((1, 2, 1), dtype=torch.float),
+                torch.zeros((1, 2, 1), dtype=torch.float),
+            )
+        ]
+    )
+    trainer._before_epoch(0)
+
+    loss = trainer.train_epoch(train_loader)
+
+    assert loss == pytest.approx(4.0), (
+        "DFLTrainer returned the wrong loss for the diagnostic batch."
+    )
+    assert scalar_model.weight.item() == pytest.approx(1.0), (
+        "DFLTrainer changed its update rule when diagnostics were enabled."
+    )
+    assert len(recorded) == 1, (
+        "DFLTrainer did not emit one diagnostic row for the measured batch."
+    )
+    assert recorded[0]["epoch"] == 1, (
+        "DFLTrainer did not record the active epoch on the diagnostic row."
+    )
+    assert recorded[0]["requested_scenarios"] == 2, (
+        "DFLTrainer reported the wrong configured scenario count."
+    )
+    assert recorded[0]["effective_scenarios"] == 2, (
+        "Mixed DFL should retain both scenarios for diagnostics."
+    )
+    assert recorded[0]["mean_pairwise_cosine"] == pytest.approx(1.0), (
+        "Identical scenario gradients should align perfectly."
+    )
+    assert recorded[0]["cancellation_ratio"] == pytest.approx(1.0), (
+        "Identical scenario gradients should not cancel."
+    )
+    pass
+
+
 ###########################
 ### test pfl_trainer_fit ###
 ###########################

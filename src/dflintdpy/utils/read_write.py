@@ -94,6 +94,9 @@ DATA_KEYS: Set[str] = {
     "seed",
     "random_seed",
     "loader_seed",
+    "load_real_world_graph",
+    "source_node",
+    "target_node",
 }
 
 INTD_KEYS: Set[str] = {

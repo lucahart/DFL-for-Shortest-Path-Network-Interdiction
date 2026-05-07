@@ -91,6 +91,8 @@ class SPNIRunConfig:
     compute_asym_intd: bool = True
     compute_wrong_asym_intd: bool = False
     load_real_world_graph: str | None = None
+    source_node: int | None = None
+    target_node: int | None = None
     cache_policy: CachePolicy = field(default_factory=CachePolicy)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -194,6 +196,14 @@ def _normalize_pred_model(value: Any) -> str | None:
     return model
 
 
+def _normalize_optional_node(value: Any, key: str) -> int | None:
+    """Normalize an optional graph terminal node identifier."""
+
+    if value is None:
+        return None
+    return _coerce_int(value, key)
+
+
 def _normalize_cache_policy(
     policy: CachePolicy | Mapping[str, Any] | None,
 ) -> CachePolicy:
@@ -244,6 +254,8 @@ def build_run_config(
     compute_asym_intd: bool = True,
     compute_wrong_asym_intd: bool = False,
     load_real_world_graph: str | None = None,
+    source_node: int | None = None,
+    target_node: int | None = None,
     cache_policy: CachePolicy | Mapping[str, Any] | None = None,
 ) -> SPNIRunConfig:
     """Normalize a legacy config object into `SPNIRunConfig`.
@@ -278,6 +290,18 @@ def build_run_config(
 
     if load_real_world_graph is not None:
         load_real_world_graph = str(load_real_world_graph)
+    source_node = _normalize_optional_node(
+        source_node
+        if source_node is not None
+        else _read_cfg_value(base_cfg, "source_node", None),
+        "source_node",
+    )
+    target_node = _normalize_optional_node(
+        target_node
+        if target_node is not None
+        else _read_cfg_value(base_cfg, "target_node", None),
+        "target_node",
+    )
 
     # The returned dataclass deliberately duplicates the fields the pipeline
     # needs so later stages never have to fish values back out of `base_cfg`.
@@ -383,6 +407,8 @@ def build_run_config(
         compute_asym_intd=bool(compute_asym_intd),
         compute_wrong_asym_intd=bool(compute_wrong_asym_intd),
         load_real_world_graph=load_real_world_graph,
+        source_node=source_node,
+        target_node=target_node,
         cache_policy=normalized_cache_policy,
         metadata=metadata,
     )
@@ -487,6 +513,8 @@ def describe_run(run_cfg: SPNIRunConfig) -> dict[str, Any]:
         "compute_asym_intd": bool(run_cfg.compute_asym_intd),
         "compute_wrong_asym_intd": bool(run_cfg.compute_wrong_asym_intd),
         "load_real_world_graph": run_cfg.load_real_world_graph,
+        "source_node": run_cfg.source_node,
+        "target_node": run_cfg.target_node,
         "sweep_start_seed": _resolve_sweep_start_seed(run_cfg),
         "seed_bundle": asdict(derive_seed_bundle(run_cfg)),
         "cache_policy": asdict(run_cfg.cache_policy),

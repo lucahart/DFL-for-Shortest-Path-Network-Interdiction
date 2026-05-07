@@ -80,6 +80,22 @@ Supported modes:
 - `--mode scenario_sweep`: scenario-count sweep over seed sweeps
 - `--mode single`: one SPNI run
 
+### Gradient diagnostics CLI
+
+Use this when you want the gradient-conflict diagnostics for R-DFL and A-DFL:
+
+```bash
+source ./.venv/bin/activate
+python diagnostics.py --help
+```
+
+Equivalent module form:
+
+```bash
+source ./.venv/bin/activate
+python -m dflintdpy.simulation.spni.diagnostics --help
+```
+
 ## Common CLI options
 
 These apply to the typed CLI:
@@ -211,6 +227,28 @@ python -m dflintdpy.simulation.spni.pipeline \
   --set 'spo_epochs=1'
 ```
 
+### Gradient diagnostics smoke test
+
+Use this to verify that the diagnostics runner works end to end and writes the
+CSV outputs without launching a large experiment.
+
+```bash
+source ./.venv/bin/activate
+python diagnostics.py \
+  --method adfl \
+  --scenarios 2 \
+  --num-seeds 1 \
+  --output-dir /tmp/spni-gradient-diagnostics-smoke \
+  --max-batches-per-epoch 1 \
+  --set 'grid_size=(3, 3)' \
+  --set 'num_train_samples=8' \
+  --set 'num_val_samples=1' \
+  --set 'num_test_samples=2' \
+  --set 'budget=2' \
+  --set 'batch_size=4' \
+  --set 'spo_epochs=1'
+```
+
 ## Common terminal patterns
 
 ### Run with cfg defaults
@@ -263,6 +301,63 @@ python -m dflintdpy.simulation.spni.pipeline \
   --set 'num_val_samples=25' \
   --set 'num_test_samples=25'
 ```
+
+## Gradient conflict diagnostics
+
+The diagnostics runner reruns DFL-family training and records:
+
+- average pairwise cosine similarity across per-scenario gradients
+- gradient cancellation ratio
+- step-level, epoch-level, and early/late phase summaries
+
+Outputs are written under the chosen `--output-dir` as:
+
+- `gradient_conflict_steps.csv`
+- `gradient_conflict_epochs.csv`
+- `gradient_conflict_phases.csv`
+- `gradient_conflict_metadata.json`
+
+### Comparative diagnostics sweep
+
+This is the main comparison command for the A-DFL versus R-DFL hypothesis:
+
+```bash
+source ./.venv/bin/activate
+python diagnostics.py \
+  --method all \
+  --scenarios 1,2,3,5,8 \
+  --num-seeds 3 \
+  --output-dir results/gradient_diagnostics \
+  --log-every-n-steps 1 \
+  --set 'spo_epochs=50'
+```
+
+### Lower-overhead diagnostics sweep
+
+Use this if the full diagnostics run is too expensive and you want fewer
+measured batches per epoch:
+
+```bash
+source ./.venv/bin/activate
+python diagnostics.py \
+  --method all \
+  --scenarios 1,2,3,5,8 \
+  --num-seeds 3 \
+  --output-dir results/gradient_diagnostics_capped \
+  --max-batches-per-epoch 2 \
+  --set 'spo_epochs=50'
+```
+
+Notes:
+
+- `--method all` expands to `rdfl` and `adfl`
+- the current repository semantics treat `num_scenarios` as including scenario
+  0
+- for the current A-DFL and R-DFL trainer path, scenario 0 is dropped during
+  training, so the CSVs record both `configured_scenarios` and
+  `effective_scenarios`
+- with `configured_scenarios=2`, the effective adverse scenario count is 1 for
+  the current A-DFL and R-DFL setup
 
 ## Advanced Python-driven runs
 

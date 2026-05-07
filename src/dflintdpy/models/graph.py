@@ -603,11 +603,11 @@ class Graph(optModel):
             New 1D cost vector aligned with `self.arcs`. Inputs are squeezed and then
             validated by `_to_1d_numpy`.
         source : int, optional
-            Optional replacement source node. If `None`, the source is reset to the
-            first stored vertex.
+            Optional replacement source node. If `None`, the current source is
+            preserved after initialization.
         target : int, optional
-            Optional replacement target node. If `None`, the target is reset to the
-            largest stored vertex.
+            Optional replacement target node. If `None`, the current target is
+            preserved after initialization.
 
         Raises
         ------
@@ -619,8 +619,22 @@ class Graph(optModel):
             `source` / `target` is not present in the graph.
         """
 
+        # Preserve existing terminals when only the objective changes. During
+        # construction these attributes do not exist yet, so None still means
+        # "use the graph defaults."
+        resolved_source = (
+            self.source
+            if source is None and hasattr(self, "source")
+            else source
+        )
+        resolved_target = (
+            self.target
+            if target is None and hasattr(self, "target")
+            else target
+        )
+
         # Set source and target nodes
-        self._set_source_target(source, target)
+        self._set_source_target(resolved_source, resolved_target)
 
         # Convert to 1D numpy array
         cost = self._to_1d_numpy(c)
@@ -657,10 +671,12 @@ class Graph(optModel):
         """
         # TODO: Change that target defaults to the last vertex instead of the largest value
 
+        integer_types = (int, np.integer)
+
         # Check that source and target are of the type int or None
-        if not (isinstance(source, int) or source is None):
+        if not (isinstance(source, integer_types) or source is None):
             raise TypeError(f"Expected source to be an integer or None, got {type(source)} instead.")
-        if not (isinstance(target, int) or target is None):
+        if not (isinstance(target, integer_types) or target is None):
             raise TypeError(f"Expected target to be an integer or None, got {type(target)} instead.")
         
         # Raise an error if source or target don't exist in the graph
@@ -680,6 +696,11 @@ class Graph(optModel):
             self.target = max(self.vertices)
         else:
             self.target = target
+
+        if isinstance(self.source, np.integer):
+            self.source = int(self.source)
+        if isinstance(self.target, np.integer):
+            self.target = int(self.target)
         
         pass
 

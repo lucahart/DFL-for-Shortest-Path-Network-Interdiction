@@ -122,6 +122,31 @@ def test_graph_setObj_source_target(triangle_graph: Graph):
     assert triangle_graph.target == 0, f"Target should be 0 but was {triangle_graph.target}."
     pass
 
+
+def test_graph_setObj_preserves_existing_source_target():
+    """Test that objective-only updates do not reset custom terminals."""
+    # Arrange a graph with non-default terminals.
+    arcs = [(0, 1), (1, 2), (2, 3)]
+    graph = Graph(
+        arcs,
+        cost=np.array([1.0, 2.0, 3.0], dtype=float),
+        source=1,
+        target=3,
+    )
+
+    # Act by updating only the objective vector.
+    graph.setObj(np.array([4.0, 5.0, 6.0], dtype=float))
+
+    # Assert that the objective changed while terminals were preserved.
+    assert np.array_equal(graph.cost, np.array([4.0, 5.0, 6.0])), \
+        "setObj should update the graph objective."
+    assert graph.source == 1, \
+        "setObj should preserve the existing source when not provided."
+    assert graph.target == 3, \
+        "setObj should preserve the existing target when not provided."
+    pass
+
+
 # def test_graph_setObj_torch_tensor_type_error(triangle_graph: Graph):
 #     """Test that the cost is of type list or ndarray."""
 #     cost = torch.tensor([1.0, 2.0, 3.0])
@@ -570,6 +595,31 @@ def test_graph_deepcopy_preserves_custom_source_target():
 
     assert graph_copy.source == graph.source
     assert graph_copy.target == graph.target
+
+
+def test_graph_deepcopy_accepts_inferred_numpy_integer_terminals():
+    """Test that deepcopy accepts terminal values inferred from numpy vertices."""
+    # Arrange a graph whose terminals match the pre-normalization import state.
+    arcs = [(0, 1), (1, 2), (2, 3)]
+    graph = Graph(arcs)
+    graph.source = np.int64(0)
+    graph.target = np.int64(3)
+
+    # Act by deep-copying the graph, matching ShortestPathGrb construction.
+    graph_copy = deepcopy(graph)
+
+    # Assert the copied graph preserves integer terminals and topology.
+    assert graph_copy.source == 0, \
+        "Deepcopy should preserve the inferred source terminal."
+    assert graph_copy.target == 3, \
+        "Deepcopy should preserve the inferred target terminal."
+    assert isinstance(graph_copy.source, int), \
+        "Deepcopy should normalize numpy integer sources to Python int."
+    assert isinstance(graph_copy.target, int), \
+        "Deepcopy should normalize numpy integer targets to Python int."
+    assert graph_copy.arcs == graph.arcs, \
+        "Deepcopy should preserve arcs for inferred-vertex graphs."
+    pass
 
 
 ###############################
