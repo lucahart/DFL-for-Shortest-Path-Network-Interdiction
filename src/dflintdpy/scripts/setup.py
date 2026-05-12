@@ -111,12 +111,13 @@ def gen_data(cfg: HP,
 
 def get_nn(input_size, output_size):
 
-    hidden_size_1 =  64   # number of neurons in the hidden layer
+    hidden_size_1 =  16   # number of neurons in the hidden layer
     return nn.Sequential(
         nn.Linear(input_size, hidden_size_1),  # first affine layer
         nn.ReLU(),                           # non‐linearity
         nn.Linear(hidden_size_1, output_size),  # third affine layer
-        nn.Sigmoid()                         # output activation function
+        nn.Softplus(),                         # output activation function
+        nn.Threshold(threshold=1e-6, value=1e-6),
     )
 
 
@@ -186,7 +187,8 @@ def setup_pfl_predictor(
     train_loss_log, train_regret_log, val_loss_log, val_regret_log = po_trainer.fit(
         training_data["train_loader"], 
         training_data["val_loader"], 
-        epochs=epochs
+        epochs=epochs,
+        max_lr_reductions=cfg.get("max_lr_reductions"),
     )
 
     if verbose or file_name is not None:
@@ -267,6 +269,18 @@ def setup_dfl_predictor(
 
     # Init optimizer
     optimizer = torch.optim.Adam(spo_model.parameters(), lr=cfg.get("spo_lr"))
+    underprediction_penalty_weight = cfg.get(
+        "surrogate_underprediction_penalty_weight",
+        0.0,
+    )
+    if underprediction_penalty_weight is None:
+        underprediction_penalty_weight = 0.0
+    underprediction_margin = cfg.get(
+        "surrogate_underprediction_margin",
+        1e-6,
+    )
+    if underprediction_margin is None:
+        underprediction_margin = 1e-6
 
     # Create a trainer instance
     spo_trainer = DFLTrainer(
@@ -275,13 +289,18 @@ def setup_dfl_predictor(
         optimizer=optimizer, 
         loss_fn=loss_fn,
         dfl_variant=dfl_variant,
+        surrogate_underprediction_penalty_weight=(
+            underprediction_penalty_weight
+        ),
+        surrogate_underprediction_margin=underprediction_margin,
     )
 
     # Train the model
     train_loss_log, train_regret_log, val_loss_log, val_regret_log = spo_trainer.fit(
         training_data["train_loader"], 
         training_data["val_loader"], 
-        epochs=cfg.get("spo_epochs")
+        epochs=cfg.get("spo_epochs"),
+        max_lr_reductions=cfg.get("max_lr_reductions"),
     )
 
     if verbose or file_name is not None:

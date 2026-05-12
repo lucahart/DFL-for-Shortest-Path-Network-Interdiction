@@ -215,18 +215,28 @@ def compare_asym_intd(
         test_data, 
         interdictions, 
         normalization_constant, 
-        pred_model = None
+        pred_model = None,
+        pred_family = None,
     ):
     """
     Compare the performance of the predicted model with the true model
     using asymmetric shortest path interdiction.
+
+    pred_family: string or None. Default is None.
+        If specified, it is a string that describes the family of the 
+        predictor (e.g., "PO", "SPO", "Adversarial SPO"). This is only used for 
+        printing purposes to indicate which predictor is being evaluated in 
+        the simulation.
     """ 
 
     # Get the number of simulation data samples
     num_test_samples = cfg.get("num_test_samples")
 
     # Print that the simulation is starting
-    print(f"Running asymmetric simulation with {num_test_samples} samples...")
+    if pred_family == None:
+        print(f"Running asymmetric simulation with {num_test_samples} samples...")
+    else:
+        print(f"Running asymmetric simulation with {num_test_samples} samples using {pred_family} predictor...")
 
     # Preserve one output slot per input sample, even when an asymmetric
     # solve fails, so downstream analyses stay aligned with the test set.

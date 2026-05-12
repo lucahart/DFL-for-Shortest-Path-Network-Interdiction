@@ -41,6 +41,9 @@ class BaseTrainer(ABC):
         self.optimizer = optimizer
         self.loss_criterion = loss_fn
         self.n_epochs = 1
+        self.lr_reduction_count = 0
+        self.early_stopped = False
+        self.early_stop_reason: Optional[str] = None
 
     def _prepare_loader_for_loss(self, loader: DataLoader) -> None:
         """Put a loader into the mode expected by this trainer."""
@@ -131,13 +134,24 @@ class BaseTrainer(ABC):
         val_loader: DataLoader = None,
         epochs: int = 10,
         n_epochs: int = -1,
+        max_lr_reductions: Optional[int] = None,
     ) -> tuple[list[float], list[float], Optional[list[float]], Optional[list[float]]]:
         """Fit the predictor and return logged loss/regret trajectories."""
+        if max_lr_reductions is not None:
+            if isinstance(max_lr_reductions, bool):
+                raise ValueError("max_lr_reductions must be a positive integer.")
+            max_lr_reductions = int(max_lr_reductions)
+            if max_lr_reductions < 1:
+                raise ValueError("max_lr_reductions must be a positive integer.")
+
         self._prepare_loader_for_loss(train_loader)
         if val_loader is not None:
             self._prepare_loader_for_loss(val_loader)
 
         self.n_epochs = max(1, epochs // 10) if n_epochs < 0 else max(1, n_epochs)
+        self.lr_reduction_count = 0
+        self.early_stopped = False
+        self.early_stop_reason = None
 
         train_loss, train_regret = self.evaluate(train_loader)
         train_loss_vector = [train_loss]
@@ -192,6 +206,7 @@ class BaseTrainer(ABC):
                     self.optimizer.param_groups[0]["lr"] *= (
                         self.LR_REDUCTION_FACTOR
                     )
+                    self.lr_reduction_count += 1
                     epochs_since_best_val = 0
                     print(
                         f"Epoch {epoch:02d} | "
@@ -199,8 +214,26 @@ class BaseTrainer(ABC):
                         "Reducing learning rate to "
                         f"{self.optimizer.param_groups[0]['lr']:.2e}"
                     )
+                    if (
+                        max_lr_reductions is not None
+                        and self.lr_reduction_count >= max_lr_reductions
+                    ):
+                        self.early_stopped = True
+                        self.early_stop_reason = (
+                            "maximum learning-rate reductions reached"
+                        )
+                        print(
+                            f"Epoch {epoch:02d} | "
+                            "Stopping training after "
+                            f"{self.lr_reduction_count} learning-rate "
+                            "reduction(s)."
+                        )
+                        print(
+                            f"Epoch {epoch:02d} | "
+                            "Returning training logs collected so far."
+                        )
 
-            if epoch % self.n_epochs == 0:
+            if epoch % self.n_epochs == 0 or self.early_stopped:
                 if val_loader is not None:
                     val_regret = self._compute_regret(val_loader)
                     val_loss_vector.append(val_loss)
@@ -214,6 +247,9 @@ class BaseTrainer(ABC):
                     )
                 else:
                     self._print_epoch_metrics(epoch, train_loss, train_regret)
+
+            if self.early_stopped:
+                break
 
         if best_model_state is not None:
             self.pred_model.load_state_dict(best_model_state)

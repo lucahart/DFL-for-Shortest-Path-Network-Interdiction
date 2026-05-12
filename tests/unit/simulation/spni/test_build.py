@@ -1,3 +1,5 @@
+from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -173,6 +175,53 @@ def test_spni_build_build_graph_delegates_to_real_world_import(monkeypatch):
         "build_graph should return the graph produced by the importer."
     assert graph.kind == "real_world_graph", \
         "build_graph should preserve the importer's graph-like payload."
+    pass
+
+
+def test_spni_build_build_graph_imports_tntp_real_world_graph(
+        run_cfg: SPNIRunConfig,
+        tmp_path: Path,
+    ):
+    """Verify that build_graph imports TNTP paths as real-world graphs."""
+    # Arrange a compact TNTP file and a config that points to it.
+    graph_path = tmp_path / "sample.tntp"
+    graph_path.write_text(
+        "<NUMBER OF NODES> 4\n"
+        "<NUMBER OF LINKS> 3\n"
+        "<END OF METADATA>\n"
+        "~ init_node term_node capacity length free_flow_time b power speed "
+        "toll link_type ;\n"
+        "1 2 100 10 1.5 0.15 4 10 0 1 ;\n"
+        "2 4 100 10 2.5 0.15 4 10 0 1 ;\n"
+        "1 3 100 10 3.5 0.15 4 10 0 1 ;\n",
+        encoding="utf-8",
+    )
+    real_world_cfg = replace(
+        run_cfg,
+        load_real_world_graph=str(graph_path),
+        source_node=1,
+        target_node=4,
+    )
+
+    # Act by importing the graph through the build stage.
+    graph = build_module.build_graph(real_world_cfg)
+    solution, objective = graph.solve()
+
+    # Assert that build_graph used the TNTP dispatcher and applied terminals.
+    assert graph.real_world_metadata["format"] == "tntp", \
+        "build_graph should dispatch .tntp files to the TNTP importer."
+    assert graph.arcs == [(1, 2), (2, 4), (1, 3)], \
+        "build_graph should preserve TNTP directed arc ordering."
+    assert np.allclose(graph.cost, np.ones(3, dtype=float)), \
+        "build_graph should import TNTP topology with unit costs by default."
+    assert graph.source == 1, \
+        "build_graph should apply the configured TNTP source node."
+    assert graph.target == 4, \
+        "build_graph should apply the configured TNTP target node."
+    assert objective == pytest.approx(2.0), \
+        "The TNTP graph should solve on topology-only unit costs."
+    assert float(np.sum(solution)) == pytest.approx(2.0), \
+        "The TNTP shortest path should select two directed arcs."
     pass
 
 

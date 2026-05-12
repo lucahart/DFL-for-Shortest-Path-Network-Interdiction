@@ -310,6 +310,7 @@ def evaluate_asymmetric_interdiction(
             interdictions,
             dataset_bundle.normalization_constant,
             predictor,
+            pred_family=family if predictor is not None else None,
         )
         estimated_arr = _as_float_array(estimated)
         oracle_arr = _as_float_array(oracle)

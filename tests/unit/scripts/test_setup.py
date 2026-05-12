@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import torch
 
 from dflintdpy.utils.read_write import CacheReplaceOptions
 
@@ -37,6 +38,11 @@ def _cfg_stub() -> SimpleNamespace:
         "spo_epochs": 1,
         "po_lr": 1e-3,
         "spo_lr": 1e-3,
+        "max_lr_reductions": 2,
+        "surrogate_underprediction_penalty_weight": 7.0,
+        "surrogate_underprediction_margin": 0.25,
+        "lam": 0.0,
+        "anchor": "mse",
     }
     return SimpleNamespace(
         **values,
@@ -229,4 +235,78 @@ def test_scripts_setup_gen_train_data_uses_global_cache_options_when_missing(
         "gen_train_data should honor global replace_result settings."
     assert cache_policies[0].replace_fig is True, \
         "gen_train_data should honor global replace_fig settings."
+    pass
+
+
+################################
+### test setup_dfl_predictor ###
+################################
+
+
+def test_scripts_setup_dfl_predictor_forwards_underprediction_options(
+    monkeypatch,
+):
+    """Verify that DFL setup passes surrogate safety knobs to DFLTrainer."""
+    # Arrange a trainer stub that records constructor and fit inputs.
+    captured: dict[str, object] = {}
+
+    class _FakeDFLTrainer:
+        def __init__(self, **kwargs):
+            captured["trainer_kwargs"] = kwargs
+
+        def fit(self, train_loader, val_loader, **kwargs):
+            captured["fit_loaders"] = (train_loader, val_loader)
+            captured["fit_kwargs"] = kwargs
+            return [0.0], [0.0], [0.0], [0.0]
+
+    def _fake_write_pred(cfg, state_dict, *, artifact_tag, replace):
+        captured["write_pred"] = {
+            "cfg": cfg,
+            "state_dict": state_dict,
+            "artifact_tag": artifact_tag,
+            "replace": replace,
+        }
+
+    monkeypatch.setattr(script_module, "DFLTrainer", _FakeDFLTrainer)
+    monkeypatch.setattr(
+        script_module.pyepo.func,
+        "SPOPlus",
+        lambda opt_model, processes: SimpleNamespace(
+            opt_model=opt_model,
+            processes=processes,
+        ),
+    )
+    monkeypatch.setattr(script_module, "write_pred", _fake_write_pred)
+
+    cfg = _cfg_stub()
+    graph = SimpleNamespace(num_cost=3)
+    opt_model = SimpleNamespace(label="opt-model")
+    training_data = {
+        "train_loader": SimpleNamespace(label="train"),
+        "val_loader": SimpleNamespace(label="val"),
+    }
+    cache_options = CacheReplaceOptions(
+        replace_pred=True,
+        archive_replaced=False,
+    )
+
+    # Act by constructing a DFL predictor through the setup wrapper.
+    predictor = script_module.setup_dfl_predictor(
+        cfg,
+        graph,
+        opt_model,
+        training_data,
+        cache_options=cache_options,
+    )
+
+    # Assert that the DFLTrainer received the configured safety options.
+    trainer_kwargs = captured["trainer_kwargs"]
+    assert trainer_kwargs["surrogate_underprediction_penalty_weight"] == 7.0, \
+        "setup_dfl_predictor did not forward the underprediction penalty."
+    assert trainer_kwargs["surrogate_underprediction_margin"] == 0.25, \
+        "setup_dfl_predictor did not forward the underprediction margin."
+    assert captured["fit_kwargs"]["max_lr_reductions"] == 2, \
+        "setup_dfl_predictor did not preserve the LR-reduction limit."
+    assert isinstance(predictor, torch.nn.Module), \
+        "setup_dfl_predictor should still return the predictor model."
     pass

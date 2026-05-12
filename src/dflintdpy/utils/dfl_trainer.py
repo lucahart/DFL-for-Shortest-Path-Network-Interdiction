@@ -29,6 +29,8 @@ class DFLTrainer(BaseTrainer):
                  ] | None = None,
                  diagnostics_log_every_n_steps: int = 1,
                  diagnostics_max_batches_per_epoch: int | None = None,
+                 surrogate_underprediction_penalty_weight: float = 0.0,
+                 surrogate_underprediction_margin: float = 1e-6,
                  ) -> None:
         """
         Initializes the Trainer class.
@@ -77,6 +79,18 @@ class DFLTrainer(BaseTrainer):
                     "diagnostics_max_batches_per_epoch must be >= 1 when set."
                 )
         self.diagnostics_max_batches_per_epoch = diagnostics_max_batches_per_epoch
+        self.surrogate_underprediction_penalty_weight = float(
+            surrogate_underprediction_penalty_weight
+        )
+        if self.surrogate_underprediction_penalty_weight < 0:
+            raise ValueError(
+                "surrogate_underprediction_penalty_weight must be >= 0."
+            )
+        self.surrogate_underprediction_margin = float(
+            surrogate_underprediction_margin
+        )
+        if self.surrogate_underprediction_margin < 0:
+            raise ValueError("surrogate_underprediction_margin must be >= 0.")
         self._active_epoch = 0
         self._global_step = 0
 
@@ -255,6 +269,12 @@ class DFLTrainer(BaseTrainer):
             s,
             o,
             method_name=self.method_name,
+            surrogate_underprediction_penalty_weight=(
+                self.surrogate_underprediction_penalty_weight
+            ),
+            surrogate_underprediction_margin=(
+                self.surrogate_underprediction_margin
+            ),
         )
         return loss, batch_size, pred, costs, sols, objs
 
@@ -299,6 +319,12 @@ class DFLTrainer(BaseTrainer):
                 sols_sel[:, scenario_idx, ...],
                 objs_sel[:, scenario_idx, ...],
                 method_name=self.method_name,
+                surrogate_underprediction_penalty_weight=(
+                    self.surrogate_underprediction_penalty_weight
+                ),
+                surrogate_underprediction_margin=(
+                    self.surrogate_underprediction_margin
+                ),
             )
             scenario_grads = torch.autograd.grad(
                 scenario_loss,
@@ -378,12 +404,35 @@ class DFLTrainer(BaseTrainer):
                 "dbb", "nid", "pg", "ltr"]
 
     @staticmethod
+    def surrogate_underprediction_penalty(
+            costs_pred: torch.Tensor,
+            costs: torch.Tensor,
+            margin: float = 1e-6,
+        ) -> torch.Tensor:
+        """Penalize predictions that make ``2 * pred - true`` negative."""
+        threshold = 0.5 * costs + margin
+        return torch.relu(threshold - costs_pred).mean()
+
+    @staticmethod
+    def safe_surrogate_costs(
+            costs_pred: torch.Tensor,
+            costs: torch.Tensor,
+            margin: float = 1e-6,
+        ) -> torch.Tensor:
+        """Floor SPO-style surrogate costs so ``2 * pred - true`` is positive."""
+        threshold = 0.5 * costs + margin
+        return torch.maximum(costs_pred, threshold)
+
+    @staticmethod
     def compute_loss(loss_criterion: torch.nn.Module,
                     costs_pred: torch.Tensor,
                     costs: torch.Tensor,
                     sols: torch.Tensor,
                     objs: torch.Tensor,
-                    method_name: str) -> torch.Tensor:
+                    method_name: str,
+                    surrogate_underprediction_penalty_weight: float = 0.0,
+                    surrogate_underprediction_margin: float = 1e-6,
+                    ) -> torch.Tensor:
         """
         Computes the loss for the given method name.
 
@@ -410,10 +459,23 @@ class DFLTrainer(BaseTrainer):
             The computed loss.
         """
 
-        if method_name == "spo+":
-            return loss_criterion(costs_pred, costs, sols, objs)
-        if method_name == "hybrid":
-            return loss_criterion(costs_pred, costs, sols, objs)
+        if method_name in ["spo+", "hybrid"]:
+            surrogate_costs_pred = costs_pred
+            if surrogate_underprediction_penalty_weight > 0:
+                surrogate_costs_pred = DFLTrainer.safe_surrogate_costs(
+                    costs_pred,
+                    costs,
+                    surrogate_underprediction_margin,
+                )
+            loss = loss_criterion(surrogate_costs_pred, costs, sols, objs)
+            if surrogate_underprediction_penalty_weight > 0:
+                loss = loss + surrogate_underprediction_penalty_weight * \
+                    DFLTrainer.surrogate_underprediction_penalty(
+                        costs_pred,
+                        costs,
+                        surrogate_underprediction_margin,
+                    )
+            return loss
         elif method_name in ["ptb", "pfy", "imle", "aimle", "nce", "cmap"]:
             return loss_criterion(costs_pred, sols)
         elif method_name in ["dbb", "nid"]:

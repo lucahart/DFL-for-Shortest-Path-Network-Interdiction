@@ -75,10 +75,12 @@ def _load_sourceless_real_world_module():
 
 
 def _resolve_real_world_graph_loader() -> Callable[[str], Any]:
-    """Return the legacy CSV-to-graph helper used by real-world SPNI runs.
+    """Return the graph-file helper used by real-world SPNI runs.
 
-    The orchestration layer does not reimplement CSV parsing; it reuses the
-    legacy helper and makes the import path explicit here.
+    The orchestration layer delegates graph-file parsing to the real-world
+    helper module and keeps the import path explicit here. The source helper
+    exposes a format-dispatching loader; the legacy bytecode fallback only
+    exposes ``csv_to_graph`` and remains supported for older local checkouts.
     """
 
     module_name = "dflintdpy.utils.real_world_spni_data_handling"
@@ -89,10 +91,12 @@ def _resolve_real_world_graph_loader() -> Callable[[str], Any]:
             raise
         module = _load_sourceless_real_world_module()
 
-    loader = getattr(module, "csv_to_graph", None)
+    loader = getattr(module, "real_world_graph_to_graph", None)
+    if not callable(loader):
+        loader = getattr(module, "csv_to_graph", None)
     if not callable(loader):
         raise AttributeError(
-            "The real-world SPNI graph helper does not expose csv_to_graph."
+            "The real-world SPNI graph helper does not expose a graph loader."
         )
     return loader
 
@@ -115,15 +119,15 @@ def build_graph(run_cfg: SPNIRunConfig):
 
     Behavior:
     - create a synthetic grid when no real-world graph path is given
-    - otherwise delegate to the legacy CSV importer
+    - otherwise delegate to the real-world graph file importer
     - return the graph instance only, without wrapping it in an opt model
     """
 
-    # Real-world runs defer to the legacy CSV loader; synthetic runs build the
+    # Real-world runs defer to the graph file loader; synthetic runs build the
     # in-memory grid directly from the normalized config.
     if run_cfg.load_real_world_graph is not None:
-        csv_to_graph = _resolve_real_world_graph_loader()
-        graph = csv_to_graph(run_cfg.load_real_world_graph)
+        load_graph = _resolve_real_world_graph_loader()
+        graph = load_graph(run_cfg.load_real_world_graph)
         if run_cfg.source_node is not None or run_cfg.target_node is not None:
             graph.setObj(
                 graph.cost,

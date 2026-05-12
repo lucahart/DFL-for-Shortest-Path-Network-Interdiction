@@ -144,6 +144,19 @@ class _RecordingLoss(nn.Module):
         return torch.tensor(float(len(args)))
 
 
+class _FirstArgRecordingLoss(nn.Module):
+    """Loss stub that records the first tensor it receives."""
+
+    def __init__(self):
+        super().__init__()
+        self.first_arg: torch.Tensor | None = None
+
+    def forward(self, *args):
+        """Record the first positional tensor and return the dispatch arity."""
+        self.first_arg = args[0].detach().clone()
+        return torch.tensor(float(len(args)))
+
+
 class _TrainerPlotStub:
     """Minimal trainer stub for plotting tests."""
 
@@ -763,6 +776,125 @@ def test_pfl_trainer_fit_waits_for_patience_before_reducing_lr(
     pass
 
 
+def test_pfl_trainer_fit_stops_after_max_lr_reductions(
+    scalar_model: "_ScalarModel",
+    optimizer: torch.optim.Optimizer,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    """Verify that fit returns once the LR-reduction limit is reached."""
+    # Arrange a validation trajectory that triggers one LR reduction.
+    train_loader = _make_pfl_loader(cost_value=2.0)
+    train_loader.tag = "train"
+    val_loader = _make_pfl_loader(cost_value=2.0)
+    val_loader.tag = "val"
+    trainer = PFLTrainer(
+        pred_model=scalar_model,
+        opt_model=SimpleNamespace(),
+        optimizer=optimizer,
+        loss_fn=nn.MSELoss(),
+    )
+    train_epoch_calls: list[str] = []
+
+    def fake_evaluate(self, loader):
+        """Return matching initial losses for both loaders."""
+        del self, loader
+        return 1.0, 0.0
+
+    def fake_train_epoch(self, loader):
+        """Record each epoch attempted by fit."""
+        del self
+        train_epoch_calls.append(loader.tag)
+        return 1.0
+
+    val_losses = iter([1.12, 1.14, 1.13, 1.15, 1.16])
+
+    def fake_evaluate_loss(self, loader):
+        """Return validation losses that remain worse than the best loss."""
+        del self
+        assert loader.tag == "val", \
+            "Validation-loss hook received the wrong loader."
+        return next(val_losses)
+
+    monkeypatch.setattr(PFLTrainer, "evaluate", fake_evaluate)
+    monkeypatch.setattr(PFLTrainer, "train_epoch", fake_train_epoch)
+    monkeypatch.setattr(PFLTrainer, "_evaluate_loss", fake_evaluate_loss)
+    monkeypatch.setattr(PFLTrainer, "_compute_regret", lambda self, loader: 0.0)
+    monkeypatch.setattr(
+        PFLTrainer,
+        "_print_epoch_metrics",
+        lambda self, epoch, train_loss, train_regret, val_loss=None,
+        val_regret=None: None,
+    )
+
+    # Act by fitting with one allowed learning-rate reduction.
+    train_loss_log, train_regret_log, val_loss_log, val_regret_log = trainer.fit(
+        train_loader,
+        val_loader=val_loader,
+        epochs=8,
+        n_epochs=1,
+        max_lr_reductions=1,
+    )
+
+    # Assert that training terminated immediately after the first LR reduction.
+    assert train_epoch_calls == ["train", "train", "train"], (
+        "PFLTrainer should stop after the first LR reduction when the limit "
+        "is one."
+    )
+    assert trainer.lr_reduction_count == 1, \
+        "PFLTrainer should record the number of LR reductions."
+    assert trainer.early_stopped is True, \
+        "PFLTrainer should mark the fit as early-stopped."
+    assert trainer.early_stop_reason == \
+        "maximum learning-rate reductions reached", (
+            "PFLTrainer should expose why the fit stopped early."
+        )
+    assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.125), (
+        "PFLTrainer should apply the final allowed LR reduction."
+    )
+    assert len(train_loss_log) == 4, \
+        "PFLTrainer should return logs accumulated before early stop."
+    assert len(train_regret_log) == 4, \
+        "PFLTrainer should return regret logs accumulated before early stop."
+    assert len(val_loss_log) == 4, \
+        "PFLTrainer should return validation logs accumulated before stop."
+    assert len(val_regret_log) == 4, \
+        "PFLTrainer should return validation regret logs before stop."
+    captured = capsys.readouterr()
+    assert "Stopping training after 1 learning-rate reduction(s)." in captured.out, (
+        "PFLTrainer should print when the LR-reduction stop is triggered."
+    )
+    assert "Returning training logs collected so far." in captured.out, (
+        "PFLTrainer should print that fit is returning partial logs."
+    )
+    pass
+
+
+def test_pfl_trainer_fit_rejects_nonpositive_max_lr_reductions(
+    scalar_model: "_ScalarModel",
+    optimizer: torch.optim.Optimizer,
+):
+    """Verify that max_lr_reductions must be positive when provided."""
+    # Arrange a minimal trainer and loader.
+    train_loader = _make_pfl_loader(cost_value=2.0)
+    trainer = PFLTrainer(
+        pred_model=scalar_model,
+        opt_model=SimpleNamespace(),
+        optimizer=optimizer,
+        loss_fn=nn.MSELoss(),
+    )
+
+    # Act and assert that nonpositive limits are rejected before training.
+    with pytest.raises(ValueError, match="max_lr_reductions"):
+        trainer.fit(
+            train_loader,
+            val_loader=None,
+            epochs=1,
+            max_lr_reductions=0,
+        )
+    pass
+
+
 ###############################
 ### test dfl_trainer_fit ###
 ###############################
@@ -805,6 +937,42 @@ def test_dfl_trainer_init_requires_cfg_for_hybrid_method(
 
     # Act and assert the constructor validation error.
     with pytest.raises(ValueError, match="Configuration must be provided"):
+        DFLTrainer(**kwargs)
+    pass
+
+
+@pytest.mark.parametrize(
+    "penalty_kwargs, expected_message",
+    [
+        (
+            {"surrogate_underprediction_penalty_weight": -0.1},
+            "surrogate_underprediction_penalty_weight",
+        ),
+        (
+            {"surrogate_underprediction_margin": -0.1},
+            "surrogate_underprediction_margin",
+        ),
+    ],
+)
+def test_dfl_trainer_init_rejects_negative_underprediction_settings(
+    scalar_model: "_ScalarModel",
+    optimizer: torch.optim.Optimizer,
+    penalty_kwargs: dict[str, float],
+    expected_message: str,
+):
+    """Verify that DFLTrainer rejects negative underprediction settings."""
+    # Arrange constructor inputs with one invalid underprediction setting.
+    kwargs = dict(
+        pred_model=scalar_model,
+        opt_model=SimpleNamespace(),
+        optimizer=optimizer,
+        loss_fn=_ScalarSpoLoss(),
+        method_name="spo+",
+        **penalty_kwargs,
+    )
+
+    # Act and assert that negative configuration values are rejected.
+    with pytest.raises(ValueError, match=expected_message):
         DFLTrainer(**kwargs)
     pass
 
@@ -948,6 +1116,53 @@ def test_dfl_trainer_flatten_scenarios_respects_variant_selection(
     pass
 
 
+def test_dfl_trainer_surrogate_underprediction_penalty_matches_hinge_math():
+    """Verify the surrogate underprediction hinge penalty calculation."""
+    # Arrange predictions above, below, and exactly near the c / 2 threshold.
+    costs_pred = torch.tensor([[2.10], [3.00], [1.10]], dtype=torch.float)
+    costs = torch.tensor([[4.00], [8.00], [2.00]], dtype=torch.float)
+    margin = 0.25
+    expected = torch.relu(0.5 * costs + margin - costs_pred).mean()
+
+    # Act by computing the helper penalty.
+    penalty = DFLTrainer.surrogate_underprediction_penalty(
+        costs_pred,
+        costs,
+        margin,
+    )
+
+    # Assert that the helper implements the configured hinge.
+    assert penalty.item() == pytest.approx(expected.item()), (
+        "DFLTrainer computed the wrong underprediction hinge penalty."
+    )
+    pass
+
+
+def test_dfl_trainer_safe_surrogate_costs_floors_underpredictions():
+    """Verify that unsafe SPO-style predicted costs are floored."""
+    # Arrange predictions above and below c / 2 + margin.
+    costs_pred = torch.tensor([[1.0], [5.0], [2.5]], dtype=torch.float)
+    costs = torch.tensor([[4.0], [8.0], [2.0]], dtype=torch.float)
+    margin = 0.25
+    expected = torch.maximum(costs_pred, 0.5 * costs + margin)
+
+    # Act by applying the hard surrogate safety floor.
+    safe_costs = DFLTrainer.safe_surrogate_costs(
+        costs_pred,
+        costs,
+        margin,
+    )
+
+    # Assert that only predictions below the floor are raised.
+    assert torch.equal(safe_costs, expected), (
+        "DFLTrainer did not floor unsafe surrogate costs correctly."
+    )
+    assert torch.all((2 * safe_costs - costs) >= 2 * margin), (
+        "DFLTrainer returned costs that can still make SPO+ negative."
+    )
+    pass
+
+
 @pytest.mark.parametrize(
     "method_name, expected_arity",
     [
@@ -986,6 +1201,133 @@ def test_dfl_trainer_compute_loss_dispatches_by_method_name(
     )
     assert loss.item() == pytest.approx(float(expected_arity)), (
         "DFLTrainer returned the wrong loss for the selected method."
+    )
+    pass
+
+
+@pytest.mark.parametrize("method_name", ["spo+", "hybrid"])
+def test_dfl_trainer_compute_loss_passes_safe_costs_to_spo_style_losses(
+    method_name: str,
+):
+    """Verify that enabled safety passes floored predictions into SPO losses."""
+    # Arrange a loss stub that can inspect the predicted costs it received.
+    loss_fn = _FirstArgRecordingLoss()
+    costs_pred = torch.tensor([[1.0], [5.0], [2.5]], dtype=torch.float)
+    costs = torch.tensor([[4.0], [8.0], [2.0]], dtype=torch.float)
+    sols = torch.zeros_like(costs)
+    objs = torch.zeros_like(costs)
+    margin = 0.25
+    expected = DFLTrainer.safe_surrogate_costs(
+        costs_pred,
+        costs,
+        margin,
+    )
+
+    # Act by computing a SPO-style loss with the safety option enabled.
+    DFLTrainer.compute_loss(
+        loss_fn,
+        costs_pred,
+        costs,
+        sols,
+        objs,
+        method_name=method_name,
+        surrogate_underprediction_penalty_weight=1.0,
+        surrogate_underprediction_margin=margin,
+    )
+
+    # Assert that the loss criterion saw safe costs, not the unsafe raw costs.
+    assert loss_fn.first_arg is not None, (
+        "DFLTrainer did not call the SPO-style loss criterion."
+    )
+    assert torch.equal(loss_fn.first_arg, expected), (
+        "DFLTrainer did not pass floored costs into the SPO-style loss."
+    )
+    pass
+
+
+@pytest.mark.parametrize(
+    "method_name, expected_base",
+    [
+        ("spo+", 4.0),
+        ("hybrid", 4.0),
+    ],
+)
+def test_dfl_trainer_compute_loss_adds_weighted_underprediction_penalty(
+    method_name: str,
+    expected_base: float,
+):
+    """Verify that SPO+ and hybrid losses include the weighted hinge penalty."""
+    # Arrange a loss stub and predictions below c / 2 + margin.
+    loss_fn = _RecordingLoss()
+    costs_pred = torch.tensor([[1.0], [3.0]], dtype=torch.float)
+    costs = torch.tensor([[4.0], [8.0]], dtype=torch.float)
+    sols = torch.tensor([[0.0], [0.0]], dtype=torch.float)
+    objs = torch.tensor([[0.0], [0.0]], dtype=torch.float)
+    weight = 2.5
+    margin = 0.5
+    penalty = DFLTrainer.surrogate_underprediction_penalty(
+        costs_pred,
+        costs,
+        margin,
+    )
+
+    # Act by computing the configured loss.
+    loss = DFLTrainer.compute_loss(
+        loss_fn,
+        costs_pred,
+        costs,
+        sols,
+        objs,
+        method_name=method_name,
+        surrogate_underprediction_penalty_weight=weight,
+        surrogate_underprediction_margin=margin,
+    )
+
+    # Assert that the method adds exactly the weighted penalty.
+    assert loss_fn.call_sizes == [4], (
+        "DFLTrainer did not call the SPO-style loss signature."
+    )
+    assert loss.item() == pytest.approx(expected_base + weight * penalty.item()), (
+        "DFLTrainer did not add the weighted underprediction penalty."
+    )
+    pass
+
+
+@pytest.mark.parametrize(
+    "method_name, expected_base",
+    [
+        ("ptb", 2.0),
+        ("dbb", 3.0),
+        ("pg", 2.0),
+    ],
+)
+def test_dfl_trainer_compute_loss_ignores_underprediction_penalty_elsewhere(
+    method_name: str,
+    expected_base: float,
+):
+    """Verify that non-SPO-style loss branches do not add the hinge penalty."""
+    # Arrange a loss stub with a positive penalty configuration.
+    loss_fn = _RecordingLoss()
+    costs_pred = torch.tensor([[1.0], [3.0]], dtype=torch.float)
+    costs = torch.tensor([[4.0], [8.0]], dtype=torch.float)
+    sols = torch.tensor([[0.0], [0.0]], dtype=torch.float)
+    objs = torch.tensor([[0.0], [0.0]], dtype=torch.float)
+
+    # Act by computing loss for a branch that should ignore the penalty.
+    loss = DFLTrainer.compute_loss(
+        loss_fn,
+        costs_pred,
+        costs,
+        sols,
+        objs,
+        method_name=method_name,
+        surrogate_underprediction_penalty_weight=9.0,
+        surrogate_underprediction_margin=0.5,
+    )
+
+    # Assert that the returned value is only the branch's base loss.
+    assert loss.item() == pytest.approx(expected_base), (
+        "DFLTrainer added the underprediction penalty outside SPO-style loss."
     )
     pass
 

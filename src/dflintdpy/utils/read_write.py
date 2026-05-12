@@ -118,6 +118,9 @@ PRED_BASE_KEYS: Set[str] = {
     "po_lr",
     "spo_lr",
     "hidden_size_1",
+    "max_lr_reductions",
+    "surrogate_underprediction_penalty_weight",
+    "surrogate_underprediction_margin",
 }
 
 # Interdiction-specific keys that can be excluded for non-interdiction predictors.

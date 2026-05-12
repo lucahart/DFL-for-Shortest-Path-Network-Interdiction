@@ -45,13 +45,6 @@ def _real_graph_path(project_root, filename: str) -> str:
     if not graph_path.exists():
         pytest.skip(f"Local real-world graph fixture is missing: {filename}.")
 
-    helper_cache = project_root / "src" / "dflintdpy" / "utils" / "__pycache__"
-    helper_candidates = list(
-        helper_cache.glob("real_world_spni_data_handling*.pyc")
-    )
-    if not helper_candidates:
-        pytest.skip("Local real-world graph bytecode importer is missing.")
-
     return str(graph_path)
 
 
@@ -170,6 +163,46 @@ def test_spni_real_world_graph_import_town_csv_has_directed_terminal_pair(
         "The selected town terminal pair should have a five-edge path."
     assert float(np.sum(solution)) == pytest.approx(5.0), \
         "The town shortest path should contain five selected arcs."
+    pass
+
+
+def test_spni_real_world_graph_import_anaheim_tntp_has_expected_topology(
+    project_root,
+):
+    """Verify that the Anaheim TNTP network imports as real topology."""
+    # Arrange the Anaheim transportation network with reachable terminals.
+    graph_path = _real_graph_path(
+        project_root,
+        "transportation_networks/Anaheim_net.tntp",
+    )
+    run_cfg = build_run_config(
+        HP(),
+        load_real_world_graph=graph_path,
+        source_node=1,
+        target_node=416,
+    )
+
+    # Act by importing and solving on topology-only unit costs.
+    graph = build_module.build_graph(run_cfg)
+    solution, objective = graph.solve()
+
+    # Assert the TNTP topology is preserved and usable by the SPNI graph.
+    assert len(graph.vertices) == 416, \
+        "Anaheim_net.tntp should import exactly 416 nodes."
+    assert len(graph.arcs) == 914, \
+        "Anaheim_net.tntp should import exactly 914 directed arcs."
+    assert graph.arcs[:3] == [(1, 117), (2, 87), (3, 74)], \
+        "Anaheim_net.tntp should preserve first-seen TNTP link ordering."
+    assert np.allclose(graph.cost, np.ones(len(graph.arcs), dtype=float)), \
+        "Anaheim TNTP import should use topology-only unit costs by default."
+    assert graph.source == 1, \
+        "build_graph should apply the Anaheim source node."
+    assert graph.target == 416, \
+        "build_graph should apply the Anaheim target node."
+    assert objective == pytest.approx(16.0), \
+        "Anaheim source 1 to target 416 should have a 16-edge unit path."
+    assert float(np.sum(solution)) == pytest.approx(16.0), \
+        "The Anaheim shortest path should select 16 directed arcs."
     pass
 
 
