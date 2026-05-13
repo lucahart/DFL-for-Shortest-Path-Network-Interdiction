@@ -111,7 +111,7 @@ def gen_data(cfg: HP,
 
 def get_nn(input_size, output_size):
 
-    hidden_size_1 =  16   # number of neurons in the hidden layer
+    hidden_size_1 =  8   # number of neurons in the hidden layer
     return nn.Sequential(
         nn.Linear(input_size, hidden_size_1),  # first affine layer
         nn.ReLU(),                           # non‐linearity

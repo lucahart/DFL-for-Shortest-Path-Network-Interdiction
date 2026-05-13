@@ -72,7 +72,8 @@ def test_spni_pipeline_seed_sweep_smoke_returns_two_ordered_runs(monkeypatch):
         "spo_lr": 1e-3,
     }
 
-    def _fake_run_single_simulation(cfg):
+    def _fake_run_single_simulation(cfg, **options):
+        del options
         all_data = {
             "o_o": np.array([float(cfg.seed)], dtype=float),
             "o_p": np.array([float(cfg.seed) + 1.0], dtype=float),
@@ -89,6 +90,10 @@ def test_spni_pipeline_seed_sweep_smoke_returns_two_ordered_runs(monkeypatch):
             "a_s": np.array([float(cfg.seed) + 2.0], dtype=float),
             "a_r": np.array([float(cfg.seed) + 3.0], dtype=float),
             "a_a": np.array([float(cfg.seed) + 4.0], dtype=float),
+            "a_p_o": np.array([float(cfg.seed)], dtype=float),
+            "a_s_o": np.array([float(cfg.seed)], dtype=float),
+            "a_r_o": np.array([float(cfg.seed)], dtype=float),
+            "a_a_o": np.array([float(cfg.seed)], dtype=float),
         }
         return SimulationResult(
             run_config=cfg,

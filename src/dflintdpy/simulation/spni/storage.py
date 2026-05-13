@@ -24,12 +24,24 @@ from dflintdpy.utils.analyse_results import (
     create_boxplots,
     create_boxplots_by_simulation,
 )
-from dflintdpy.utils.read_write_results import save_results_to_csv
+from dflintdpy.utils.read_write_results import (
+    load_results_from_csv,
+    save_results_to_csv,
+)
 
 
 @dataclass(frozen=True)
 class SweepStoragePaths:
     """Filesystem targets produced by ``persist_sweep_outputs(...)``."""
+
+    results_path: Path
+    sample_boxplot_path: Path
+    simulation_boxplot_path: Path
+
+
+@dataclass(frozen=True)
+class ReplotStoragePaths:
+    """Filesystem targets produced by ``replot_saved_sweep_outputs(...)``."""
 
     results_path: Path
     sample_boxplot_path: Path
@@ -175,6 +187,44 @@ def persist_sweep_outputs(
 
     return SweepStoragePaths(
         results_path=results_path,
+        sample_boxplot_path=sample_boxplot_path,
+        simulation_boxplot_path=simulation_boxplot_path,
+    )
+
+
+def replot_saved_sweep_outputs(
+    results_path: str | Path,
+    *,
+    figure_directory: str | Path | None = None,
+) -> ReplotStoragePaths:
+    """Regenerate sweep boxplots from a previously saved result CSV."""
+    resolved_results_path = Path(results_path)
+    if not resolved_results_path.exists():
+        raise FileNotFoundError(
+            f"Saved SPNI result CSV not found: {resolved_results_path}"
+        )
+
+    sample_boxplot_path, simulation_boxplot_path = _resolve_figure_paths(
+        resolved_results_path,
+        figure_directory=figure_directory,
+    )
+    sample_boxplot_path.parent.mkdir(parents=True, exist_ok=True)
+
+    simulations = load_results_from_csv(resolved_results_path)
+    fig_samples = create_boxplots(
+        simulations,
+        save_path=sample_boxplot_path,
+    )
+    plt.close(fig_samples)
+
+    fig_sims = create_boxplots_by_simulation(
+        simulations,
+        save_path=simulation_boxplot_path,
+    )
+    plt.close(fig_sims)
+
+    return ReplotStoragePaths(
+        results_path=resolved_results_path,
         sample_boxplot_path=sample_boxplot_path,
         simulation_boxplot_path=simulation_boxplot_path,
     )

@@ -32,9 +32,14 @@ from dflintdpy.simulation.spni.results import (
     aggregate_sweep_results,
     build_summary,
 )
+from dflintdpy.simulation.spni.reporting import (
+    print_simulation_summary,
+    save_learning_curve_plots,
+)
 from dflintdpy.simulation.spni.storage import (
     persist_scenario_sweep_outputs,
     persist_sweep_outputs,
+    replot_saved_sweep_outputs,
 )
 from dflintdpy.simulation.spni.train import train_all_predictors
 from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
@@ -152,6 +157,7 @@ def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
 def _mode_handlers() -> dict[str, RunHandler]:
     """Return the supported top-level SPNI execution modes."""
     return {
+        "replot": run_saved_result_replot,
         "single": run_single_simulation,
         "seed_sweep": run_seed_sweep,
         "scenario_sweep": run_scenario_sweep,
@@ -167,6 +173,7 @@ def _resolve_run_options(
     source_node: int | None = None,
     target_node: int | None = None,
     present_results: bool | None = None,
+    figure_directory: str | Path | None = None,
 ) -> dict[str, Any]:
     """Normalize optional run-mode flags for the convenience entrypoints."""
     options: dict[str, Any] = {}
@@ -182,6 +189,8 @@ def _resolve_run_options(
         options["target_node"] = int(target_node)
     if present_results is not None:
         options["present_results"] = bool(present_results)
+    if figure_directory is not None:
+        options["figure_directory"] = figure_directory
     if num_seeds is not None:
         options["num_seeds"] = int(num_seeds)
     return options
@@ -294,6 +303,7 @@ def main(
     *,
     mode: str = "seed_sweep",
     cfg: Any | None = None,
+    input_path: str | Path | None = None,
     scenarios: Sequence[int] | None = None,
     num_seeds: int | None = None,
     compute_asym_intd: bool | None = None,
@@ -302,6 +312,7 @@ def main(
     source_node: int | None = None,
     target_node: int | None = None,
     present_results: bool | None = None,
+    figure_directory: str | Path | None = None,
     **cfg_overrides,
 ) -> SimulationResult | SweepResult | dict[str, Any]:
     """Run one SPNI entrypoint with optional config overrides.
@@ -313,7 +324,10 @@ def main(
 
     Parameters:
     - ``mode`` selects the top-level execution path. Supported values are
-      ``"single"``, ``"seed_sweep"``, and ``"scenario_sweep"``.
+      ``"single"``, ``"seed_sweep"``, ``"scenario_sweep"``, and
+      ``"replot"``.
+    - ``input_path`` applies only to ``mode="replot"`` and points to a
+      previously saved SPNI result CSV.
     - ``cfg`` optionally provides a legacy base config object. When omitted,
       the default ``HP()`` config is used.
     - ``scenarios`` applies only to scenario sweeps.
@@ -330,6 +344,14 @@ def main(
             f"Expected one of: {supported}."
         )
 
+    if mode == "replot":
+        if input_path is None:
+            raise ValueError("mode='replot' requires input_path.")
+        return handlers[mode](
+            input_path=input_path,
+            figure_directory=figure_directory,
+        )
+
     resolved_cfg = _apply_cfg_overrides(
         _build_base_cfg(cfg),
         **cfg_overrides,
@@ -342,6 +364,7 @@ def main(
         source_node=source_node,
         target_node=target_node,
         present_results=present_results,
+        figure_directory=figure_directory,
     )
 
     handler = handlers[mode]
@@ -378,12 +401,35 @@ def main(
         )
 
     run_options.pop("num_seeds", None)
-    run_options.pop("present_results", None)
     return handler(resolved_cfg, **run_options)
+
+
+def run_saved_result_replot(
+    *,
+    input_path: str | Path,
+    figure_directory: str | Path | None = None,
+) -> dict[str, Any]:
+    """Regenerate result boxplots from a saved seed-sweep CSV."""
+    stored_paths = replot_saved_sweep_outputs(
+        input_path,
+        figure_directory=figure_directory,
+    )
+    return {
+        "diagnostics": {
+            "input_path": str(stored_paths.results_path),
+            "sample_boxplot_path": str(stored_paths.sample_boxplot_path),
+            "simulation_boxplot_path": str(
+                stored_paths.simulation_boxplot_path
+            ),
+        },
+    }
 
 
 def run_single_simulation(
     run_cfg_or_base_cfg: SPNIRunConfig | Any,
+    *,
+    present_results: bool = True,
+    figure_directory: str | Path | None = None,
     **options,
 ) -> SimulationResult:
     """Run one full SPNI simulation and return a typed result object.
@@ -434,7 +480,7 @@ def run_single_simulation(
         evaluation_bundle,
     )
 
-    return SimulationResult(
+    result = SimulationResult(
         run_config=seeded_run_cfg,
         seed_bundle=seed_bundle,
         graph_bundle=graph_bundle,
@@ -444,9 +490,20 @@ def run_single_simulation(
         summary_bundle=summary_bundle,
         diagnostics={
             "run_description": describe_run(seeded_run_cfg),
-            "side_effects_enabled": False,
+            "present_results": bool(present_results),
+            "side_effects_enabled": bool(present_results),
         },
     )
+    if present_results:
+        print_simulation_summary(result)
+        figure_paths = save_learning_curve_plots(
+            result,
+            figure_directory=figure_directory,
+        )
+        result.diagnostics["learning_curve_plot_paths"] = figure_paths
+    else:
+        result.diagnostics["learning_curve_plot_paths"] = {}
+    return result
 
 
 def run_seed_sweep(
@@ -478,7 +535,11 @@ def run_seed_sweep(
             intd_seed=seed_bundle.intd_seed,
             loader_seed=seed_bundle.loader_seed,
         )
-        result = run_single_simulation(seeded_run_cfg)
+        result = run_single_simulation(
+            seeded_run_cfg,
+            present_results=present_results,
+            figure_directory=figure_directory,
+        )
         results.append(result)
 
     aggregated_summary = aggregate_sweep_results(results)
@@ -491,6 +552,10 @@ def run_seed_sweep(
             "sweep_seeds": [bundle.sweep_seed for bundle in seed_sweep],
             "present_results": bool(present_results),
             "side_effects_enabled": bool(present_results),
+            "plot_filter": aggregated_summary.get(
+                "diagnostics",
+                {},
+            ).get("plot_filter", {}),
         },
     )
     if present_results:
@@ -639,7 +704,9 @@ def cli(
 ) -> SimulationResult | SweepResult | dict[str, Any]:
     """Parse one-line terminal arguments and run the requested SPNI mode."""
     parser = argparse.ArgumentParser(
-        description="Run SPNI single runs, seed sweeps, or scenario sweeps.",
+        description=(
+            "Run SPNI simulations, sweeps, or saved-result replots."
+        ),
     )
     parser.add_argument(
         "--mode",
@@ -652,6 +719,11 @@ def cli(
         type=int,
         default=None,
         help="Number of seeds to run when mode=seed_sweep or scenario_sweep.",
+    )
+    parser.add_argument(
+        "--input-path",
+        default=None,
+        help="Saved SPNI result CSV to use when mode=replot.",
     )
     parser.add_argument(
         "--scenarios",
@@ -703,6 +775,11 @@ def cli(
         ),
     )
     parser.add_argument(
+        "--figure-directory",
+        default=None,
+        help="Optional directory for generated SPNI figures.",
+    )
+    parser.add_argument(
         "--set",
         dest="overrides",
         action="append",
@@ -719,6 +796,7 @@ def cli(
 
     result = main(
         mode=parsed.mode,
+        input_path=parsed.input_path,
         scenarios=_parse_scenarios_arg(parsed.scenarios),
         num_seeds=parsed.num_seeds,
         compute_asym_intd=parsed.compute_asym_intd,
@@ -727,6 +805,7 @@ def cli(
         source_node=parsed.source_node,
         target_node=parsed.target_node,
         present_results=parsed.present_results,
+        figure_directory=parsed.figure_directory,
         **cfg_overrides,
     )
     diagnostics = (

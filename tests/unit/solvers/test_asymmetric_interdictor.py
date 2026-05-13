@@ -130,6 +130,18 @@ class _StageVar:
         self.Start = None
 
 
+class _UnreadableStageVar:
+    """Variable stub that fails if a no-solution branch reads ``X``."""
+
+    def __init__(self):
+        self.Start = None
+
+    @property
+    def X(self):
+        """Raise when production code incorrectly reads unavailable values."""
+        raise AssertionError("No-solution stage variables should not be read.")
+
+
 class _StageModel:
     """Minimal model stub for solve_spnia_LG orchestration tests."""
 
@@ -661,7 +673,10 @@ def test_asymmetric_interdictor_solve_spnia_lg_solves_stage_models_in_order(
     # Build deterministic first-stage and second-stage stubs.
     call_order: list[str] = []
     validation_calls: list[dict] = []
-    x_l = {arc: _StageVar(float(idx % 2)) for idx, arc in enumerate(solver.graph.arcs)}
+    x_l = {
+        arc: _StageVar(float(idx % 2))
+        for idx, arc in enumerate(solver.graph.arcs)
+    }
     x_lg = {
         arc: _StageVar(float((idx + 1) % 2))
         for idx, arc in enumerate(solver.graph.arcs)
@@ -736,7 +751,10 @@ def test_asymmetric_interdictor_solve_spnia_lg_falls_back_to_first_stage_when_se
     """
     # Build deterministic stage stubs whose validated values disagree.
     call_order: list[str] = []
-    x_l = {arc: _StageVar(float(idx % 2)) for idx, arc in enumerate(solver.graph.arcs)}
+    x_l = {
+        arc: _StageVar(float(idx % 2))
+        for idx, arc in enumerate(solver.graph.arcs)
+    }
     x_lg = {
         arc: _StageVar(float((idx + 1) % 2))
         for idx, arc in enumerate(solver.graph.arcs)
@@ -963,6 +981,101 @@ def test_asymmetric_interdictor_solve_spnia_lg_returns_none_on_second_stage_time
         "Second-stage timeout branch did not attempt both stage solves."
     assert result == (None, None), \
         "Second-stage timeout did not return the documented None pair."
+    pass
+
+
+def test_asymmetric_interdictor_solve_spnia_lg_returns_none_when_first_stage_has_no_incumbent(
+    solver,
+    monkeypatch,
+):
+    """Verify non-time-limit no-solution first-stage statuses are handled."""
+    # Build a first-stage stub that finishes without any incumbent solution.
+    call_order: list[str] = []
+    x_l = {arc: _UnreadableStageVar() for arc in solver.graph.arcs}
+    model_l = _StageModel(
+        status=GRB.INFEASIBLE,
+        obj_val=0.0,
+        label="L",
+        call_order=call_order,
+    )
+    second_stage_called = {"value": False}
+
+    def _unexpected_second_stage():
+        second_stage_called["value"] = True
+        raise AssertionError("Second stage should not be built without L.")
+
+    # Replace builders and solve the staged procedure.
+    monkeypatch.setattr(solver, "build_spnia_L", lambda: (model_l, x_l))
+    monkeypatch.setattr(solver, "build_spnia_LG", _unexpected_second_stage)
+    result = solver.solve_spnia_LG()
+
+    # Assert the solver returns the documented failure contract.
+    assert result == (None, None), \
+        "First-stage no-incumbent status should return the None pair."
+    assert call_order == ["L"], \
+        "First-stage no-incumbent branch should optimize only stage 1."
+    assert not second_stage_called["value"], \
+        "First-stage no-incumbent branch still attempted stage 2."
+    pass
+
+
+def test_asymmetric_interdictor_solve_spnia_lg_returns_none_when_second_stage_has_no_incumbent(
+    solver,
+    monkeypatch,
+):
+    """Verify non-time-limit no-solution second-stage statuses are handled."""
+    # Build deterministic stubs where stage 2 has no readable incumbent.
+    call_order: list[str] = []
+    validation_calls: list[dict] = []
+    x_l = {
+        arc: _StageVar(float(idx % 2))
+        for idx, arc in enumerate(solver.graph.arcs)
+    }
+    x_lg = {arc: _UnreadableStageVar() for arc in solver.graph.arcs}
+    model_l = _StageModel(
+        status=GRB.OPTIMAL,
+        obj_val=7.5,
+        label="L",
+        call_order=call_order,
+    )
+    model_lg = _StageModel(
+        status=GRB.INFEASIBLE,
+        obj_val=0.0,
+        label="LG",
+        call_order=call_order,
+    )
+    second_stage = _build_second_stage_data(solver.graph, x_lg)
+
+    # Replace both builders and record candidate validation.
+    monkeypatch.setattr(solver, "build_spnia_L", lambda: (model_l, x_l))
+    monkeypatch.setattr(
+        solver,
+        "build_spnia_LG",
+        lambda: (model_lg, *second_stage),
+    )
+
+    def _fake_validate(interdictions):
+        """Record validation calls and return a stable stage-1 value."""
+        normalized = _normalize_stage_x(solver.graph, interdictions)
+        validation_calls.append(normalized)
+        return normalized, 8.0
+
+    monkeypatch.setattr(
+        solver,
+        "_evaluate_interdiction_candidate",
+        _fake_validate,
+    )
+
+    # Solve the staged procedure.
+    result = solver.solve_spnia_LG()
+
+    # Assert stage 2 failure returns None before reading unavailable X values.
+    assert result == (None, None), \
+        "Second-stage no-incumbent status should return the None pair."
+    assert call_order == ["L", "LG"], \
+        "Second-stage no-incumbent branch should optimize both stages."
+    assert validation_calls == [_normalize_stage_x(solver.graph, x_l)], \
+        "Second-stage no-incumbent branch should not validate stage-2 X values."
     pass
 
 

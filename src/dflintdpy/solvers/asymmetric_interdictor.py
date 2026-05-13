@@ -285,6 +285,31 @@ class AsymmetricInterdictor:
         }
         return x_dict, value
 
+    @staticmethod
+    def _model_has_solution(model: gp.Model) -> bool:
+        """Return whether Gurobi exposes readable incumbent variable values."""
+        try:
+            return int(model.SolCount) > 0
+        except (AttributeError, gp.GurobiError):
+            return model.Status == GRB.OPTIMAL
+
+    @staticmethod
+    def _abort_if_no_stage_solution(model: gp.Model, stage_name: str) -> bool:
+        """Return true when a stage ended without a readable solution."""
+        if model.Status == GRB.TIME_LIMIT:
+            print(
+                "Warning: Time limit reached during "
+                f"{stage_name} solve."
+            )
+            return True
+        if not AsymmetricInterdictor._model_has_solution(model):
+            print(
+                "Warning: No incumbent solution available after "
+                f"{stage_name} solve (Gurobi status {model.Status})."
+            )
+            return True
+        return False
+
     def build_spnia_L(self):
         """
         Build the optimistic asymmetric interdiction formulation.
@@ -438,8 +463,7 @@ class AsymmetricInterdictor:
         L, xL = self.build_spnia_L()
         L.setParam("TimeLimit", 120.0)
         L.optimize()
-        if L.Status == GRB.TIME_LIMIT:
-            print("Warning: Time limit reached during optimistic SPNIA-L solve.")
+        if self._abort_if_no_stage_solution(L, "optimistic SPNIA-L"):
             return None, None
         z_star = L.ObjVal
         x_star = {e: xL[e].X for e in self.graph.arcs}
@@ -461,8 +485,7 @@ class AsymmetricInterdictor:
         LG.setParam("TimeLimit", 120.0)
 
         LG.optimize()
-        if LG.Status == GRB.TIME_LIMIT:
-            print("Warning: Time limit reached during pessimistic SPNIA-LG solve.")
+        if self._abort_if_no_stage_solution(LG, "pessimistic SPNIA-LG"):
             return None, None
 
         lg_x_star = {e: xLG[e].X for e in self.graph.arcs}

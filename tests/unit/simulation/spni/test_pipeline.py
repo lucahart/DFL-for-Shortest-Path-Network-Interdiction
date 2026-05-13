@@ -208,7 +208,10 @@ def test_spni_pipeline_run_single_simulation_wires_stages_in_order(
     monkeypatch.setattr(pipeline_module, "build_summary", _fake_build_summary)
 
     # Act by running the full single-run pipeline.
-    result = pipeline_module.run_single_simulation(run_cfg)
+    result = pipeline_module.run_single_simulation(
+        run_cfg,
+        present_results=False,
+    )
 
     # Assert that the result is fully populated and stage order is fixed.
     assert isinstance(result, SimulationResult), \
@@ -250,8 +253,10 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
         lambda cfg, num_seeds: seed_bundles,
     )
 
-    def _fake_run_single_simulation(cfg):
+    def _fake_run_single_simulation(cfg, **options):
         calls.append(cfg.seed)
+        assert "present_results" in options, \
+            "run_seed_sweep should forward presentation settings."
         summary_bundle = SummaryBundle(
             prediction_mean_std={"test_mean": float(cfg.seed)},
             metrics={"metric_1": float(cfg.seed)},
@@ -365,7 +370,7 @@ def test_spni_pipeline_run_seed_sweep_skips_persistence_when_disabled(
     monkeypatch.setattr(
         pipeline_module,
         "run_single_simulation",
-        lambda cfg: SimulationResult(
+        lambda cfg, **options: SimulationResult(
             run_config=cfg,
             seed_bundle=SeedBundle(
                 sweep_seed=cfg.seed,
@@ -696,6 +701,52 @@ def test_spni_pipeline_run_scenario_sweep_records_result_presentation_paths(
     pass
 
 
+#########################################
+### test run_saved_result_replot(...) ###
+#########################################
+
+
+def test_spni_pipeline_run_saved_result_replot_records_output_paths(
+    monkeypatch,
+):
+    """Verify that saved-result replotting reports generated figure paths."""
+    # Arrange a storage-layer stub for the replot command.
+    recorded: dict[str, object] = {}
+
+    def _fake_replot_saved_sweep_outputs(input_path, *, figure_directory):
+        recorded["input_path"] = input_path
+        recorded["figure_directory"] = figure_directory
+        return SimpleNamespace(
+            results_path="results.csv",
+            sample_boxplot_path="figures/sample.png",
+            simulation_boxplot_path="figures/simulation.png",
+        )
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "replot_saved_sweep_outputs",
+        _fake_replot_saved_sweep_outputs,
+    )
+
+    # Act by running the lightweight replot entrypoint.
+    result = pipeline_module.run_saved_result_replot(
+        input_path="results.csv",
+        figure_directory="figures",
+    )
+
+    # Assert that storage options and diagnostics are preserved.
+    assert recorded == {
+        "input_path": "results.csv",
+        "figure_directory": "figures",
+    }, "run_saved_result_replot should forward storage options unchanged."
+    assert result["diagnostics"] == {
+        "input_path": "results.csv",
+        "sample_boxplot_path": "figures/sample.png",
+        "simulation_boxplot_path": "figures/simulation.png",
+    }, "run_saved_result_replot should expose regenerated plot paths."
+    pass
+
+
 ####################
 ### test main(...) ###
 ####################
@@ -834,6 +885,55 @@ def test_spni_pipeline_main_dispatches_scenario_sweep_mode(monkeypatch):
     pass
 
 
+def test_spni_pipeline_main_dispatches_replot_without_building_config(
+    monkeypatch,
+):
+    """Verify that replot mode bypasses simulation config construction."""
+    # Arrange a replot stub and a config-construction sentinel.
+    recorded: dict[str, object] = {}
+    expected_result = {"diagnostics": {"input_path": "results.csv"}}
+
+    def _fake_run_saved_result_replot(*, input_path, figure_directory):
+        recorded["input_path"] = input_path
+        recorded["figure_directory"] = figure_directory
+        return expected_result
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_saved_result_replot",
+        _fake_run_saved_result_replot,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_build_base_cfg",
+        lambda cfg=None: pytest.fail("Replot mode should not build config."),
+    )
+
+    # Act by dispatching through the general main entrypoint.
+    result = pipeline_module.main(
+        mode="replot",
+        input_path="results.csv",
+        figure_directory="figures",
+    )
+
+    # Assert that only the replot-specific arguments are forwarded.
+    assert result is expected_result, \
+        "main should return the result from run_saved_result_replot."
+    assert recorded == {
+        "input_path": "results.csv",
+        "figure_directory": "figures",
+    }, "main should dispatch replot mode without simulation options."
+    pass
+
+
+def test_spni_pipeline_main_replot_requires_input_path():
+    """Verify that replot mode fails clearly without a saved CSV path."""
+    # Act and assert that a missing replot input path is rejected.
+    with pytest.raises(ValueError, match="requires input_path"):
+        pipeline_module.main(mode="replot")
+    pass
+
+
 def test_spni_pipeline_main_rejects_unknown_mode():
     """Verify that main rejects unsupported top-level modes."""
     # Act and assert that unsupported modes fail clearly.
@@ -942,4 +1042,46 @@ def test_spni_pipeline_cli_parses_scenario_sweep_arguments(monkeypatch):
         "cli should parse boolean flags for scenario sweeps as well."
     assert recorded["kwargs"]["budget"] == 5, \
         "cli should keep config overrides available in scenario-sweep mode."
+    pass
+
+
+def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch):
+    """Verify that cli parses saved-result replot arguments."""
+    # Arrange a main stub and silence the terminal print.
+    recorded: dict[str, object] = {}
+    expected_result = {"diagnostics": {"input_path": "results.csv"}}
+
+    def _fake_main(**kwargs):
+        recorded["kwargs"] = kwargs
+        return expected_result
+
+    monkeypatch.setattr(pipeline_module, "main", _fake_main)
+    monkeypatch.setattr(
+        pipeline_module,
+        "print",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
+
+    # Act by executing the CLI in replot mode.
+    result = pipeline_module.cli(
+        [
+            "--mode",
+            "replot",
+            "--input-path",
+            "results.csv",
+            "--figure-directory",
+            "figures",
+        ]
+    )
+
+    # Assert that replot-specific arguments reach main.
+    assert result is expected_result, \
+        "cli should return the result from main for replot mode."
+    assert recorded["kwargs"]["mode"] == "replot", \
+        "cli should forward replot mode."
+    assert recorded["kwargs"]["input_path"] == "results.csv", \
+        "cli should forward the saved result CSV path."
+    assert recorded["kwargs"]["figure_directory"] == "figures", \
+        "cli should forward the requested figure directory."
     pass

@@ -333,7 +333,9 @@ def test_spni_evaluate_asymmetric_interdiction_records_failure_counts(
         interdictions,
         normalization_constant,
         pred_model=None,
+        **kwargs,
     ):
+        del kwargs
         calls.append({"pred_model": pred_model})
         key = None if pred_model is None else pred_model.label
         return outputs[key]

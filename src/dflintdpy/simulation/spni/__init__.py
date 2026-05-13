@@ -21,13 +21,21 @@ from dflintdpy.simulation.spni.config import (
 from dflintdpy.simulation.spni.pipeline import (
     cli,
     main,
+    run_saved_result_replot,
     run_scenario_sweep,
     run_seed_sweep,
     run_single_simulation,
 )
+from dflintdpy.simulation.spni.reporting import (
+    format_simulation_summary_tables,
+    print_simulation_summary,
+    save_learning_curve_plots,
+)
 from dflintdpy.simulation.spni.storage import (
+    ReplotStoragePaths,
     SweepStoragePaths,
     persist_sweep_outputs,
+    replot_saved_sweep_outputs,
 )
 from dflintdpy.simulation.spni.types import (
     DatasetBundle,
@@ -60,9 +68,15 @@ __all__ = [
     # Canonical orchestration entrypoints.
     "cli",
     "main",
+    "run_saved_result_replot",
     "run_scenario_sweep",
     "run_seed_sweep",
     "run_single_simulation",
+    "format_simulation_summary_tables",
+    "print_simulation_summary",
+    "save_learning_curve_plots",
+    "ReplotStoragePaths",
     "SweepStoragePaths",
     "persist_sweep_outputs",
+    "replot_saved_sweep_outputs",
 ]

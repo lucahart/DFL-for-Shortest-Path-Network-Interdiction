@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from collections import defaultdict
 from dflintdpy.simulation.spni.results import (
     aggregate_sweep_results,
+    filter_all_data_for_comparable_asymmetric_plots,
     to_legacy_all_data,
 )
 from dflintdpy.simulation.spni.types import SimulationResult, SweepResult
@@ -228,6 +229,9 @@ def compute_percentage_increases_from_simulations(simulations):
         return typed_summary["percentage_increases"]["simulations"]
 
     simulations = _coerce_legacy_simulations(simulations)
+    simulations, _ = filter_all_data_for_comparable_asymmetric_plots(
+        simulations
+    )
     calculations = defaultdict(list)
 
     for sim_data in simulations:
@@ -301,8 +305,21 @@ def create_boxplots(simulations, save_path=None):
     save_path : str or None
         Path to save the figure. If None, display instead.
     """
-    all_data = combine_simulations(simulations)
-    calculations = compute_percentage_increases_from_samples(all_data)
+    typed_summary = _typed_aggregate_summary(simulations)
+    if typed_summary is not None:
+        calculations = typed_summary["percentage_increases"]["samples"]
+    else:
+        plot_simulations, _ = filter_all_data_for_comparable_asymmetric_plots(
+            _coerce_legacy_simulations(simulations)
+        )
+        all_data = combine_simulations(plot_simulations)
+        calculations = (
+            compute_percentage_increases_from_samples(all_data)
+            if all_data else {
+                key: np.asarray([], dtype=float)
+                for key in _PERCENTAGE_BASELINES
+            }
+        )
     return create_boxplots_from_calculations(calculations, save_path=save_path)
 
 def create_boxplots_by_simulation(simulations, save_path=None):

@@ -10,12 +10,12 @@ class HP:
 
     # Data parameters
     num_features : int = 5
-    num_train_samples : int = 1000
-    num_val_samples : int = 250
-    num_test_samples : int = 1000
+    num_train_samples : int = 500
+    num_val_samples : int = 100
+    num_test_samples : int = 250
 
     grid_size : Tuple[int, int] = (5, 5)
-    deg : int = 8
+    deg : int = 16
     noise_width : float = 0.5
 
     seed : int = seed_sweep_offset
@@ -23,7 +23,7 @@ class HP:
     loader_seed : int = 17
 
     # Interdiction parameters
-    budget : int = 10
+    budget : int = 5
     num_scenarios : int = 3
 
     benders_max_count : int = 100
@@ -34,11 +34,14 @@ class HP:
 
     # ML hyperparameters
     batch_size : int = 32
-    po_epochs : int = 200
-    spo_epochs : int = 200 # 300
-    po_lr : float = 1e-3 # 2e-4 # 2e-3
-    spo_lr : float = 1e-3 # 3.5e-4 # 5e-3
-    pred_model : str = "linear"  # "nn" or "linear"
+    po_epochs : int = 400
+    spo_epochs : int = 400 # 300
+    po_lr : float = 1e-2 # 2e-4 # 2e-3 or 1e-3
+    spo_lr : float = 1e-2 # 3.5e-4 # 5e-3 or 1e-3
+    pred_model : str = "nn"  # "nn" or "linear"
+    max_lr_reductions : int | None = 10
+    surrogate_underprediction_penalty_weight : float = 1.0
+    surrogate_underprediction_margin : float = 1e-6
 
     # Deprecated parameters. TODO: Remove them in the future.
     lam = 0.0
@@ -53,4 +56,3 @@ class HP:
     def get(self, key: str, default: Any = None) -> Any:
         """Retrieve a configuration parameter by name."""
         return getattr(self, key, default)
-

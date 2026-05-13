@@ -4,7 +4,10 @@ from types import SimpleNamespace
 import numpy as np
 
 from dflintdpy.simulation.spni.config import CachePolicy, SPNIRunConfig, SeedBundle
-from dflintdpy.simulation.spni.storage import persist_sweep_outputs
+from dflintdpy.simulation.spni.storage import (
+    persist_sweep_outputs,
+    replot_saved_sweep_outputs,
+)
 from dflintdpy.simulation.spni.types import (
     DatasetBundle,
     EvaluationBundle,
@@ -234,4 +237,46 @@ def test_utils_results_analysis_persist_sweep_outputs_saves_csv_and_figures(
         results[0].summary_bundle.all_data["o_o"],
         err_msg="Persisted CSV results should remain analysis-compatible.",
     )
+    pass
+
+
+def test_utils_results_analysis_replot_saved_outputs_from_csv(
+    tmp_path: Path,
+):
+    """Verify that saved CSV results can regenerate boxplot figures."""
+    # Arrange a persisted typed sweep result with one failed asymmetric row.
+    result = _simulation_result(10, 0.0)
+    all_data = {
+        key: value.copy()
+        for key, value in result.summary_bundle.all_data.items()
+    }
+    all_data["a_p"][0] = np.nan
+    result.summary_bundle.all_data.update(all_data)
+    sweep_result = SweepResult(
+        run_config=result.run_config,
+        results=[result],
+        aggregated_summary={},
+    )
+    output_path = tmp_path / "results" / "typed_results.csv"
+    figure_directory = tmp_path / "figures"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_results_to_csv(sweep_result, output_path)
+
+    # Act by regenerating figures directly from the saved CSV.
+    stored_paths = replot_saved_sweep_outputs(
+        output_path,
+        figure_directory=figure_directory,
+    )
+
+    # Assert the replay command writes both plot types without rerunning.
+    assert stored_paths.results_path == output_path, \
+        "replot_saved_sweep_outputs should report the source CSV path."
+    assert stored_paths.sample_boxplot_path.exists(), \
+        "replot_saved_sweep_outputs should save the sample boxplot."
+    assert stored_paths.simulation_boxplot_path.exists(), \
+        "replot_saved_sweep_outputs should save the simulation boxplot."
+    assert stored_paths.sample_boxplot_path.parent == figure_directory, \
+        "replot_saved_sweep_outputs should honor the figure directory."
+    assert stored_paths.simulation_boxplot_path.parent == figure_directory, \
+        "replot_saved_sweep_outputs should keep both plots together."
     pass

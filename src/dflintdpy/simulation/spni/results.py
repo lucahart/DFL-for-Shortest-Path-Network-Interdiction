@@ -137,6 +137,14 @@ _PERCENTAGE_BASELINES = {
 }
 
 
+def _empty_percentage_arrays() -> dict[str, np.ndarray]:
+    """Return empty plot calculations with the standard percentage keys."""
+    return {
+        key: np.asarray([], dtype=float)
+        for key in _PERCENTAGE_BASELINES
+    }
+
+
 def _as_float_array(values: Any) -> np.ndarray:
     """Normalize one numerical payload into a float array copy.
 
@@ -462,6 +470,143 @@ def _combine_all_data(simulations: Sequence[Mapping[str, np.ndarray]]) -> dict[s
     return combined
 
 
+def _result_has_failed_asymmetric_solve(result: SimulationResult) -> bool:
+    """Return whether any asymmetric solve failed in one simulation result."""
+    failure_counts = result.evaluation_bundle.diagnostics.get(
+        "asymmetric_failure_counts",
+    )
+    if failure_counts is None:
+        failure_counts = result.evaluation_bundle.asymmetric.get(
+            "diagnostics",
+            {},
+        ).get("failure_counts", {})
+    if any(int(value) > 0 for value in failure_counts.values()):
+        return True
+
+    all_data = to_legacy_all_data(result.summary_bundle)
+    asym_keys = set(_ASYMMETRIC_EST_KEY_MAP) | set(_ASYMMETRIC_ORACLE_KEY_MAP)
+    return any(
+        key in all_data and np.isnan(all_data[key]).any()
+        for key in asym_keys
+    )
+
+
+def filter_results_for_comparable_asymmetric_plots(
+    results: Sequence[SimulationResult],
+) -> tuple[list[SimulationResult], list[int]]:
+    """Drop whole runs from plot calculations when asymmetric solves failed."""
+    comparable_results: list[SimulationResult] = []
+    excluded_indices: list[int] = []
+    for index, result in enumerate(results):
+        if _result_has_failed_asymmetric_solve(result):
+            excluded_indices.append(index)
+            continue
+        comparable_results.append(result)
+    return comparable_results, excluded_indices
+
+
+def _result_sample_count(all_data: Mapping[str, np.ndarray]) -> int:
+    """Return the sample count represented by one all-data mapping."""
+    if not all_data:
+        return 0
+    first_key = next(iter(all_data))
+    return int(_as_float_array(all_data[first_key]).shape[0])
+
+
+def _comparable_asymmetric_sample_mask(
+    all_data: Mapping[str, np.ndarray],
+) -> np.ndarray:
+    """Return rows where every asymmetric plot column is finite."""
+    sample_count = _result_sample_count(all_data)
+    mask = np.ones(sample_count, dtype=bool)
+    asym_keys = set(_ASYMMETRIC_EST_KEY_MAP) | set(_ASYMMETRIC_ORACLE_KEY_MAP)
+    for key in sorted(asym_keys):
+        if key not in all_data:
+            continue
+        values = _as_float_array(all_data[key])
+        if values.shape[0] != sample_count:
+            continue
+        mask &= np.isfinite(values)
+    return mask
+
+
+def _filter_all_data_rows(
+    all_data: Mapping[str, np.ndarray],
+    mask: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Apply one sample mask to all sample-aligned all-data arrays."""
+    filtered: dict[str, np.ndarray] = {}
+    for key, values in all_data.items():
+        arr = _as_float_array(values)
+        if arr.ndim > 0 and arr.shape[0] == mask.shape[0]:
+            filtered[key] = arr[mask]
+        else:
+            filtered[key] = arr
+    return filtered
+
+
+def _build_comparable_plot_simulations_from_all_data(
+    simulations: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, np.ndarray]], dict[str, Any]]:
+    """Build plot inputs after removing failed asymmetric sample rows."""
+    plot_simulations: list[dict[str, np.ndarray]] = []
+    excluded_simulation_indices: list[int] = []
+    excluded_sample_indices_by_simulation: dict[int, list[int]] = {}
+    num_input_samples = 0
+    num_comparable_samples = 0
+
+    for simulation_index, all_data in enumerate(simulations):
+        mask = _comparable_asymmetric_sample_mask(all_data)
+        num_input_samples += int(mask.shape[0])
+        num_comparable_samples += int(mask.sum())
+
+        excluded_samples = [
+            int(sample_index)
+            for sample_index, keep_sample in enumerate(mask)
+            if not bool(keep_sample)
+        ]
+        if excluded_samples:
+            excluded_sample_indices_by_simulation[simulation_index] = (
+                excluded_samples
+            )
+
+        if not bool(mask.any()):
+            excluded_simulation_indices.append(simulation_index)
+            continue
+
+        plot_simulations.append(_filter_all_data_rows(all_data, mask))
+
+    diagnostics = {
+        "num_input_runs": len(simulations),
+        "num_comparable_runs": len(plot_simulations),
+        "excluded_simulation_indices": excluded_simulation_indices,
+        "num_input_samples": num_input_samples,
+        "num_comparable_samples": num_comparable_samples,
+        "excluded_sample_indices_by_simulation": (
+            excluded_sample_indices_by_simulation
+        ),
+    }
+    return plot_simulations, diagnostics
+
+
+def filter_all_data_for_comparable_asymmetric_plots(
+    simulations: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, np.ndarray]], dict[str, Any]]:
+    """Return plot-ready simulations after dropping failed asymmetric rows."""
+    return _build_comparable_plot_simulations_from_all_data(simulations)
+
+
+def _build_comparable_plot_simulations(
+    results: Sequence[SimulationResult],
+) -> tuple[list[dict[str, np.ndarray]], dict[str, Any]]:
+    """Build plot inputs from typed results after asymmetric row filtering."""
+    simulations = [
+        to_legacy_all_data(result.summary_bundle)
+        for result in results
+    ]
+    return filter_all_data_for_comparable_asymmetric_plots(simulations)
+
+
 def _compute_percentage_increases_from_samples(
     all_data: Mapping[str, np.ndarray],
 ) -> dict[str, np.ndarray]:
@@ -572,7 +717,10 @@ def aggregate_sweep_results(results: list[SimulationResult]) -> dict:
         to_legacy_all_data(result.summary_bundle)
         for result in results
     ]
+    plot_simulations, plot_filter_diagnostics = \
+        _build_comparable_plot_simulations(results)
     combined_all_data = _combine_all_data(simulations)
+    plot_all_data = _combine_all_data(plot_simulations)
     rows: list[dict[str, Any]] = []
     for simulation_index, result in enumerate(results):
         rows.extend(_result_rows(result, simulation_index=simulation_index))
@@ -608,11 +756,14 @@ def aggregate_sweep_results(results: list[SimulationResult]) -> dict:
         },
         "percentage_increases": {
             "samples": (
-                _compute_percentage_increases_from_samples(combined_all_data)
-                if combined_all_data else {}
+                _compute_percentage_increases_from_samples(plot_all_data)
+                if plot_all_data else _empty_percentage_arrays()
             ),
             "simulations": _compute_percentage_increases_from_simulations(
-                simulations
+                plot_simulations
             ),
+        },
+        "diagnostics": {
+            "plot_filter": plot_filter_diagnostics,
         },
     }

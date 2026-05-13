@@ -194,6 +194,7 @@ def _simulation_result(
     summary_bundle: SummaryBundle,
     *,
     simulation_index: int,
+    asymmetric_failure_counts: dict[str, int] | None = None,
 ) -> SimulationResult:
     """Return a compact simulation result for flatten/aggregate tests."""
     dataset_bundle = DatasetBundle(
@@ -218,8 +219,15 @@ def _simulation_result(
     evaluation_bundle = EvaluationBundle(
         uninterdicted={},
         symmetric={},
-        asymmetric={},
+        asymmetric={
+            "diagnostics": {
+                "failure_counts": asymmetric_failure_counts or {},
+            },
+        },
         wrong_model_asymmetry={},
+        diagnostics={
+            "asymmetric_failure_counts": asymmetric_failure_counts or {},
+        },
     )
     return SimulationResult(
         run_config=run_cfg,
@@ -240,6 +248,38 @@ def _simulation_result(
         summary_bundle=summary_bundle,
         diagnostics={"simulation_index": simulation_index},
     )
+
+
+def _plot_filter_all_data(
+    *,
+    no_intd_p: float | list[float],
+    asym_p: float | list[float],
+) -> dict[str, np.ndarray]:
+    """Return an all_data payload for plot-filter tests."""
+    no_intd_p = np.atleast_1d(np.asarray(no_intd_p, dtype=float))
+    asym_p = np.atleast_1d(np.asarray(asym_p, dtype=float))
+    baseline = np.full(asym_p.shape, 2.0, dtype=float)
+    return {
+        "o_o": baseline.copy(),
+        "o_p": no_intd_p,
+        "o_s": baseline.copy(),
+        "o_r": baseline.copy(),
+        "o_a": baseline.copy(),
+        "s_o": baseline.copy(),
+        "s_p": baseline.copy(),
+        "s_s": baseline.copy(),
+        "s_r": baseline.copy(),
+        "s_a": baseline.copy(),
+        "a_o": baseline.copy(),
+        "a_p": asym_p,
+        "a_s": baseline.copy(),
+        "a_r": baseline.copy(),
+        "a_a": baseline.copy(),
+        "a_p_o": baseline.copy(),
+        "a_s_o": baseline.copy(),
+        "a_r_o": baseline.copy(),
+        "a_a_o": baseline.copy(),
+    }
 
 
 ###########################
@@ -454,4 +494,62 @@ def test_spni_results_aggregate_sweep_results_preserves_rows_and_safe_math(
         aggregated["percentage_increases"]["simulations"]["asym_intd_p"],
         np.array([0.0, 75.0], dtype=float),
     ), "Asymmetric simulation percentages should not reuse `a_o`."
+    pass
+
+
+def test_spni_results_aggregate_sweep_results_filters_failed_asymmetry_from_plots(
+    run_cfg,
+):
+    """Verify plot percentages exclude failed asymmetric sample rows."""
+    # Arrange one partially failed run and one comparable run.
+    partially_failed_result = _simulation_result(
+        run_cfg,
+        _summary_bundle(
+            _plot_filter_all_data(
+                no_intd_p=[20.0, 3.0],
+                asym_p=[np.nan, 4.0],
+            ),
+            metric_1=1.0,
+        ),
+        simulation_index=3,
+        asymmetric_failure_counts={"pfl": 1},
+    )
+    comparable_result = _simulation_result(
+        run_cfg,
+        _summary_bundle(
+            _plot_filter_all_data(
+                no_intd_p=5.0,
+                asym_p=6.0,
+            ),
+            metric_1=2.0,
+        ),
+        simulation_index=4,
+    )
+
+    # Act by aggregating both runs.
+    aggregated = results_module.aggregate_sweep_results(
+        [partially_failed_result, comparable_result]
+    )
+
+    # Assert raw rows remain complete while plot percentages drop the failure.
+    assert aggregated["num_runs"] == 2, \
+        "Sweep aggregation should still count all completed simulations."
+    assert len(aggregated["rows"]) == 3, \
+        "CSV-style rows should keep failed samples for diagnostics."
+    assert aggregated["diagnostics"]["plot_filter"] == {
+        "num_input_runs": 2,
+        "num_comparable_runs": 2,
+        "excluded_simulation_indices": [],
+        "num_input_samples": 3,
+        "num_comparable_samples": 2,
+        "excluded_sample_indices_by_simulation": {0: [0]},
+    }, "Plot filtering should identify failed asymmetric sample rows."
+    assert np.array_equal(
+        aggregated["percentage_increases"]["samples"]["no_intd_p"],
+        np.array([50.0, 150.0], dtype=float),
+    ), "Sample plot percentages should use only comparable sample rows."
+    assert np.array_equal(
+        aggregated["percentage_increases"]["simulations"]["asym_intd_p"],
+        np.array([100.0, 200.0], dtype=float),
+    ), "Simulation plot percentages should use filtered simulation rows."
     pass
