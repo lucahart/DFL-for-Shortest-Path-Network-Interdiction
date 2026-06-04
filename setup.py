@@ -15,6 +15,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
+            "dflintd=dflintdpy.cli.__main__:main",
+            "dflintd-spni=dflintdpy.cli.spni:main",
             "shortest-path=Main:main",
         ]
     },

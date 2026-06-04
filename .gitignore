@@ -3,7 +3,6 @@
 # Ignore virtual environment and cache files
 .venv/
 __pycache__/
-# src/shortest_path_indiction.egg-info/
 *.egg-info/
 .vscode/
 
@@ -16,11 +15,12 @@ gurobi.log
 # Synthetic Data
 */SyntheticPortfolioData/*
 
-# Data Storage
+# Data Storage — generated caches and binary artefacts
 *.csv
 *.npz
 *.pkl
 src/dflintdpy/scripts/BipartiteMatchingData/*
+store_data/
 
 # Text files
 *.txt
@@ -29,8 +29,24 @@ src/dflintdpy/scripts/BipartiteMatchingData/*
 figures/*
 *.png
 
+# Generated results
+results/
+
+# Ad-hoc scripts and private notes
+diagnostics.py
+Data_Collection.md
+results_bppo.md
+test/
+tools/
+
 # Codex
 .codex/
 
 # Test launcher
 test_launcher.py
+
+# Real-world graph topology files (override the *.csv and *.txt rules above)
+!real_world_spni_data/
+!real_world_spni_data/**/*.csv
+!real_world_spni_data/**/*.txt
+!real_world_spni_data/**/*.tntp

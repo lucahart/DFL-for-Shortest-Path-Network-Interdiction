@@ -10,21 +10,27 @@ Most SPNI runs start with this shape:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode <mode>
 ```
 
-The `MPLCONFIGDIR` and `XDG_CACHE_HOME` assignments keep Matplotlib and other
-libraries from writing cache files into locations that may not be writable.
+The CLI sets writable temporary defaults for `MPLCONFIGDIR` and
+`XDG_CACHE_HOME` when those environment variables are not already set.
+Explicit environment values are still respected.
+
+The same SPNI command is also available as a subcommand:
+
+```bash
+dflintd spni \
+  --mode <mode>
+```
 
 If you want to see the full CLI help:
 
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline --help
+dflintd-spni --help
 ```
 
 ## Modes
@@ -42,29 +48,25 @@ The `--mode` flag selects the top-level action.
 Examples:
 
 ```bash
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode single
 ```
 
 ```bash
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode seed_sweep \
   --num-seeds 5
 ```
 
 ```bash
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode scenario_sweep \
   --scenarios 2,3,5 \
   --num-seeds 3
 ```
 
 ```bash
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode replot \
   --input-path results/results_train_500_valid_25_test_250_m_5_n_5_deg_16_noise_0.5_seeds_2.csv
 ```
@@ -137,8 +139,7 @@ Small smoke run:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode seed_sweep \
   --num-seeds 2 \
   --set 'grid_size=(3, 3)' \
@@ -155,8 +156,7 @@ Normal synthetic grid seed sweep:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode seed_sweep \
   --num-seeds 5 \
   --set 'grid_size=(5, 5)' \
@@ -173,8 +173,7 @@ Real-world graph structure with synthetic data:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode seed_sweep \
   --num-seeds 3 \
   --load-real-world-graph real_world_spni_data/town_level_arcs.csv \
@@ -221,8 +220,7 @@ CLI form:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode replot \
   --input-path results/results_train_500_valid_25_test_250_m_5_n_5_deg_16_noise_0.5_seeds_2.csv \
   --legend-location "upper left"
@@ -233,8 +231,7 @@ Multiple saved files:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode replot \
   --input-path \
     results/results_train_500_valid_100_test_250_m_5_n_5_deg_10_noise_0.5_seeds_3.csv \
@@ -247,8 +244,7 @@ To regenerate only the uninterdicted and asymmetric groups, add:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline \
+dflintd-spni \
   --mode replot \
   --input-path results/results_train_500_valid_25_test_250_m_5_n_5_deg_16_noise_0.5_seeds_2.csv \
   --exclude-symmetric-interdictions
@@ -291,17 +287,19 @@ stored in the result CSV.
 
 ## Troubleshooting
 
-If the module command is not found, install the package in editable mode:
+If the CLI command is not found, install the package in editable mode:
 
 ```bash
 source ./.venv/bin/activate
 python -m pip install -e .
 ```
 
-If Matplotlib warns that `~/.matplotlib` is not writable, keep using:
+If you need a custom cache location, set either environment variable before
+running the command:
 
 ```bash
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp
+MPLCONFIGDIR=/path/to/mpl-cache XDG_CACHE_HOME=/path/to/cache \
+dflintd-spni --help
 ```
 
 If you forget the available flags:
@@ -309,6 +307,5 @@ If you forget the available flags:
 ```bash
 source ./.venv/bin/activate
 
-MPLCONFIGDIR=/private/tmp/mpl XDG_CACHE_HOME=/private/tmp \
-python -m dflintdpy.simulation.spni.pipeline --help
+dflintd-spni --help
 ```

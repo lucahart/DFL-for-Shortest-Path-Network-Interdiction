@@ -9,6 +9,8 @@ scripts may still persist results or trigger analysis, but that behavior sits
 outside this module.
 """
 
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +19,11 @@ from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
+
+from dflintdpy._runtime import configure_terminal_cache_environment
+
+# Configure cache paths before importing modules that may import Matplotlib.
+configure_terminal_cache_environment()
 
 from dflintdpy.simulation.spni.build import build_problem_bundle
 from dflintdpy.simulation.spni.config import (
@@ -760,9 +767,12 @@ def run_scenario_sweep(
 
 def cli(
     argv: Sequence[str] | None = None,
+    *,
+    prog: str | None = None,
 ) -> SimulationResult | SweepResult | dict[str, Any]:
     """Parse one-line terminal arguments and run the requested SPNI mode."""
     parser = argparse.ArgumentParser(
+        prog=prog,
         description=(
             "Run SPNI simulations, sweeps, or saved-result replots."
         ),

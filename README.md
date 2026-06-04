@@ -1,180 +1,182 @@
 # Decision-Focused Learning for Network Interdiction
-A research codebase for experimenting with decision-focused learning (DFL) for shortest path network interdiction (SPNI) problems. The project builds up on the [PyEPO library](https://github.com/khalil-research/PyEPO) and integrates it with a more general graph optimization focused framework. We apply the code base to SPNI games, but encourage using it for other projects with DFL for graphs. 
 
-This library includes different graph models, Gurobi-based solvers for different optimization problems, DFL training methods where possible, PyTorch training utilities, data wrappers, and application code for SPNI games as an application.
+A research codebase for experimenting with decision-focused learning (DFL) applied to shortest-path network interdiction (SPNI) games. The project integrates DFL training methods with a Gurobi-based graph optimization framework and evaluates predictor families under symmetric and asymmetric interdiction scenarios.
 
+The library provides graph models, Gurobi-based solvers for SPNI problems, DFL and predict-then-optimize (PO) training utilities, adversarial data generation, a typed simulation pipeline, and a CLI for running reproducible experiments.
 
-# Installation Instructions
-> ⚠️ **Work in progress:** Several scripts are scaffolds or research prototypes. Expect to adapt components for your particular experiments. 
-<!-- and see the [Roadmap](#roadmap--todo) for known gaps.-->
+## Prerequisites
 
-## Prerequisites & Requirements
-General Information:
-- **Python**: 3.10 or later is recommended.
-- **Core libraries**: install via `requirements.txt` (`numpy`, `networkx`, `matplotlib`, `pyepo`, `torch`, `scikit-learn`, `tabulate`).
-- **Mathematical programming**: many solvers rely on [Gurobi](https://www.gurobi.com/) (`gurobipy`). Ensure you have a valid license and have installed the Python package separately (`pip install gurobipy`).
-- **GPU support (optional)**: PyTorch automatically detects CUDA if available.
-- **Jupyter (optional)**: install `jupyterlab` or similar to run notebooks.
+- **Python** 3.9 or later
+- **Gurobi** with a valid license — most solvers rely on `gurobipy`. Install the Python package separately (`pip install gurobipy`) and activate a license before running experiments.
+- **PyTorch** — install separately to match your CUDA version if needed, or let `pip` resolve a CPU build.
+- **Core libraries** — `numpy`, `scipy`, `networkx`, `matplotlib`, `pyepo`, `scikit-learn`, `tabulate` (installed via `requirements.txt`).
+- **Jupyter** (optional) — install `jupyterlab` to run the notebooks.
 
-
-## Installation & Setup
+## Installation
 
 1. **Clone the repository.**
-   Follow the below installation instructions to install the environment. Start by copying the github repository. We recommend using SSH (see [here](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) for details).
    ```bash
-    git clone git@github.com:lucahart/DFL-for-Shortest-Path-Network-Interdiction.git
-    cd DFL-for-Shortest-Path-Network-Interdiction
+   git clone git@github.com:<your-org>/DFL-for-Shortest-Path-Network-Interdiction.git
+   cd DFL-for-Shortest-Path-Network-Interdiction
    ```
+
 2. **Create and activate a virtual environment.**
    ```bash
    python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   source .venv/bin/activate   # Windows: .venv\Scripts\activate
    ```
+
 3. **Install Python dependencies.**
    ```bash
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
-4. **Install the package in editable mode.** 
-   This exposes the console script `shortest-path` that forwards to `src/Main.py`.
+
+4. **Install the package in editable mode.**
+   This registers the `dflintd` and `dflintd-spni` console entry points.
    ```bash
    pip install -e .
    ```
-5. **(Optional) Notebook hygiene.** 
-   If you plan on making contributions, run this command to avoid adding notebook outputs to version control.
+
+5. **(Optional) Strip notebook outputs from version control.**
    ```bash
    pip install nbstripout
    nbstripout --install
    ```
 
-## Usage
+## Running SPNI Simulations
 
-### Reproduction of Paper Simulations
+The primary entry point for running SPNI experiments is the `dflintd-spni` CLI. Full documentation of all flags and config parameters is in [docs/spni_run_guide.md](docs/spni_run_guide.md).
 
-- SPNI terminal and cfg-based run guide:
-  [docs/spni_run_guide.md](docs/spni_run_guide.md)
-
-
-### General Code Usage
-
-<!-- ### Running the Bayrak & Bailey sweep prototype
+**Quick smoke test** (runs in under a minute):
 ```bash
-shortest-path --lr 1e-3 --batch 64 --epochs 25
-```
-The CLI prints the active hyperparameter configuration (from `src/data/config.py`) and dispatches to `scripts.bayrak08`. The current implementation sets up the experiment scaffolding; extend `src/scripts/bayrak08.py` to complete the simulation for your study.
+source .venv/bin/activate
 
-### Training a SPO model
+dflintd-spni \
+  --mode seed_sweep \
+  --num-seeds 2 \
+  --set 'grid_size=(3, 3)' \
+  --set 'num_train_samples=8' \
+  --set 'num_val_samples=4' \
+  --set 'num_test_samples=4' \
+  --set 'num_scenarios=2' \
+  --set 'po_epochs=1' \
+  --set 'spo_epochs=1'
+```
+
+**Synthetic grid seed sweep** (paper default settings):
+```bash
+dflintd-spni \
+  --mode seed_sweep \
+  --num-seeds 5 \
+  --set 'grid_size=(5, 5)' \
+  --set 'deg=12' \
+  --set 'num_train_samples=500' \
+  --set 'num_val_samples=100' \
+  --set 'num_test_samples=250' \
+  --set 'num_scenarios=3' \
+  --set 'budget=5'
+```
+
+**Real-world graph topology with synthetic costs:**
+```bash
+dflintd-spni \
+  --mode seed_sweep \
+  --num-seeds 3 \
+  --load-real-world-graph real_world_spni_data/town_level_arcs.csv \
+  --source-node 1 \
+  --target-node 10 \
+  --set 'num_train_samples=100' \
+  --set 'num_val_samples=25' \
+  --set 'num_test_samples=100' \
+  --set 'num_scenarios=3'
+```
+
+See [docs/spni_run_guide.md](docs/spni_run_guide.md) for all modes (`single`, `seed_sweep`, `scenario_sweep`, `replot`), config parameters, and output paths.
+
+## Python API
+
+The simulation pipeline is also accessible directly from Python:
+
 ```python
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader, TensorDataset
-from src.models import SPOTrainer
-from src.models.ShortestPathGrid import ShortestPathGrid
-from src.models.ShortestPathGrb import shortestPathGrb
+from dflintdpy.data.config import HP
+from dflintdpy.simulation.spni import run_seed_sweep, persist_sweep_outputs
 
-# Synthetic graph and optimiser
-grid = ShortestPathGrid(6, 8)
-opt_layer = shortestPathGrb(grid)
+cfg = HP()
+cfg.set("grid_size", (5, 5))
+cfg.set("num_train_samples", 500)
+cfg.set("num_scenarios", 3)
 
-# Simple predictive model
-predictor = nn.Sequential(nn.Linear(5, grid.num_cost), nn.ReLU())
-loss_fn = nn.MSELoss()
-optimizer = optim.Adam(predictor.parameters(), lr=1e-3)
-trainer = SPOTrainer(predictor, opt_layer, optimizer, loss_fn, method_name="spo+")
-
-# Dummy dataset with (features, true_costs, shortest_paths, objectives, interdictions)
-data = TensorDataset(
-    torch.randn(128, 5),              # features
-    torch.randn(128, grid.num_cost),  # costs
-    torch.randn(128, grid.num_cost),  # sols
-    torch.randn(128, 1),              # objs
-    torch.zeros(128, 1, grid.num_cost)  # interdictions
-)
-loader = DataLoader(data, batch_size=32)
-trainer.train_epoch(loader)
+result = run_seed_sweep(cfg, num_seeds=5)
+persist_sweep_outputs(result)
 ```
-Adapt the dataset layout to your generator (`src/data/DataGenerator.py`) or adversarial loaders.
 
-### Evaluating interdiction policies
-```python
-from src.solvers.BendersDecomposition import BendersDecomposition
-from src.models.ShortestPathGrid import ShortestPathGrid
-from src.models.ShortestPathGrb import shortestPathGrb
-import numpy as np
-
-m, n = 6, 8
-cost = np.random.rand(m * (n - 1) + (m - 1) * n)
-interdiction_cost = np.random.rand(cost.size)
-
-grid = ShortestPathGrid(m, n, cost)
-opt_layer = shortestPathGrb(grid)
-
-benders = BendersDecomposition(opt_layer, k=5, interdiction_cost=interdiction_cost,
-                               max_cnt=50, eps=1e-3)
-x_intd, y_path, gap = benders.solve()
-print(f"Budget used: {x_intd.sum()} edges\nObjective gap: {gap:.4f}")
-```
-Leverage `src/scripts/compare_po_spo.py` for end-to-end comparisons between PO and SPO policies (symmetric and asymmetric interdiction scenarios).
+Individual components — graph construction, solvers, data generators, and trainers — can be imported from their respective subpackages under `dflintdpy`.
 
 ## Project Structure
 
 ```
 ├── README.md
 ├── requirements.txt
-├── setup.py
+├── pyproject.toml
+├── docs/
+│   └── spni_run_guide.md         # CLI reference and run guide
+├── Notebooks/                    # Research notebooks
+│   ├── 5_Asym_SPNI_Toy_Example.ipynb
+│   ├── 7_Asym_SPNI.ipynb
+│   ├── 9_real_world_example.ipynb
+│   ├── 10-real_world_example_reworked.ipynb
+│   └── ...
+├── real_world_spni_data/         # Graph topology files for real-world experiments
 ├── src/
-│   ├── Main.py                 # CLI entry point
-│   ├── data/                   # Synthetic generators, loaders, config
-│   ├── models/                 # PyTorch models, SPO trainers, graph layers
-│   ├── solvers/                # Benders & SPNI interdiction solvers
-│   ├── scripts/                # Experiment utilities and comparisons
-│   ├── utils/                  # Miscellaneous helpers (progress bars, etc.)
-│   └── Notebooks/              # Exploratory research notebooks
-└── tests/                      # Pytest suites for calibration and grids
-``` -->
-
-<!-- ## Testing & Validation
-
-1. Install optional test dependencies (`pytest`, `torch`, `pyepo`, `gurobipy`).
-2. Run the test suite from the project root:
-   ```bash
-   pytest
-   ```
-   Individual tests can be targeted, e.g. `pytest tests/test_arcs_one_hot.py`. Some tests automatically skip when optional dependencies are unavailable.
-
-For manual experiments, visualise grid paths via `ShortestPathGrid.visualize()` or `shortestPathGrb.visualize()`. -->
-
-<!-- 
-## Contributing
-
-1. Fork and create a feature branch.
-2. Ensure tests pass (`pytest`) and follow Python type hints/docstring style already present in `src/models/`.
-3. Use informative commit messages and submit a pull request describing the motivation, approach, and verification steps.
-4. For large contributions (new solvers, dataset pipelines), open an issue to discuss design choices before implementation. -->
-
-## Citations & References
-**Cite us when using this code base:**
-```
-Luca M. Hartmann, Parinaz Naghizadeh, "Decision-Focused Learning meets Network Interdiction: The Cost of Staying Behind," September 2025.
+│   ├── dflintdpy/
+│   │   ├── cli/                  # CLI entry points (dflintd, dflintd-spni)
+│   │   ├── data/                 # Config (HP), synthetic data generation, adversarial loaders
+│   │   ├── models/               # Graph and Grid models
+│   │   ├── predictors/           # Predictor architectures and hybrid SPO+ loss
+│   │   ├── scripts/              # Legacy experiment scripts (compatibility wrappers)
+│   │   ├── simulation/
+│   │   │   └── spni/             # Typed SPNI pipeline (build, data, train, evaluate, results)
+│   │   ├── solvers/              # Gurobi-based shortest-path and interdiction solvers
+│   │   └── utils/                # Result I/O, analysis helpers, trainers
+│   └── toy_example/              # Standalone toy SPNI example
+└── tests/                        # Pytest suite (unit, integration, regression)
 ```
 
-**Main References used in code base:**
-- Israeli, E., & Wood, K. R. (2002). "Shortest-path network interdiction". *Networks*, 40(2):97–111. (Symmetric Interdictor).
-- Bayrak, Ö., & Bailey, M. D. (2008). "Shortest Path Network Interdiction with Asymmetric Information." *Networks*, 52(3):133–140, 2008 (Asymmetric Interdictor).
-- Elmachtoub, A. N., & Grigas, P. (2022). "Smart 'Predict, then Optimize'." *Management Science*, 68(7): 5152–5171. (Methodological background for SPO training).
-- PyEPO: [https://github.com/khalil-research/PyEPO](https://github.com/khalil-research/PyEPO).
-- Gurobi Optimizer: [https://www.gurobi.com/](https://www.gurobi.com/).
+## Testing
+
+```bash
+pytest
+```
+
+Integration and regression tests require Gurobi. Unit tests mock heavy solver calls and run without a license.
+
+## Citation
+
+If you use this code, please cite:
+
+```
+Luca M. Hartmann, Parinaz Naghizadeh,
+"Decision-Focused Learning meets Network Interdiction: The Cost of Staying Behind,"
+Working paper, 2025.
+```
+
+**Key references used in this codebase:**
+- Israeli & Wood (2002). "Shortest-path network interdiction." *Networks*, 40(2):97–111.
+- Bayrak & Bailey (2008). "Shortest Path Network Interdiction with Asymmetric Information." *Networks*, 52(3):133–140.
+- Elmachtoub & Grigas (2022). "Smart 'Predict, then Optimize'." *Management Science*, 68(7):5152–5171.
+- PyEPO: [https://github.com/khalil-research/PyEPO](https://github.com/khalil-research/PyEPO)
+- Gurobi Optimizer: [https://www.gurobi.com/](https://www.gurobi.com/)
 
 ## License
 
-No license has been specified yet. Until one is added, treat the repository as "all rights reserved" and contact the maintainers before reusing code.
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
 
-## Acknowledgements / Credits
+## Acknowledgements
 
-- Original research code by Luca Hartmann under supervision of Parinaz Naghizadeh.
-- Built on top of the PyEPO differentiable optimisation library and Gurobi optimiser.
+Original research code by Luca Hartmann under supervision of Parinaz Naghizadeh at UC San Diego. Built on top of the PyEPO differentiable optimisation library and the Gurobi optimizer.
 
-## Contact & Support
+## Contact
 
-- Open a GitHub issue for bug reports or feature requests.
-- For private questions reach out to [lhartmann@ucsd.edu](mailto:lhartmann@ucsd.edu)
+- GitHub issues: bug reports and feature requests
+- Email: [lhartmann@ucsd.edu](mailto:lhartmann@ucsd.edu)
