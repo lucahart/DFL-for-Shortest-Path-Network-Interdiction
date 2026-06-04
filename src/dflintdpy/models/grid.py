@@ -206,13 +206,14 @@ class Grid(Graph):
         nx.draw_networkx_nodes(
             self.graph, pos,
             nodelist=[self.source],
-            node_color='green'
-        )
-        nx.draw_networkx_nodes(
-            self.graph, pos,
-            nodelist=[self.target],
             node_color='red'
         )
+        target_xy = pos[self.target]
+        rect = plt.Rectangle(
+            (target_xy[0] - 0.15, target_xy[1] - 0.15), 0.3, 0.3,
+            color='green', zorder=2
+        )
+        ax.add_patch(rect)
         
         # Highlight color edges
         if colored_edges is not None:

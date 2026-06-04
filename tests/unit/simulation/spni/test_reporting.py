@@ -91,7 +91,10 @@ class _FakePyplot:
     def __init__(self) -> None:
         self.saved_paths: list[str] = []
         self.plotted_labels: list[str | None] = []
+        self.plot_calls: list[dict[str, object]] = []
+        self.scatter_calls: list[dict[str, object]] = []
         self.closed_figures: list[object | None] = []
+        self.yscale_calls: list[tuple[str, dict]] = []
 
     def subplots(self, *args, **kwargs):
         """Return one fake figure and two fake axes."""
@@ -118,14 +121,49 @@ class _FakeFigure:
         self._pyplot.saved_paths.append(str(path))
 
 
+class _FakeLine:
+    """Capture the color assigned to one fake line."""
+
+    def __init__(self, color: str) -> None:
+        self._color = color
+
+    def get_color(self) -> str:
+        """Return the fake Matplotlib line color."""
+        return self._color
+
+
 class _FakeAxis:
     """Capture axis-level plotting calls."""
 
     def __init__(self, pyplot: _FakePyplot) -> None:
         self._pyplot = pyplot
 
-    def plot(self, values, *args, label=None, **kwargs) -> None:
+    def plot(self, x_values, *args, label=None, **kwargs):
+        """Capture line-plot calls and return a colored fake line."""
         self._pyplot.plotted_labels.append(label)
+        color = f"C{len(self._pyplot.plot_calls)}"
+        y_values = args[0] if args else x_values
+        self._pyplot.plot_calls.append(
+            {
+                "x": list(x_values),
+                "y": list(y_values),
+                "label": label,
+                "color": color,
+                "kwargs": kwargs,
+            }
+        )
+        return [_FakeLine(color)]
+
+    def scatter(self, x_values, y_values, *args, label=None, **kwargs) -> None:
+        """Capture scatter calls separately from connected line plots."""
+        self._pyplot.scatter_calls.append(
+            {
+                "x": list(x_values),
+                "y": list(y_values),
+                "label": label,
+                "kwargs": kwargs,
+            }
+        )
 
     def set_title(self, value: str) -> None:
         pass
@@ -135,6 +173,9 @@ class _FakeAxis:
 
     def set_ylabel(self, value: str) -> None:
         pass
+
+    def set_yscale(self, scale: str, **kwargs) -> None:
+        self._pyplot.yscale_calls.append((scale, kwargs))
 
     def grid(self, *args, **kwargs) -> None:
         pass
@@ -288,4 +329,204 @@ def test_spni_reporting_save_learning_curve_plots_saves_expected_pngs(
     assert "R-DFL train" in fake_pyplot.plotted_labels, (
         "The R-DFL train-loss curve should be plotted with a readable label."
     )
+    assert fake_pyplot.yscale_calls, (
+        "Learning-curve plots should configure y-axis scaling."
+    )
+    assert all(scale == "log" for scale, _ in fake_pyplot.yscale_calls), (
+        "Learning-curve plots should use log-scaled y axes."
+    )
+    assert all(
+        kwargs == {"nonpositive": "clip"}
+        for _, kwargs in fake_pyplot.yscale_calls
+    ), "Log-scaled learning curves should tolerate nonpositive values."
+    pass
+
+
+def test_spni_reporting_save_learning_curve_plots_marks_real_world_graphs(
+    simulation_result: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that real-world learning-curve files include the graph marker."""
+    # Arrange a real-world result and a matplotlib stand-in.
+    fake_pyplot = _FakePyplot()
+    monkeypatch.setattr(reporting_module, "plt", fake_pyplot)
+    simulation_result.run_config.load_real_world_graph = (
+        "real_world_spni_data/Town Level Arcs.csv"
+    )
+
+    # Act by saving learning-curve plots to an explicit figure directory.
+    paths = reporting_module.save_learning_curve_plots(
+        simulation_result,
+        figure_directory=tmp_path,
+    )
+
+    # Assert that every returned path includes the real-world graph marker.
+    assert paths, \
+        "The fixture should produce learning-curve plot paths."
+    assert all(
+        "real_world_town_level_arcs" in Path(path).name
+        for path in paths.values()
+    ), "Real-world learning-curve files should include the graph marker."
+    pass
+
+
+def test_spni_reporting_save_learning_curve_plots_places_validation_by_epoch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that sparse validation logs are plotted at actual epochs."""
+    # Arrange a 400-epoch PFL log with validation every 40 epochs.
+    fake_pyplot = _FakePyplot()
+    monkeypatch.setattr(reporting_module, "plt", fake_pyplot)
+    result = SimpleNamespace(
+        run_config=SimpleNamespace(
+            num_scenarios=4,
+            po_epochs=400,
+            spo_epochs=400,
+        ),
+        seed_bundle=SimpleNamespace(sweep_seed=11),
+        predictor_bundle=SimpleNamespace(
+            logs={
+                "pfl": TrainingLogBundle(
+                    train_loss=[float(401 - index) for index in range(401)],
+                    train_regret=[
+                        float(802 - 2 * index)
+                        for index in range(401)
+                    ],
+                    val_loss=[float(11 - index) for index in range(11)],
+                    val_regret=[float(22 - 2 * index) for index in range(11)],
+                ),
+            },
+        ),
+        artifacts=SimpleNamespace(figure_paths={}),
+    )
+
+    # Act by saving learning curves through the reporting helper.
+    reporting_module.save_learning_curve_plots(
+        result,
+        figure_directory=tmp_path,
+    )
+
+    # Assert validation points use real epochs and unconnected crosses.
+    expected_epochs = list(range(0, 401, 40))
+    pfl_val_scatters = [
+        call for call in fake_pyplot.scatter_calls
+        if call["label"] == "PFL val"
+    ]
+    pfl_train_plots = [
+        call for call in fake_pyplot.plot_calls
+        if call["label"] == "PFL train"
+    ]
+    assert pfl_val_scatters, \
+        "Validation logs should be rendered as scatter points."
+    assert all(call["x"] == expected_epochs for call in pfl_val_scatters), \
+        "Validation points should be placed at their logged epoch numbers."
+    assert all(
+        call["kwargs"].get("marker") == "x"
+        for call in pfl_val_scatters
+    ), "Validation points should use cross markers."
+    assert "PFL val" not in fake_pyplot.plotted_labels, \
+        "Validation logs should not be plotted as connected curves."
+    assert pfl_val_scatters[0]["kwargs"].get("color") == (
+        pfl_train_plots[0]["color"]
+    ), "Validation loss points should use the matching train-loss color."
+    assert pfl_val_scatters[1]["kwargs"].get("color") == (
+        pfl_train_plots[1]["color"]
+    ), "Validation regret points should use the matching train-regret color."
+    pass
+
+
+def test_spni_reporting_save_seed_sweep_learning_curve_plots_groups_by_algorithm(
+    simulation_result: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that sweep learning curves overlay seeds per predictor family."""
+    # Arrange two seed results and a matplotlib stand-in.
+    fake_pyplot = _FakePyplot()
+    monkeypatch.setattr(reporting_module, "plt", fake_pyplot)
+    second_result = SimpleNamespace(
+        run_config=simulation_result.run_config,
+        seed_bundle=SimpleNamespace(sweep_seed=12),
+        predictor_bundle=SimpleNamespace(
+            logs={
+                "pfl": TrainingLogBundle(
+                    train_loss=[3.0, 1.5],
+                    train_regret=[2.0, 1.0],
+                    val_loss=[4.0, 2.0],
+                    val_regret=[5.0, 2.5],
+                ),
+                "rdfl": TrainingLogBundle(
+                    train_loss=[9.0, 4.5],
+                    train_regret=[6.0, 3.0],
+                    val_loss=None,
+                    val_regret=None,
+                ),
+            },
+        ),
+    )
+
+    # Act by saving seed-comparison learning-curve plots.
+    paths = reporting_module.save_seed_sweep_learning_curve_plots(
+        [simulation_result, second_result],
+        figure_directory=tmp_path,
+    )
+
+    # Assert that each predictor family gets a separate seed-comparison file.
+    curve_dir = tmp_path / "learning_curves"
+    stem = "learning_curves_seed_sweep_seeds_2_scenarios_4"
+    expected_paths = {
+        str(curve_dir / f"{stem}_pfl_by_seed.png"),
+        str(curve_dir / f"{stem}_rdfl_by_seed.png"),
+    }
+    assert set(paths.values()) == expected_paths, (
+        "Seed-sweep learning curves should save one plot per predictor family."
+    )
+    assert expected_paths == set(fake_pyplot.saved_paths), (
+        "Seed-sweep learning-curve paths should all be written."
+    )
+    assert "seed 11 train" in fake_pyplot.plotted_labels, (
+        "Seed 11 should appear in the overlaid curve labels."
+    )
+    assert "seed 12 train" in fake_pyplot.plotted_labels, (
+        "Seed 12 should appear in the overlaid curve labels."
+    )
+    assert all(scale == "log" for scale, _ in fake_pyplot.yscale_calls), (
+        "Seed-sweep learning curves should use log-scaled y axes."
+    )
+    pass
+
+
+def test_spni_reporting_save_seed_sweep_learning_curve_plots_marks_real_world(
+    simulation_result: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify that real-world seed-sweep curve files include graph markers."""
+    # Arrange two real-world seed results and a matplotlib stand-in.
+    fake_pyplot = _FakePyplot()
+    monkeypatch.setattr(reporting_module, "plt", fake_pyplot)
+    simulation_result.run_config.load_real_world_graph = (
+        "real_world_data/transportation_networks/Anaheim_net.tntp"
+    )
+    second_result = SimpleNamespace(
+        run_config=simulation_result.run_config,
+        seed_bundle=SimpleNamespace(sweep_seed=12),
+        predictor_bundle=simulation_result.predictor_bundle,
+    )
+
+    # Act by saving seed-comparison learning-curve plots.
+    paths = reporting_module.save_seed_sweep_learning_curve_plots(
+        [simulation_result, second_result],
+        figure_directory=tmp_path,
+    )
+
+    # Assert that every returned path includes the real-world graph marker.
+    assert paths, \
+        "The fixture should produce seed-sweep learning-curve paths."
+    assert all(
+        "real_world_anaheim_net" in Path(path).name
+        for path in paths.values()
+    ), "Real-world seed-sweep learning curves should include the graph marker."
     pass

@@ -1,10 +1,15 @@
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.legend import Legend
 
+import dflintdpy.simulation.spni.storage as storage_module
 from dflintdpy.simulation.spni.config import CachePolicy, SPNIRunConfig, SeedBundle
 from dflintdpy.simulation.spni.storage import (
+    persist_scenario_sweep_outputs,
     persist_sweep_outputs,
     replot_saved_sweep_outputs,
 )
@@ -20,6 +25,7 @@ from dflintdpy.simulation.spni.types import (
 from dflintdpy.utils.analyse_results import (
     combine_simulations,
     compute_percentage_increases_from_simulations,
+    create_boxplots_from_calculations,
 )
 from dflintdpy.utils.read_write_results import (
     load_results_from_csv,
@@ -134,6 +140,47 @@ def _simulation_result(seed: int, offset: float) -> SimulationResult:
     )
 
 
+def _real_world_simulation_result(
+    seed: int,
+    offset: float,
+    graph_path: str,
+) -> SimulationResult:
+    """Return one compact result configured with a real-world graph path."""
+    result = _simulation_result(seed, offset)
+    run_config = replace(
+        result.run_config,
+        load_real_world_graph=graph_path,
+    )
+    graph_bundle = replace(
+        result.graph_bundle,
+        graph_kind="real_world",
+        graph_source=graph_path,
+    )
+    return replace(
+        result,
+        run_config=run_config,
+        graph_bundle=graph_bundle,
+    )
+
+
+def _scenario_sweep_stats(
+    scenarios: list[int],
+) -> dict[int, dict[str, dict[str, list[float]]]]:
+    """Return compact plot-ready scenario-sweep stats for storage tests."""
+    conditions = ("unintd", "intd", "asym")
+    methods = ("PO", "DFL", "R-DFL", "A-DFL")
+    return {
+        scenario: {
+            condition: {
+                method: [float(scenario)]
+                for method in methods
+            }
+            for condition in conditions
+        }
+        for scenario in scenarios
+    }
+
+
 ###############################
 ### test save-load-analyze ###
 ###############################
@@ -240,6 +287,117 @@ def test_utils_results_analysis_persist_sweep_outputs_saves_csv_and_figures(
     pass
 
 
+def test_utils_results_analysis_persist_sweep_outputs_defaults_to_figures_dir(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """Verify that default sweep figures are saved under figures/."""
+    # Arrange a private project root and an explicit CSV path.
+    monkeypatch.setattr(storage_module, "_project_root", lambda: tmp_path)
+    result = _simulation_result(10, 0.0)
+    sweep_result = SweepResult(
+        run_config=result.run_config,
+        results=[result],
+        aggregated_summary={},
+    )
+    output_path = tmp_path / "custom-results" / "typed_results.csv"
+    expected_figure_directory = tmp_path / "figures"
+
+    # Act by persisting without a figure-directory override.
+    stored_paths = persist_sweep_outputs(
+        sweep_result,
+        output_path=output_path,
+    )
+
+    # Assert that figures use the default project figures directory.
+    assert stored_paths.results_path == output_path, \
+        "persist_sweep_outputs should still honor the explicit CSV path."
+    assert stored_paths.sample_boxplot_path.parent == expected_figure_directory, \
+        "persist_sweep_outputs should default figures to project figures/."
+    assert stored_paths.simulation_boxplot_path.parent == (
+        expected_figure_directory
+    ), "persist_sweep_outputs should keep default figures together."
+    assert stored_paths.sample_boxplot_path.exists(), \
+        "persist_sweep_outputs should save the default sample boxplot."
+    assert stored_paths.simulation_boxplot_path.exists(), \
+        "persist_sweep_outputs should save the default simulation boxplot."
+    pass
+
+
+def test_utils_results_analysis_persist_sweep_outputs_marks_real_world_graphs(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """Verify that default real-world sweep outputs include the graph marker."""
+    # Arrange a real-world sweep that relies on default result naming.
+    monkeypatch.setattr(storage_module, "_project_root", lambda: tmp_path)
+    result = _real_world_simulation_result(
+        10,
+        0.0,
+        "real_world_spni_data/Town Level Arcs.csv",
+    )
+    sweep_result = SweepResult(
+        run_config=result.run_config,
+        results=[result],
+        aggregated_summary={},
+    )
+
+    # Act by persisting without explicit result or figure paths.
+    stored_paths = persist_sweep_outputs(sweep_result)
+
+    # Assert that both CSV and figure names carry the real-world graph marker.
+    expected_stem = (
+        "results_train_4_valid_1_test_2_m_2_n_2_deg_1_noise_0.1"
+        "_real_world_town_level_arcs_seeds_1"
+    )
+    assert stored_paths.results_path.name == f"{expected_stem}.csv", \
+        "Real-world result CSVs should include the graph filename marker."
+    assert stored_paths.sample_boxplot_path.name == (
+        f"{expected_stem}_boxplot.png"
+    ), "Real-world sample boxplots should match the marked CSV stem."
+    assert stored_paths.simulation_boxplot_path.name == (
+        f"{expected_stem}_boxplot_sims.png"
+    ), "Real-world simulation boxplots should match the marked CSV stem."
+    pass
+
+
+def test_utils_results_analysis_scenario_sweep_outputs_mark_real_world_graphs(
+    tmp_path: Path,
+):
+    """Verify that scenario-sweep figures include the real-world graph marker."""
+    # Arrange a real-world config and compact scenario-sweep plot inputs.
+    result = _real_world_simulation_result(
+        10,
+        0.0,
+        "real_world_data/transportation_networks/Anaheim_net.tntp",
+    )
+    scenarios = [2, 3]
+    stats = _scenario_sweep_stats(scenarios)
+
+    # Act by persisting the scenario-sweep figures.
+    stored_paths = persist_scenario_sweep_outputs(
+        run_cfg=result.run_config,
+        scenarios=scenarios,
+        num_seeds=4,
+        sim_stats=stats,
+        sample_stats=stats,
+        figure_directory=tmp_path,
+    )
+
+    # Assert that every scenario-sweep figure carries the graph marker.
+    for figure_path in (
+        stored_paths.simulation_plot_path,
+        stored_paths.asym_simulation_plot_path,
+        stored_paths.sample_plot_path,
+        stored_paths.asym_sample_plot_path,
+    ):
+        assert "real_world_anaheim_net" in figure_path.name, (
+            "Real-world scenario-sweep figures should include the graph "
+            "filename marker."
+        )
+    pass
+
+
 def test_utils_results_analysis_replot_saved_outputs_from_csv(
     tmp_path: Path,
 ):
@@ -266,6 +424,7 @@ def test_utils_results_analysis_replot_saved_outputs_from_csv(
     stored_paths = replot_saved_sweep_outputs(
         output_path,
         figure_directory=figure_directory,
+        exclude_symmetric_interdictions=True,
     )
 
     # Assert the replay command writes both plot types without rerunning.
@@ -279,4 +438,211 @@ def test_utils_results_analysis_replot_saved_outputs_from_csv(
         "replot_saved_sweep_outputs should honor the figure directory."
     assert stored_paths.simulation_boxplot_path.parent == figure_directory, \
         "replot_saved_sweep_outputs should keep both plots together."
+    assert stored_paths.sample_boxplot_path.name.endswith(
+        "_no_sym_boxplot.png"
+    ), "Symmetric-excluding replots should use a no-sym sample filename."
+    assert stored_paths.simulation_boxplot_path.name.endswith(
+        "_no_sym_boxplot_sims.png"
+    ), "Symmetric-excluding replots should use a no-sym simulation filename."
+    pass
+
+
+def test_utils_results_analysis_replot_saved_outputs_defaults_to_figures_dir(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """Verify that default replot figures are saved under figures/."""
+    # Arrange a saved CSV outside the default figures directory.
+    monkeypatch.setattr(storage_module, "_project_root", lambda: tmp_path)
+    result = _simulation_result(10, 0.0)
+    sweep_result = SweepResult(
+        run_config=result.run_config,
+        results=[result],
+        aggregated_summary={},
+    )
+    output_path = tmp_path / "custom-results" / "typed_results.csv"
+    expected_figure_directory = tmp_path / "figures"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_results_to_csv(sweep_result, output_path)
+
+    # Act by regenerating figures without a figure-directory override.
+    stored_paths = replot_saved_sweep_outputs(output_path)
+
+    # Assert that replots use the default project figures directory.
+    assert stored_paths.results_path == output_path, \
+        "replot_saved_sweep_outputs should report the source CSV path."
+    assert stored_paths.sample_boxplot_path.parent == expected_figure_directory, \
+        "replot_saved_sweep_outputs should default figures to project figures/."
+    assert stored_paths.simulation_boxplot_path.parent == (
+        expected_figure_directory
+    ), "replot_saved_sweep_outputs should keep default figures together."
+    assert stored_paths.sample_boxplot_path.exists(), \
+        "replot_saved_sweep_outputs should save the default sample boxplot."
+    assert stored_paths.simulation_boxplot_path.exists(), \
+        "replot_saved_sweep_outputs should save the default simulation boxplot."
+    pass
+
+
+def test_utils_results_analysis_replot_saved_outputs_combines_multiple_csvs(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """Verify that replotting can combine several saved result CSV files."""
+    # Arrange two compatible saved CSV files and capture plot inputs.
+    output_path_a = tmp_path / (
+        "results_train_4_valid_1_test_2_m_2_n_2_deg_1_noise_0.1_seeds_3.csv"
+    )
+    output_path_b = tmp_path / (
+        "results_train_4_valid_1_test_2_m_2_n_2_deg_1_noise_0.1_seeds_2.csv"
+    )
+    save_results_to_csv(
+        SweepResult(
+            run_config=_simulation_result(10, 0.0).run_config,
+            results=[_simulation_result(10, 0.0)],
+            aggregated_summary={},
+        ),
+        output_path_a,
+    )
+    save_results_to_csv(
+        SweepResult(
+            run_config=_simulation_result(11, 5.0).run_config,
+            results=[_simulation_result(11, 5.0)],
+            aggregated_summary={},
+        ),
+        output_path_b,
+    )
+    recorded: list[dict[str, object]] = []
+
+    def _fake_boxplot(simulations, *, save_path, **kwargs):
+        recorded.append(
+            {
+                "num_simulations": len(simulations),
+                "save_path": save_path,
+                "kwargs": kwargs,
+            }
+        )
+        return plt.figure()
+
+    monkeypatch.setattr(storage_module, "create_boxplots", _fake_boxplot)
+    monkeypatch.setattr(
+        storage_module,
+        "create_boxplots_by_simulation",
+        _fake_boxplot,
+    )
+
+    # Act by regenerating one combined plot bundle from both CSV files.
+    stored_paths = replot_saved_sweep_outputs(
+        [output_path_a, output_path_b],
+        figure_directory=tmp_path / "figures",
+    )
+
+    # Assert that both plotting calls receive the concatenated simulations.
+    assert stored_paths.results_path == output_path_a, \
+        "replot_saved_sweep_outputs should keep the first CSV as primary."
+    assert stored_paths.results_paths == (output_path_a, output_path_b), \
+        "replot_saved_sweep_outputs should report every source CSV."
+    assert stored_paths.sample_boxplot_path.name == (
+        "results_train_4_valid_1_test_2_m_2_n_2_deg_1_noise_0.1"
+        "_seeds_2_combined_boxplot.png"
+    ), "Combined replots should use a filename showing the total simulations."
+    assert stored_paths.simulation_boxplot_path.name == (
+        "results_train_4_valid_1_test_2_m_2_n_2_deg_1_noise_0.1"
+        "_seeds_2_combined_boxplot_sims.png"
+    ), "Combined simulation replots should use the same combined stem."
+    assert len(recorded) == 2, \
+        "replot_saved_sweep_outputs should create both boxplot variants."
+    assert all(call["num_simulations"] == 2 for call in recorded), \
+        "replot_saved_sweep_outputs should concatenate all CSV simulations."
+    pass
+
+
+def test_utils_results_analysis_replot_saved_outputs_forwards_legend_location(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """Verify that replotting forwards the requested legend location."""
+    # Arrange a saved CSV and plotting stubs that record storage kwargs.
+    result = _simulation_result(10, 0.0)
+    sweep_result = SweepResult(
+        run_config=result.run_config,
+        results=[result],
+        aggregated_summary={},
+    )
+    output_path = tmp_path / "results" / "typed_results.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_results_to_csv(sweep_result, output_path)
+    recorded: list[dict[str, object]] = []
+
+    def _fake_boxplot(simulations, *, save_path, **kwargs):
+        recorded.append(
+            {
+                "simulations": simulations,
+                "save_path": save_path,
+                "kwargs": kwargs,
+            }
+        )
+        return plt.figure()
+
+    monkeypatch.setattr(storage_module, "create_boxplots", _fake_boxplot)
+    monkeypatch.setattr(
+        storage_module,
+        "create_boxplots_by_simulation",
+        _fake_boxplot,
+    )
+
+    # Act by regenerating figures with a non-default legend location.
+    replot_saved_sweep_outputs(
+        output_path,
+        legend_location="upper left",
+    )
+
+    # Assert that both boxplot variants receive the requested location.
+    assert len(recorded) == 2, \
+        "replot_saved_sweep_outputs should create both boxplot variants."
+    assert all(
+        call["kwargs"]["legend_location"] == "upper left"
+        for call in recorded
+    ), "replot_saved_sweep_outputs should forward the legend location."
+    pass
+
+
+def test_utils_results_analysis_boxplots_can_exclude_symmetric_group(
+    tmp_path: Path,
+):
+    """Verify that result boxplots can omit symmetric interdiction results."""
+    # Arrange one finite value for every available percentage series.
+    calculations = {
+        "no_intd_p": np.array([1.0], dtype=float),
+        "no_intd_s": np.array([2.0], dtype=float),
+        "no_intd_r": np.array([3.0], dtype=float),
+        "no_intd_a": np.array([4.0], dtype=float),
+        "sym_intd_p": np.array([5.0], dtype=float),
+        "sym_intd_s": np.array([6.0], dtype=float),
+        "sym_intd_r": np.array([7.0], dtype=float),
+        "sym_intd_a": np.array([8.0], dtype=float),
+        "asym_intd_p": np.array([9.0], dtype=float),
+        "asym_intd_s": np.array([10.0], dtype=float),
+        "asym_intd_r": np.array([11.0], dtype=float),
+        "asym_intd_a": np.array([12.0], dtype=float),
+    }
+
+    # Act by creating a figure with the symmetric group disabled.
+    fig = create_boxplots_from_calculations(
+        calculations,
+        save_path=tmp_path / "no_sym.png",
+        include_symmetric_interdiction=False,
+        legend_location="upper left",
+    )
+    labels = [
+        tick.get_text()
+        for tick in fig.axes[0].get_xticklabels()
+    ]
+    legend = fig.axes[0].get_legend()
+    plt.close(fig)
+
+    # Assert that only uninterdicted and asymmetric groups are shown.
+    assert labels == ["no intd", "asym intd"], \
+        "Boxplots should omit the symmetric-interdiction group when requested."
+    assert legend._loc == Legend.codes["upper left"], \
+        "Boxplots should use the requested legend location."
     pass

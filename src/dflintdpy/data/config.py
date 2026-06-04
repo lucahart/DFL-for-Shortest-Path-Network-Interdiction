@@ -15,7 +15,7 @@ class HP:
     num_test_samples : int = 250
 
     grid_size : Tuple[int, int] = (5, 5)
-    deg : int = 16
+    deg : int = 12
     noise_width : float = 0.5
 
     seed : int = seed_sweep_offset
@@ -34,13 +34,13 @@ class HP:
 
     # ML hyperparameters
     batch_size : int = 32
-    po_epochs : int = 400
-    spo_epochs : int = 400 # 300
-    po_lr : float = 1e-2 # 2e-4 # 2e-3 or 1e-3
-    spo_lr : float = 1e-2 # 3.5e-4 # 5e-3 or 1e-3
-    pred_model : str = "nn"  # "nn" or "linear"
+    po_epochs : int = 800
+    spo_epochs : int = 600 # 300
+    po_lr : float = 1e-2 # 5e-2 or 1e-3
+    spo_lr : float = 1e-2 # 1e-2  or 1e-3
+    pred_model : str = "linear"  # "nn" or "linear"
     max_lr_reductions : int | None = 10
-    surrogate_underprediction_penalty_weight : float = 1.0
+    surrogate_underprediction_penalty_weight : float = 0.0
     surrogate_underprediction_margin : float = 1e-6
 
     # Deprecated parameters. TODO: Remove them in the future.

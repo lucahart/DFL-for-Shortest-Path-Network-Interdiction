@@ -9,7 +9,9 @@ results directory later.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import re
 from typing import Any, Sequence
 
 import matplotlib
@@ -19,6 +21,10 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
+from dflintdpy.simulation.spni.naming import (
+    cfg_get as _cfg_get,
+    real_world_graph_filename_suffix,
+)
 from dflintdpy.simulation.spni.types import SweepResult
 from dflintdpy.utils.analyse_results import (
     create_boxplots,
@@ -46,6 +52,7 @@ class ReplotStoragePaths:
     results_path: Path
     sample_boxplot_path: Path
     simulation_boxplot_path: Path
+    results_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,14 +77,8 @@ _SCENARIO_CONDITION_TITLES = {
     "intd": "Symmetric Interdiction",
     "asym": "Asymmetric Interdiction",
 }
-
-
-def _cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
-    """Read one config value from legacy or typed config objects."""
-    getter = getattr(cfg, "get", None)
-    if callable(getter):
-        return getter(key, default)
-    return getattr(cfg, key, default)
+_DEFAULT_BOXPLOT_LEGEND_LOCATION = "lower right"
+_RESULTS_STEM_WITH_SEEDS = re.compile(r"^(?P<prefix>.+)_seeds_\d+$")
 
 
 def _project_root() -> Path:
@@ -88,6 +89,7 @@ def _project_root() -> Path:
 def _default_results_filename(cfg: Any, num_seeds: int) -> str:
     """Build the legacy results filename from one config object."""
     m_size, n_size = _cfg_get(cfg, "grid_size", (0, 0))
+    graph_suffix = real_world_graph_filename_suffix(cfg)
     return (
         "results_train_"
         f"{_cfg_get(cfg, 'num_train_samples', 0)}"
@@ -103,6 +105,7 @@ def _default_results_filename(cfg: Any, num_seeds: int) -> str:
         f"{_cfg_get(cfg, 'deg', 0)}"
         "_noise_"
         f"{_cfg_get(cfg, 'noise_width', 0)}"
+        f"{graph_suffix}"
         "_seeds_"
         f"{int(num_seeds)}.csv"
     )
@@ -124,22 +127,60 @@ def _resolve_figure_paths(
     results_path: Path,
     *,
     figure_directory: str | Path | None,
+    filename_suffix: str = "",
 ) -> tuple[Path, Path]:
     """Return deterministic figure paths that match one CSV output."""
     if figure_directory is None:
-        default_results_directory = _project_root() / "results"
-        if results_path.parent == default_results_directory:
-            resolved_figure_directory = _project_root() / "figures"
-        else:
-            resolved_figure_directory = results_path.parent
+        resolved_figure_directory = _project_root() / "figures"
     else:
         resolved_figure_directory = Path(figure_directory)
 
-    base_name = results_path.stem
+    base_name = f"{results_path.stem}{filename_suffix}"
     return (
         resolved_figure_directory / f"{base_name}_boxplot.png",
         resolved_figure_directory / f"{base_name}_boxplot_sims.png",
     )
+
+
+def _coerce_results_paths(
+    results_path: str | Path | Sequence[str | Path],
+) -> tuple[Path, ...]:
+    """Return one or more saved CSV paths as normalized Path objects."""
+    if isinstance(results_path, (str, Path)):
+        return (Path(results_path),)
+
+    resolved_paths = tuple(Path(path) for path in results_path)
+    if not resolved_paths:
+        raise ValueError("At least one saved SPNI result CSV is required.")
+    return resolved_paths
+
+
+def _combined_replot_stem(
+    results_paths: Sequence[Path],
+    *,
+    num_simulations: int,
+) -> str:
+    """Return a stable figure stem for one or more replot input CSVs."""
+    if len(results_paths) == 1:
+        return results_paths[0].stem
+
+    seed_prefixes = []
+    for results_path in results_paths:
+        match = _RESULTS_STEM_WITH_SEEDS.match(results_path.stem)
+        if match is None:
+            seed_prefixes = []
+            break
+        seed_prefixes.append(match.group("prefix"))
+
+    if seed_prefixes and len(set(seed_prefixes)) == 1:
+        return f"{seed_prefixes[0]}_seeds_{num_simulations}_combined"
+
+    common_prefix = os.path.commonprefix(
+        [results_path.stem for results_path in results_paths]
+    ).rstrip("_-.")
+    if not common_prefix:
+        common_prefix = "combined_results"
+    return f"{common_prefix}_combined_{len(results_paths)}_files"
 
 
 def persist_sweep_outputs(
@@ -147,6 +188,7 @@ def persist_sweep_outputs(
     *,
     output_path: str | Path | None = None,
     figure_directory: str | Path | None = None,
+    legend_location: str | None = None,
 ) -> SweepStoragePaths:
     """Save one sweep CSV plus both result-summary boxplots.
 
@@ -176,12 +218,18 @@ def persist_sweep_outputs(
     fig_samples = create_boxplots(
         sweep_result,
         save_path=sample_boxplot_path,
+        legend_location=(
+            legend_location or _DEFAULT_BOXPLOT_LEGEND_LOCATION
+        ),
     )
     plt.close(fig_samples)
 
     fig_sims = create_boxplots_by_simulation(
         sweep_result,
         save_path=simulation_boxplot_path,
+        legend_location=(
+            legend_location or _DEFAULT_BOXPLOT_LEGEND_LOCATION
+        ),
     )
     plt.close(fig_sims)
 
@@ -193,40 +241,70 @@ def persist_sweep_outputs(
 
 
 def replot_saved_sweep_outputs(
-    results_path: str | Path,
+    results_path: str | Path | Sequence[str | Path],
     *,
     figure_directory: str | Path | None = None,
+    exclude_symmetric_interdictions: bool = False,
+    legend_location: str | None = None,
 ) -> ReplotStoragePaths:
-    """Regenerate sweep boxplots from a previously saved result CSV."""
-    resolved_results_path = Path(results_path)
-    if not resolved_results_path.exists():
-        raise FileNotFoundError(
-            f"Saved SPNI result CSV not found: {resolved_results_path}"
-        )
+    """Regenerate sweep boxplots from one or more saved result CSVs."""
+    resolved_results_paths = _coerce_results_paths(results_path)
+    for resolved_results_path in resolved_results_paths:
+        if not resolved_results_path.exists():
+            raise FileNotFoundError(
+                f"Saved SPNI result CSV not found: {resolved_results_path}"
+            )
 
+    simulations = [
+        simulation
+        for resolved_results_path in resolved_results_paths
+        for simulation in load_results_from_csv(resolved_results_path)
+    ]
+
+    suffix = "_no_sym" if exclude_symmetric_interdictions else ""
+    combined_stem = _combined_replot_stem(
+        resolved_results_paths,
+        num_simulations=len(simulations),
+    )
     sample_boxplot_path, simulation_boxplot_path = _resolve_figure_paths(
-        resolved_results_path,
+        resolved_results_paths[0],
         figure_directory=figure_directory,
+        filename_suffix="",
+    )
+    sample_boxplot_path = (
+        sample_boxplot_path.parent / f"{combined_stem}{suffix}_boxplot.png"
+    )
+    simulation_boxplot_path = (
+        simulation_boxplot_path.parent
+        / f"{combined_stem}{suffix}_boxplot_sims.png"
     )
     sample_boxplot_path.parent.mkdir(parents=True, exist_ok=True)
 
-    simulations = load_results_from_csv(resolved_results_path)
     fig_samples = create_boxplots(
         simulations,
         save_path=sample_boxplot_path,
+        include_symmetric_interdiction=not exclude_symmetric_interdictions,
+        legend_location=(
+            legend_location or _DEFAULT_BOXPLOT_LEGEND_LOCATION
+        ),
     )
     plt.close(fig_samples)
 
     fig_sims = create_boxplots_by_simulation(
         simulations,
         save_path=simulation_boxplot_path,
+        include_symmetric_interdiction=not exclude_symmetric_interdictions,
+        legend_location=(
+            legend_location or _DEFAULT_BOXPLOT_LEGEND_LOCATION
+        ),
     )
     plt.close(fig_sims)
 
     return ReplotStoragePaths(
-        results_path=resolved_results_path,
+        results_path=resolved_results_paths[0],
         sample_boxplot_path=sample_boxplot_path,
         simulation_boxplot_path=simulation_boxplot_path,
+        results_paths=resolved_results_paths,
     )
 
 
@@ -239,6 +317,7 @@ def _default_scenario_sweep_base_name(
     """Build a deterministic filename stem for one scenario sweep."""
     m_size, n_size = _cfg_get(cfg, "grid_size", (0, 0))
     scenario_label = "-".join(str(int(scenario)) for scenario in scenarios)
+    graph_suffix = real_world_graph_filename_suffix(cfg)
     return (
         "scenario_sweep_train_"
         f"{_cfg_get(cfg, 'num_train_samples', 0)}"
@@ -254,6 +333,7 @@ def _default_scenario_sweep_base_name(
         f"{_cfg_get(cfg, 'deg', 0)}"
         "_noise_"
         f"{_cfg_get(cfg, 'noise_width', 0)}"
+        f"{graph_suffix}"
         "_seeds_"
         f"{int(num_seeds)}"
         "_scenarios_"

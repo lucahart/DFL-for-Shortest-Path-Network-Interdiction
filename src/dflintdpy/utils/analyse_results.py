@@ -31,6 +31,8 @@ _PERCENTAGE_BASELINES = {
     'asym_intd_a': ('a_a', 'a_a_o'),
 }
 
+_DEFAULT_BOXPLOT_LEGEND_LOCATION = "lower right"
+
 
 def _coerce_legacy_simulations(
     simulations: SweepResult | Sequence[SimulationResult] | Sequence[Mapping],
@@ -242,28 +244,91 @@ def compute_percentage_increases_from_simulations(simulations):
 
     return dict(calculations)
 
-def create_boxplots_from_calculations(calculations, save_path=None):
+def _boxplot_groups(include_symmetric_interdiction=True):
+    """Return ordered percentage groups for result-comparison boxplots."""
+    groups = [
+        (
+            "no intd",
+            [
+                "no_intd_p",
+                "no_intd_s",
+                "no_intd_r",
+                "no_intd_a",
+            ],
+        ),
+    ]
+    if include_symmetric_interdiction:
+        groups.append(
+            (
+                "sym intd",
+                [
+                    "sym_intd_p",
+                    "sym_intd_s",
+                    "sym_intd_r",
+                    "sym_intd_a",
+                ],
+            )
+        )
+    groups.append(
+        (
+            "asym intd",
+            [
+                "asym_intd_p",
+                "asym_intd_s",
+                "asym_intd_r",
+                "asym_intd_a",
+            ],
+        )
+    )
+    return groups
+
+
+def _boxplot_positions(num_groups):
+    """Return grouped x positions and centers for four-method boxplots."""
+    positions = []
+    centers = []
+    for group_index in range(num_groups):
+        start = 1 + group_index * 5
+        group_positions = list(range(start, start + 4))
+        positions.extend(group_positions)
+        centers.append(float(np.mean(group_positions)))
+    return positions, centers
+
+
+def create_boxplots_from_calculations(
+    calculations,
+    save_path=None,
+    include_symmetric_interdiction=True,
+    legend_location=_DEFAULT_BOXPLOT_LEGEND_LOCATION,
+):
     """Create boxplots from precomputed calculations."""
+    groups = _boxplot_groups(include_symmetric_interdiction)
     data_to_plot = [
-        calculations['no_intd_p'], calculations['no_intd_s'], calculations['no_intd_r'], calculations['no_intd_a'],
-        calculations['sym_intd_p'], calculations['sym_intd_s'], calculations['sym_intd_r'], calculations['sym_intd_a'],
-        calculations['asym_intd_p'], calculations['asym_intd_s'], calculations['asym_intd_r'], calculations['asym_intd_a']
+        calculations[key]
+        for _, keys in groups
+        for key in keys
     ]
     
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    positions = [1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
-    bp = ax.boxplot(data_to_plot, positions=positions, widths=0.6, patch_artist=True,
-                     showfliers=False, flierprops=dict(marker='o', markersize=3, alpha=0.5))
+    positions, centers = _boxplot_positions(len(groups))
+    bp = ax.boxplot(
+        data_to_plot,
+        positions=positions,
+        widths=0.6,
+        patch_artist=True,
+        showfliers=False,
+        flierprops=dict(marker='o', markersize=3, alpha=0.5),
+    )
     
-    colors = ['#FF6B6B', '#4ECDC4', '#FFA552', '#45B7D1'] * 3
+    colors = ['#FF6B6B', '#4ECDC4', '#FFA552', '#45B7D1'] * len(groups)
     for patch, color in zip(bp['boxes'], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
     
-    ax.set_xticks([2.5, 7.5, 12.5])
-    ax.set_xlim(0, 15)
-    ax.set_xticklabels(['no intd', 'sym intd', 'asym intd'], fontsize=20)
+    ax.set_xticks(centers)
+    ax.set_xlim(0, positions[-1] + 1)
+    ax.set_xticklabels([label for label, _ in groups], fontsize=20)
 
     ax.set_ylabel('Percentage cost increase vs. oracle (%)', fontsize=22)
 
@@ -277,7 +342,7 @@ def create_boxplots_from_calculations(calculations, save_path=None):
         Patch(facecolor='#FFA552', alpha=0.7, label='R-DFL'),
         Patch(facecolor='#45B7D1', alpha=0.7, label='A-DFL')
     ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=20)
+    ax.legend(handles=legend_elements, loc=legend_location, fontsize=20)
     
     ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
     
@@ -294,7 +359,12 @@ def create_boxplots_from_calculations(calculations, save_path=None):
     
     return fig
 
-def create_boxplots(simulations, save_path=None):
+def create_boxplots(
+    simulations,
+    save_path=None,
+    include_symmetric_interdiction=True,
+    legend_location=_DEFAULT_BOXPLOT_LEGEND_LOCATION,
+):
     """
     Create boxplots showing percentage cost increase.
     
@@ -320,14 +390,29 @@ def create_boxplots(simulations, save_path=None):
                 for key in _PERCENTAGE_BASELINES
             }
         )
-    return create_boxplots_from_calculations(calculations, save_path=save_path)
+    return create_boxplots_from_calculations(
+        calculations,
+        save_path=save_path,
+        include_symmetric_interdiction=include_symmetric_interdiction,
+        legend_location=legend_location,
+    )
 
-def create_boxplots_by_simulation(simulations, save_path=None):
+def create_boxplots_by_simulation(
+    simulations,
+    save_path=None,
+    include_symmetric_interdiction=True,
+    legend_location=_DEFAULT_BOXPLOT_LEGEND_LOCATION,
+):
     """
     Create boxplots with one value per simulation (aggregated by sums).
     """
     calculations = compute_percentage_increases_from_simulations(simulations)
-    return create_boxplots_from_calculations(calculations, save_path=save_path)
+    return create_boxplots_from_calculations(
+        calculations,
+        save_path=save_path,
+        include_symmetric_interdiction=include_symmetric_interdiction,
+        legend_location=legend_location,
+    )
 
 def print_available_combinations(directory='.'):
     """Print available data combinations."""

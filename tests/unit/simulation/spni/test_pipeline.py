@@ -242,6 +242,7 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
     # Arrange an ordered seed sweep and a recording single-run stub.
     calls: list[int] = []
     persisted_calls: list[SweepResult] = []
+    learning_curve_calls: list[dict[str, object]] = []
     seed_bundles = [
         SeedBundle(sweep_seed=31, random_seed=41, intd_seed=51, loader_seed=61),
         SeedBundle(sweep_seed=32, random_seed=42, intd_seed=52, loader_seed=62),
@@ -329,6 +330,20 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
             )
         ),
     )
+    def _fake_save_seed_sweep_learning_curve_plots(results, **kwargs):
+        learning_curve_calls.append(
+            {
+                "results": results,
+                "figure_directory": kwargs.get("figure_directory"),
+            }
+        )
+        return {"learning_curve_seed_sweep_pfl": "pfl_by_seed.png"}
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "save_seed_sweep_learning_curve_plots",
+        _fake_save_seed_sweep_learning_curve_plots,
+    )
 
     # Act by running the multi-seed sweep.
     result = pipeline_module.run_seed_sweep(run_cfg, num_seeds=2)
@@ -348,6 +363,13 @@ def test_spni_pipeline_run_seed_sweep_uses_ordered_seed_bundles(
         "run_seed_sweep should record that presentation was enabled."
     assert result.diagnostics["legacy_output_path"] == "results.csv", \
         "run_seed_sweep should record the saved CSV path."
+    assert len(learning_curve_calls) == 1, \
+        "run_seed_sweep should save one seed-sweep learning-curve group."
+    assert learning_curve_calls[0]["results"] == result.results, \
+        "run_seed_sweep should plot all seed results together."
+    assert result.diagnostics["learning_curve_seed_sweep_plot_paths"] == {
+        "learning_curve_seed_sweep_pfl": "pfl_by_seed.png",
+    }, "run_seed_sweep should record seed-sweep learning-curve paths."
     pass
 
 
@@ -713,11 +735,22 @@ def test_spni_pipeline_run_saved_result_replot_records_output_paths(
     # Arrange a storage-layer stub for the replot command.
     recorded: dict[str, object] = {}
 
-    def _fake_replot_saved_sweep_outputs(input_path, *, figure_directory):
+    def _fake_replot_saved_sweep_outputs(
+        input_path,
+        *,
+        figure_directory,
+        exclude_symmetric_interdictions,
+        legend_location,
+    ):
         recorded["input_path"] = input_path
         recorded["figure_directory"] = figure_directory
+        recorded["exclude_symmetric_interdictions"] = (
+            exclude_symmetric_interdictions
+        )
+        recorded["legend_location"] = legend_location
         return SimpleNamespace(
-            results_path="results.csv",
+            results_path="results_a.csv",
+            results_paths=("results_a.csv", "results_b.csv"),
             sample_boxplot_path="figures/sample.png",
             simulation_boxplot_path="figures/simulation.png",
         )
@@ -730,17 +763,25 @@ def test_spni_pipeline_run_saved_result_replot_records_output_paths(
 
     # Act by running the lightweight replot entrypoint.
     result = pipeline_module.run_saved_result_replot(
-        input_path="results.csv",
+        input_path=["results_a.csv", "results_b.csv"],
         figure_directory="figures",
+        exclude_symmetric_interdictions=True,
+        legend_location="upper left",
     )
 
     # Assert that storage options and diagnostics are preserved.
     assert recorded == {
-        "input_path": "results.csv",
+        "input_path": ["results_a.csv", "results_b.csv"],
         "figure_directory": "figures",
+        "exclude_symmetric_interdictions": True,
+        "legend_location": "upper left",
     }, "run_saved_result_replot should forward storage options unchanged."
     assert result["diagnostics"] == {
-        "input_path": "results.csv",
+        "input_path": "results_a.csv",
+        "input_paths": ["results_a.csv", "results_b.csv"],
+        "num_input_files": 2,
+        "exclude_symmetric_interdictions": True,
+        "legend_location": "upper left",
         "sample_boxplot_path": "figures/sample.png",
         "simulation_boxplot_path": "figures/simulation.png",
     }, "run_saved_result_replot should expose regenerated plot paths."
@@ -893,9 +934,19 @@ def test_spni_pipeline_main_dispatches_replot_without_building_config(
     recorded: dict[str, object] = {}
     expected_result = {"diagnostics": {"input_path": "results.csv"}}
 
-    def _fake_run_saved_result_replot(*, input_path, figure_directory):
+    def _fake_run_saved_result_replot(
+        *,
+        input_path,
+        figure_directory,
+        exclude_symmetric_interdictions,
+        legend_location,
+    ):
         recorded["input_path"] = input_path
         recorded["figure_directory"] = figure_directory
+        recorded["exclude_symmetric_interdictions"] = (
+            exclude_symmetric_interdictions
+        )
+        recorded["legend_location"] = legend_location
         return expected_result
 
     monkeypatch.setattr(
@@ -912,16 +963,20 @@ def test_spni_pipeline_main_dispatches_replot_without_building_config(
     # Act by dispatching through the general main entrypoint.
     result = pipeline_module.main(
         mode="replot",
-        input_path="results.csv",
+        input_path=["results_a.csv", "results_b.csv"],
         figure_directory="figures",
+        exclude_symmetric_interdictions=True,
+        legend_location="upper left",
     )
 
     # Assert that only the replot-specific arguments are forwarded.
     assert result is expected_result, \
         "main should return the result from run_saved_result_replot."
     assert recorded == {
-        "input_path": "results.csv",
+        "input_path": ["results_a.csv", "results_b.csv"],
         "figure_directory": "figures",
+        "exclude_symmetric_interdictions": True,
+        "legend_location": "upper left",
     }, "main should dispatch replot mode without simulation options."
     pass
 
@@ -1045,11 +1100,21 @@ def test_spni_pipeline_cli_parses_scenario_sweep_arguments(monkeypatch):
     pass
 
 
-def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch):
+def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch, tmp_path):
     """Verify that cli parses saved-result replot arguments."""
     # Arrange a main stub and silence the terminal print.
     recorded: dict[str, object] = {}
     expected_result = {"diagnostics": {"input_path": "results.csv"}}
+    first_results_path = tmp_path / "results_a.csv"
+    second_results_path = tmp_path / "results_b.csv"
+    first_results_path.write_text(
+        "simulation_index,sample_index\n",
+        encoding="utf-8",
+    )
+    second_results_path.write_text(
+        "simulation_index,sample_index\n",
+        encoding="utf-8",
+    )
 
     def _fake_main(**kwargs):
         recorded["kwargs"] = kwargs
@@ -1069,9 +1134,13 @@ def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch):
             "--mode",
             "replot",
             "--input-path",
-            "results.csv",
+            str(first_results_path),
+            str(second_results_path),
             "--figure-directory",
             "figures",
+            "--exclude-symmetric-interdictions",
+            "--legend-location",
+            "upper left",
         ]
     )
 
@@ -1080,8 +1149,35 @@ def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch):
         "cli should return the result from main for replot mode."
     assert recorded["kwargs"]["mode"] == "replot", \
         "cli should forward replot mode."
-    assert recorded["kwargs"]["input_path"] == "results.csv", \
-        "cli should forward the saved result CSV path."
+    assert recorded["kwargs"]["input_path"] == [
+        str(first_results_path),
+        str(second_results_path),
+    ], "cli should forward multiple saved result CSV paths."
     assert recorded["kwargs"]["figure_directory"] == "figures", \
         "cli should forward the requested figure directory."
+    assert recorded["kwargs"]["exclude_symmetric_interdictions"] is True, \
+        "cli should forward the symmetric-interdiction exclusion flag."
+    assert recorded["kwargs"]["legend_location"] == "upper left", \
+        "cli should forward the boxplot legend location."
+    pass
+
+
+def test_spni_pipeline_cli_rejects_missing_replot_input_path(monkeypatch):
+    """Verify that cli rejects missing saved-result CSV paths."""
+    # Arrange a main stub that should not be reached after path validation.
+    def _fake_main(**kwargs):
+        raise AssertionError("cli should reject missing files before main.")
+
+    monkeypatch.setattr(pipeline_module, "main", _fake_main)
+
+    # Act and assert that a missing --input-path value fails immediately.
+    with pytest.raises(FileNotFoundError, match="missing_results.csv"):
+        pipeline_module.cli(
+            [
+                "--mode",
+                "replot",
+                "--input-path",
+                "missing_results.csv",
+            ]
+        )
     pass

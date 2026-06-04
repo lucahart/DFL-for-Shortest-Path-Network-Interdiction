@@ -61,6 +61,24 @@ def _seed_triplet(seed: int) -> tuple[int, int, int]:
     return int(values[0]), int(values[1]), int(values[2])
 
 
+########################
+### Regression tests ###
+########################
+
+def test_spni_config_hp_default_disables_underprediction_safeguard():
+    """Verify that SPO+ underprediction flooring is opt-in by default."""
+    # Arrange a fresh legacy config.
+    cfg = HP()
+
+    # Act by reading the safeguard weight used by setup_dfl_predictor.
+    weight = cfg.get("surrogate_underprediction_penalty_weight")
+
+    # Assert that ordinary simulations do not activate the safeguard.
+    assert weight == 0.0, \
+        "HP should leave the SPO+ underprediction safeguard disabled."
+    pass
+
+
 #################################
 ### test build_run_config(...) ###
 #################################

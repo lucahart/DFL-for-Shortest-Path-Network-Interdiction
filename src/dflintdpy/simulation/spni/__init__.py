@@ -30,6 +30,7 @@ from dflintdpy.simulation.spni.reporting import (
     format_simulation_summary_tables,
     print_simulation_summary,
     save_learning_curve_plots,
+    save_seed_sweep_learning_curve_plots,
 )
 from dflintdpy.simulation.spni.storage import (
     ReplotStoragePaths,
@@ -75,6 +76,7 @@ __all__ = [
     "format_simulation_summary_tables",
     "print_simulation_summary",
     "save_learning_curve_plots",
+    "save_seed_sweep_learning_curve_plots",
     "ReplotStoragePaths",
     "SweepStoragePaths",
     "persist_sweep_outputs",

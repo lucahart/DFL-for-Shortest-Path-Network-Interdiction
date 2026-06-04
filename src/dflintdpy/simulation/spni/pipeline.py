@@ -35,6 +35,7 @@ from dflintdpy.simulation.spni.results import (
 from dflintdpy.simulation.spni.reporting import (
     print_simulation_summary,
     save_learning_curve_plots,
+    save_seed_sweep_learning_curve_plots,
 )
 from dflintdpy.simulation.spni.storage import (
     persist_scenario_sweep_outputs,
@@ -277,6 +278,30 @@ def _parse_scenarios_arg(raw_scenarios: str | None) -> list[int] | None:
     )
 
 
+def _parse_input_paths_arg(
+    raw_input_paths: Sequence[Sequence[str]] | None,
+) -> str | list[str] | None:
+    """Flatten and validate one or more CLI input-path groups."""
+    if raw_input_paths is None:
+        return None
+
+    input_paths = [
+        input_path
+        for group in raw_input_paths
+        for input_path in group
+    ]
+    if not input_paths:
+        return None
+    for input_path in input_paths:
+        if not Path(input_path).exists():
+            raise FileNotFoundError(
+                f"Saved SPNI result CSV not found: {input_path}"
+            )
+    if len(input_paths) == 1:
+        return input_paths[0]
+    return input_paths
+
+
 def _apply_seed_bundle(
     run_cfg: SPNIRunConfig,
     *,
@@ -303,7 +328,9 @@ def main(
     *,
     mode: str = "seed_sweep",
     cfg: Any | None = None,
-    input_path: str | Path | None = None,
+    input_path: str | Path | Sequence[str | Path] | None = None,
+    exclude_symmetric_interdictions: bool = False,
+    legend_location: str | None = None,
     scenarios: Sequence[int] | None = None,
     num_seeds: int | None = None,
     compute_asym_intd: bool | None = None,
@@ -350,6 +377,10 @@ def main(
         return handlers[mode](
             input_path=input_path,
             figure_directory=figure_directory,
+            exclude_symmetric_interdictions=(
+                exclude_symmetric_interdictions
+            ),
+            legend_location=legend_location,
         )
 
     resolved_cfg = _apply_cfg_overrides(
@@ -375,6 +406,8 @@ def main(
                 getattr(resolved_cfg, "num_seeds", 1),
             )
         )
+        if legend_location is not None:
+            run_options["legend_location"] = legend_location
         return handler(
             resolved_cfg,
             num_seeds=resolved_num_seeds,
@@ -406,17 +439,35 @@ def main(
 
 def run_saved_result_replot(
     *,
-    input_path: str | Path,
+    input_path: str | Path | Sequence[str | Path],
     figure_directory: str | Path | None = None,
+    exclude_symmetric_interdictions: bool = False,
+    legend_location: str | None = None,
 ) -> dict[str, Any]:
     """Regenerate result boxplots from a saved seed-sweep CSV."""
     stored_paths = replot_saved_sweep_outputs(
         input_path,
         figure_directory=figure_directory,
+        exclude_symmetric_interdictions=exclude_symmetric_interdictions,
+        legend_location=legend_location,
+    )
+    stored_input_paths = getattr(
+        stored_paths,
+        "results_paths",
+        (stored_paths.results_path,),
     )
     return {
         "diagnostics": {
             "input_path": str(stored_paths.results_path),
+            "input_paths": [
+                str(results_path)
+                for results_path in stored_input_paths
+            ],
+            "num_input_files": len(stored_input_paths),
+            "exclude_symmetric_interdictions": bool(
+                exclude_symmetric_interdictions
+            ),
+            "legend_location": legend_location or "lower right",
             "sample_boxplot_path": str(stored_paths.sample_boxplot_path),
             "simulation_boxplot_path": str(
                 stored_paths.simulation_boxplot_path
@@ -513,6 +564,7 @@ def run_seed_sweep(
     present_results: bool = True,
     output_path: str | None = None,
     figure_directory: str | None = None,
+    legend_location: str | None = None,
     **options,
 ) -> SweepResult:
     """Run a multi-seed SPNI sweep and return an aggregated result object.
@@ -559,10 +611,15 @@ def run_seed_sweep(
         },
     )
     if present_results:
+        learning_curve_paths = save_seed_sweep_learning_curve_plots(
+            results,
+            figure_directory=figure_directory,
+        )
         stored_paths = persist_sweep_outputs(
             sweep_result,
             output_path=output_path,
             figure_directory=figure_directory,
+            legend_location=legend_location,
         )
         sweep_result.diagnostics.update(
             {
@@ -571,6 +628,7 @@ def run_seed_sweep(
                 "simulation_boxplot_path": str(
                     stored_paths.simulation_boxplot_path
                 ),
+                "learning_curve_seed_sweep_plot_paths": learning_curve_paths,
             }
         )
     else:
@@ -579,6 +637,7 @@ def run_seed_sweep(
                 "legacy_output_path": None,
                 "sample_boxplot_path": None,
                 "simulation_boxplot_path": None,
+                "learning_curve_seed_sweep_plot_paths": {},
             }
         )
     return sweep_result
@@ -722,8 +781,13 @@ def cli(
     )
     parser.add_argument(
         "--input-path",
+        action="append",
+        nargs="+",
         default=None,
-        help="Saved SPNI result CSV to use when mode=replot.",
+        help=(
+            "Saved SPNI result CSV(s) to use when mode=replot. "
+            "Pass multiple paths after one flag or repeat the flag."
+        ),
     )
     parser.add_argument(
         "--scenarios",
@@ -780,6 +844,23 @@ def cli(
         help="Optional directory for generated SPNI figures.",
     )
     parser.add_argument(
+        "--exclude-symmetric-interdictions",
+        action="store_true",
+        default=False,
+        help=(
+            "When mode=replot, omit symmetric-interdiction boxplot groups "
+            "and write *_no_sym figure files."
+        ),
+    )
+    parser.add_argument(
+        "--legend-location",
+        default=None,
+        help=(
+            "Matplotlib legend location for generated result boxplots, e.g. "
+            "'upper left', 'lower right', or 'best'."
+        ),
+    )
+    parser.add_argument(
         "--set",
         dest="overrides",
         action="append",
@@ -796,7 +877,11 @@ def cli(
 
     result = main(
         mode=parsed.mode,
-        input_path=parsed.input_path,
+        input_path=_parse_input_paths_arg(parsed.input_path),
+        exclude_symmetric_interdictions=(
+            parsed.exclude_symmetric_interdictions
+        ),
+        legend_location=parsed.legend_location,
         scenarios=_parse_scenarios_arg(parsed.scenarios),
         num_seeds=parsed.num_seeds,
         compute_asym_intd=parsed.compute_asym_intd,
