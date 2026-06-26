@@ -6,3 +6,5 @@ torch
 scikit-learn
 tabulate
 gurobipy
+pandas
+cvxpy

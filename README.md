@@ -4,13 +4,14 @@ A research codebase for experimenting with decision-focused learning (DFL) appli
 
 The library provides graph models, Gurobi-based solvers for SPNI problems, DFL and predict-then-optimize (PO) training utilities, adversarial data generation, a typed simulation pipeline, and a CLI for running reproducible experiments.
 
+You can find the full paper here: [Hartmann26 – DFL in Network Interdiction Games](Hartmann26-DFL_in_Network_Interdiction_Games.pdf)
+
 ## Prerequisites
 
 - **Python** 3.9 or later
 - **Gurobi** with a valid license — most solvers rely on `gurobipy`. Install the Python package separately (`pip install gurobipy`) and activate a license before running experiments.
 - **PyTorch** — install separately to match your CUDA version if needed, or let `pip` resolve a CPU build.
-- **Core libraries** — `numpy`, `scipy`, `networkx`, `matplotlib`, `pyepo`, `scikit-learn`, `tabulate` (installed via `requirements.txt`).
-- **Jupyter** (optional) — install `jupyterlab` to run the notebooks.
+- **Core libraries** — `numpy`, `networkx`, `pyepo`, `matplotlib`, `scikit-learn`, `pandas`, `cvxpy` (installed via `requirements.txt`).
 
 ## Installation
 
@@ -161,8 +162,8 @@ If you use this code, please cite:
 
 ```
 Luca M. Hartmann, Parinaz Naghizadeh,
-"Decision-Focused Learning meets Network Interdiction: The Cost of Staying Behind,"
-Working paper, 2025.
+"Decision-Focused Learning in Network Interdiction Games,"
+Working paper, June 2026.
 ```
 Bibtex citation:
 
