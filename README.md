@@ -4,8 +4,6 @@ A research codebase for experimenting with decision-focused learning (DFL) appli
 
 The library provides graph models, Gurobi-based solvers for SPNI problems, DFL and predict-then-optimize (PO) training utilities, adversarial data generation, a typed simulation pipeline, and a CLI for running reproducible experiments.
 
-You can find the full paper here: [Hartmann26 – DFL in Network Interdiction Games](Hartmann26-DFL_in_Network_Interdiction_Games.pdf)
-
 ## Prerequisites
 
 - **Python** 3.9 or later
