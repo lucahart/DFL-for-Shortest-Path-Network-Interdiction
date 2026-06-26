@@ -64,13 +64,13 @@ dflintd-spni \
   --set 'spo_epochs=1'
 ```
 
-**Synthetic grid seed sweep** (paper default settings):
+**Grid seed sweep** (paper default settings):
 ```bash
 dflintd-spni \
   --mode seed_sweep \
   --num-seeds 5 \
   --set 'grid_size=(5, 5)' \
-  --set 'deg=12' \
+  --set 'deg=8' \
   --set 'num_train_samples=500' \
   --set 'num_val_samples=100' \
   --set 'num_test_samples=250' \
@@ -82,14 +82,18 @@ dflintd-spni \
 ```bash
 dflintd-spni \
   --mode seed_sweep \
-  --num-seeds 3 \
-  --load-real-world-graph real_world_spni_data/town_level_arcs.csv \
-  --source-node 1 \
-  --target-node 10 \
-  --set 'num_train_samples=100' \
-  --set 'num_val_samples=25' \
-  --set 'num_test_samples=100' \
-  --set 'num_scenarios=3'
+  --num-seeds 5 \
+  --load-real-world-graph real_world_spni_data/transportation_networks/Anaheim_net.tntp \
+  --source-node 108 \
+  --target-node 410 \
+  --set 'deg=12' \
+  --set 'num_train_samples=500' \
+  --set 'num_val_samples=100' \
+  --set 'num_test_samples=250' \
+  --set 'num_scenarios=3' \
+  --set "surrogate_underprediction_penalty_weight=1.0" \
+  --set "pred_model=\"nn\""
+
 ```
 
 See [docs/spni_run_guide.md](docs/spni_run_guide.md) for all modes (`single`, `seed_sweep`, `scenario_sweep`, `replot`), config parameters, and output paths.
@@ -159,6 +163,17 @@ If you use this code, please cite:
 Luca M. Hartmann, Parinaz Naghizadeh,
 "Decision-Focused Learning meets Network Interdiction: The Cost of Staying Behind,"
 Working paper, 2025.
+```
+Bibtex citation:
+
+```bibtex
+@misc{hartmann2026dfl_spni,
+  author       = {Hartmann, Luca M. and Naghizadeh, Parinaz},
+  title        = {Decision-Focused Learning in Network Interdiction Games},
+  year         = {2026},
+  month        = {June},
+  note         = {Working paper},
+}
 ```
 
 **Key references used in this codebase:**

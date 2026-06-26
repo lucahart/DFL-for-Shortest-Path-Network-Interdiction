@@ -222,8 +222,8 @@ def _merge_run_metadata(
         "random_seed": int(run_cfg.random_seed),
         "intd_seed": int(run_cfg.intd_seed),
         "loader_seed": int(run_cfg.loader_seed),
-        "spo_epochs": int(run_cfg.spo_epochs),
-        "spo_lr": float(run_cfg.spo_lr),
+        "dfl_epochs": int(run_cfg.dfl_epochs),
+        "dfl_lr": float(run_cfg.dfl_lr),
         "batch_size_cfg": int(run_cfg.batch_size),
         "log_every_n_steps": int(log_every_n_steps),
         "max_batches_per_epoch": (
@@ -506,7 +506,7 @@ def _run_single_diagnostic(
     _set_seed(int(run_cfg.random_seed))
     predictor = _build_predictor_model(run_cfg, output_size)
     loss_fn = _build_loss_fn(run_cfg, graph_bundle.opt_model)
-    optimizer = torch.optim.Adam(predictor.parameters(), lr=run_cfg.spo_lr)
+    optimizer = torch.optim.Adam(predictor.parameters(), lr=run_cfg.dfl_lr)
 
     step_rows: list[dict[str, Any]] = []
 
@@ -527,7 +527,7 @@ def _run_single_diagnostic(
         trainer,
         getattr(dataset_bundle, spec["train_loader_attr"]),
         getattr(dataset_bundle, spec["val_loader_attr"]),
-        epochs=run_cfg.spo_epochs,
+        epochs=run_cfg.dfl_epochs,
     )
 
     metadata = _merge_run_metadata(

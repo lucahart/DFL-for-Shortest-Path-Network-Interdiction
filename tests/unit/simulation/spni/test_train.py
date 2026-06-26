@@ -43,10 +43,10 @@ def run_cfg() -> SPNIRunConfig:
         intd_seed=17,
         loader_seed=19,
         pred_model="linear",
-        po_epochs=8,
-        spo_epochs=9,
-        po_lr=1e-3,
-        spo_lr=2e-3,
+        pfl_epochs=8,
+        dfl_epochs=9,
+        pfl_lr=1e-3,
+        dfl_lr=2e-3,
         compute_asym_intd=True,
         compute_wrong_asym_intd=False,
         load_real_world_graph=None,
@@ -177,7 +177,7 @@ def test_spni_train_train_pfl_predictor_delegates_to_legacy_helper(
     # Assert that the helper saw the adversarial training view and cache tag.
     assert len(calls) == 1, \
         "train_pfl_predictor should delegate to setup_pfl_predictor once."
-    assert calls[0]["cfg"].get("po_epochs") == run_cfg.po_epochs, \
+    assert calls[0]["cfg"].get("pfl_epochs") == run_cfg.pfl_epochs, \
         "PFL training should expose normalized config values via cfg.get(...)."
     assert calls[0]["cfg"].get("lam") == 0.0, \
         "PFL training should fall back to the base config for legacy keys."
@@ -341,7 +341,7 @@ def test_spni_train_train_dfl_predictor_uses_explicit_family_mapping(
     # Assert that the helper saw the expected family-specific mapping.
     assert len(calls) == 1, \
         "train_dfl_predictor should delegate to setup_dfl_predictor once."
-    assert calls[0]["cfg"].get("spo_epochs") == run_cfg.spo_epochs, \
+    assert calls[0]["cfg"].get("dfl_epochs") == run_cfg.dfl_epochs, \
         "DFL training should expose normalized config values via cfg.get(...)."
     assert calls[0]["graph"] is graph_bundle.graph, \
         "DFL training should forward the graph object unchanged."

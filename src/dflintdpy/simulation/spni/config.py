@@ -84,10 +84,10 @@ class SPNIRunConfig:
     intd_seed: int
     loader_seed: int
     pred_model: str | None
-    po_epochs: int
-    spo_epochs: int
-    po_lr: float
-    spo_lr: float
+    pfl_epochs: int
+    dfl_epochs: int
+    pfl_lr: float
+    dfl_lr: float
     compute_asym_intd: bool = True
     compute_wrong_asym_intd: bool = False
     load_real_world_graph: str | None = None
@@ -384,24 +384,24 @@ def build_run_config(
         pred_model=_normalize_pred_model(
             _read_cfg_value(base_cfg, "pred_model", None)
         ),
-        po_epochs=_coerce_int(
-            _require_cfg_value(base_cfg, "po_epochs"),
-            "po_epochs",
+        pfl_epochs=_coerce_int(
+            _require_cfg_value(base_cfg, "pfl_epochs"),
+            "pfl_epochs",
             minimum=0,
         ),
-        spo_epochs=_coerce_int(
-            _require_cfg_value(base_cfg, "spo_epochs"),
-            "spo_epochs",
+        dfl_epochs=_coerce_int(
+            _require_cfg_value(base_cfg, "dfl_epochs"),
+            "dfl_epochs",
             minimum=0,
         ),
-        po_lr=_coerce_float(
-            _require_cfg_value(base_cfg, "po_lr"),
-            "po_lr",
+        pfl_lr=_coerce_float(
+            _require_cfg_value(base_cfg, "pfl_lr"),
+            "pfl_lr",
             minimum=0.0,
         ),
-        spo_lr=_coerce_float(
-            _require_cfg_value(base_cfg, "spo_lr"),
-            "spo_lr",
+        dfl_lr=_coerce_float(
+            _require_cfg_value(base_cfg, "dfl_lr"),
+            "dfl_lr",
             minimum=0.0,
         ),
         compute_asym_intd=bool(compute_asym_intd),
@@ -506,10 +506,10 @@ def describe_run(run_cfg: SPNIRunConfig) -> dict[str, Any]:
         "benders_eps": float(run_cfg.benders_eps),
         "lsd": float(run_cfg.lsd),
         "pred_model": run_cfg.pred_model,
-        "po_epochs": int(run_cfg.po_epochs),
-        "spo_epochs": int(run_cfg.spo_epochs),
-        "po_lr": float(run_cfg.po_lr),
-        "spo_lr": float(run_cfg.spo_lr),
+        "pfl_epochs": int(run_cfg.pfl_epochs),
+        "dfl_epochs": int(run_cfg.dfl_epochs),
+        "pfl_lr": float(run_cfg.pfl_lr),
+        "dfl_lr": float(run_cfg.dfl_lr),
         "compute_asym_intd": bool(run_cfg.compute_asym_intd),
         "compute_wrong_asym_intd": bool(run_cfg.compute_wrong_asym_intd),
         "load_real_world_graph": run_cfg.load_real_world_graph,

@@ -73,10 +73,10 @@ def test_repair_seed_sweep_hashes_repairs_dataset_and_predictor(tmp_path: Path):
         "lsd": 1e-5,
         "intd_seed": intd_seed,
         "batch_size": 32,
-        "po_epochs": 400,
-        "spo_epochs": 200,
-        "po_lr": 2e-4,
-        "spo_lr": 3.5e-4,
+        "pfl_epochs": 400,
+        "dfl_epochs": 200,
+        "pfl_lr": 2e-4,
+        "dfl_lr": 3.5e-4,
     }
     pred_hash_wrong = _unique_hash(pred_subset_wrong, type="pred")
     pred_meta_old = predictors_dir / f"pred_mrdfl_{pred_hash_wrong}.meta.json"
@@ -174,10 +174,10 @@ def test_repair_seed_sweep_hashes_dry_run_only_reports(tmp_path: Path):
         "lsd": 1e-5,
         "intd_seed": intd_seed,
         "batch_size": 32,
-        "po_epochs": 400,
-        "spo_epochs": 200,
-        "po_lr": 2e-4,
-        "spo_lr": 3.5e-4,
+        "pfl_epochs": 400,
+        "dfl_epochs": 200,
+        "pfl_lr": 2e-4,
+        "dfl_lr": 3.5e-4,
     }
     pred_hash_wrong = _unique_hash(pred_subset_wrong, type="pred")
     pred_meta_old = predictors_dir / f"pred_adfl_{pred_hash_wrong}.meta.json"

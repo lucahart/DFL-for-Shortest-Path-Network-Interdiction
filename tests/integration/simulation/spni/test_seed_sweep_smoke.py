@@ -66,10 +66,10 @@ def test_spni_pipeline_seed_sweep_smoke_returns_two_ordered_runs(monkeypatch):
         "intd_seed": 11,
         "loader_seed": 13,
         "pred_model": "linear",
-        "po_epochs": 1,
-        "spo_epochs": 1,
-        "po_lr": 1e-3,
-        "spo_lr": 1e-3,
+        "pfl_epochs": 1,
+        "dfl_epochs": 1,
+        "pfl_lr": 1e-3,
+        "dfl_lr": 1e-3,
     }
 
     def _fake_run_single_simulation(cfg, **options):

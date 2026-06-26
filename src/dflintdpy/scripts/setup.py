@@ -148,8 +148,8 @@ def setup_pfl_predictor(
 
     # This setup can be used for training a PO model or pre-training an SPO model
     if train_type == "po":
-        lr = cfg.get("po_lr")
-        epochs = cfg.get("po_epochs")
+        lr = cfg.get("pfl_lr")
+        epochs = cfg.get("pfl_epochs")
     elif train_type == "spo":
         lr = cfg.get("spo_po_lr")
         epochs = cfg.get("spo_po_epochs")
@@ -268,7 +268,7 @@ def setup_dfl_predictor(
         loss_fn = HybridSPOPLoss(opt_model, lam=lam, anchor=cfg.get("anchor"))
 
     # Init optimizer
-    optimizer = torch.optim.Adam(spo_model.parameters(), lr=cfg.get("spo_lr"))
+    optimizer = torch.optim.Adam(spo_model.parameters(), lr=cfg.get("dfl_lr"))
     underprediction_penalty_weight = cfg.get(
         "surrogate_underprediction_penalty_weight",
         0.0,
@@ -299,7 +299,7 @@ def setup_dfl_predictor(
     train_loss_log, train_regret_log, val_loss_log, val_regret_log = spo_trainer.fit(
         training_data["train_loader"], 
         training_data["val_loader"], 
-        epochs=cfg.get("spo_epochs"),
+        epochs=cfg.get("dfl_epochs"),
         max_lr_reductions=cfg.get("max_lr_reductions"),
     )
 

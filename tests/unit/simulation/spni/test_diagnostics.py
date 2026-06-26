@@ -73,7 +73,7 @@ def test_run_gradient_conflict_diagnostics_writes_sweep_outputs(
         output_dir=tmp_path,
         log_every_n_steps=5,
         max_batches_per_epoch=2,
-        spo_epochs=1,
+        dfl_epochs=1,
     )
 
     assert len(calls) == 8, (

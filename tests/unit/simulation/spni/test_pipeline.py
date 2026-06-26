@@ -45,10 +45,10 @@ def run_cfg() -> SPNIRunConfig:
         intd_seed=17,
         loader_seed=19,
         pred_model="linear",
-        po_epochs=8,
-        spo_epochs=9,
-        po_lr=1e-3,
-        spo_lr=2e-3,
+        pfl_epochs=8,
+        dfl_epochs=9,
+        pfl_lr=1e-3,
+        dfl_lr=2e-3,
         compute_asym_intd=True,
         compute_wrong_asym_intd=False,
         load_real_world_graph=None,
@@ -1138,7 +1138,7 @@ def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch, tmp_path):
             str(second_results_path),
             "--figure-directory",
             "figures",
-            "--exclude-symmetric-interdictions",
+            "--include-symmetric-interdictions",
             "--legend-location",
             "upper left",
         ]
@@ -1155,8 +1155,8 @@ def test_spni_pipeline_cli_parses_replot_arguments(monkeypatch, tmp_path):
     ], "cli should forward multiple saved result CSV paths."
     assert recorded["kwargs"]["figure_directory"] == "figures", \
         "cli should forward the requested figure directory."
-    assert recorded["kwargs"]["exclude_symmetric_interdictions"] is True, \
-        "cli should forward the symmetric-interdiction exclusion flag."
+    assert recorded["kwargs"]["exclude_symmetric_interdictions"] is False, \
+        "cli should map --include-symmetric-interdictions to exclude_symmetric_interdictions=False."
     assert recorded["kwargs"]["legend_location"] == "upper left", \
         "cli should forward the boxplot legend location."
     pass

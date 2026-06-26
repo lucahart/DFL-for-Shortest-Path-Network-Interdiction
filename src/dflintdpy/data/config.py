@@ -6,7 +6,7 @@ from typing import Any, Tuple
 class HP:
     # Hyperparameters
     num_seeds : int = 5 # number of simulations to run and random seed sets to use
-    seed_sweep_offset : int = 100 # Offset to ensure different random seeds for different runs
+    seed_sweep_offset : int = 105 # Offset to ensure different random seeds for different runs
 
     # Data parameters
     num_features : int = 5
@@ -34,10 +34,10 @@ class HP:
 
     # ML hyperparameters
     batch_size : int = 32
-    po_epochs : int = 800
-    spo_epochs : int = 600 # 300
-    po_lr : float = 1e-2 # 5e-2 or 1e-3
-    spo_lr : float = 1e-2 # 1e-2  or 1e-3
+    pfl_epochs : int = 800
+    dfl_epochs : int = 600 # 300
+    pfl_lr : float = 1e-2 # 5e-2 or 1e-3
+    dfl_lr : float = 1e-2 # 1e-2  or 1e-3
     pred_model : str = "linear"  # "nn" or "linear"
     max_lr_reductions : int | None = 10
     surrogate_underprediction_penalty_weight : float = 0.0

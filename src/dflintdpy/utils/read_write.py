@@ -113,10 +113,10 @@ INTD_KEYS: Set[str] = {
 PRED_BASE_KEYS: Set[str] = {
     *DATA_KEYS,  # predictor training depends on data generation
     "batch_size",
-    "po_epochs",
-    "spo_epochs",
-    "po_lr",
-    "spo_lr",
+    "pfl_epochs",
+    "dfl_epochs",
+    "pfl_lr",
+    "dfl_lr",
     "hidden_size_1",
     "max_lr_reductions",
     "surrogate_underprediction_penalty_weight",
@@ -164,13 +164,14 @@ EPHEMERAL_KEYS: Set[str] = {
     "git_commit",
 }
 
-# Optional: map new key names to old key names (or vice versa) to avoid duplication
-# when you refactor config naming.
-# Example:
-#   If you renamed "training.learning_rate" -> "training.lr",
-#   you can make both map to a single canonical key "training.lr".
+# Maps old config key names to their canonical replacements.
+# Any old key encountered during cache-hash computation is folded into the
+# new name so that results generated before the rename still hit the cache.
 KEY_ALIASES: Dict[str, str] = {
-    # "training.learning_rate": "training.lr",
+    "po_epochs":  "pfl_epochs",
+    "spo_epochs": "dfl_epochs",
+    "po_lr":      "pfl_lr",
+    "spo_lr":     "dfl_lr",
 }
 
 

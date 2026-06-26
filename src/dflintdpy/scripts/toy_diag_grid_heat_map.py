@@ -92,8 +92,8 @@ def train_dfl_on_shortest_path(cfg):
     cfg.set("num_test_samples", n_test)
     cfg.set("deg", 4)
     cfg.set("pred_model", "nn")  # "nn" or "linear"
-    # cfg.set("po_epochs", 50)
-    # cfg.set("spo_epochs", 50)
+    # cfg.set("pfl_epochs", 50)
+    # cfg.set("dfl_epochs", 50)
     cfg.set("renormalize_predictions", False)
 
     # Define grid network

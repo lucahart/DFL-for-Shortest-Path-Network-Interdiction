@@ -336,7 +336,7 @@ def main(
     mode: str = "seed_sweep",
     cfg: Any | None = None,
     input_path: str | Path | Sequence[str | Path] | None = None,
-    exclude_symmetric_interdictions: bool = False,
+    exclude_symmetric_interdictions: bool = True,
     legend_location: str | None = None,
     scenarios: Sequence[int] | None = None,
     num_seeds: int | None = None,
@@ -448,7 +448,7 @@ def run_saved_result_replot(
     *,
     input_path: str | Path | Sequence[str | Path],
     figure_directory: str | Path | None = None,
-    exclude_symmetric_interdictions: bool = False,
+    exclude_symmetric_interdictions: bool = True,
     legend_location: str | None = None,
 ) -> dict[str, Any]:
     """Regenerate result boxplots from a saved seed-sweep CSV."""
@@ -572,6 +572,7 @@ def run_seed_sweep(
     output_path: str | None = None,
     figure_directory: str | None = None,
     legend_location: str | None = None,
+    exclude_symmetric_interdictions: bool = True,
     **options,
 ) -> SweepResult:
     """Run a multi-seed SPNI sweep and return an aggregated result object.
@@ -627,6 +628,7 @@ def run_seed_sweep(
             output_path=output_path,
             figure_directory=figure_directory,
             legend_location=legend_location,
+            exclude_symmetric_interdictions=exclude_symmetric_interdictions,
         )
         sweep_result.diagnostics.update(
             {
@@ -854,12 +856,13 @@ def cli(
         help="Optional directory for generated SPNI figures.",
     )
     parser.add_argument(
-        "--exclude-symmetric-interdictions",
+        "--include-symmetric-interdictions",
         action="store_true",
         default=False,
         help=(
-            "When mode=replot, omit symmetric-interdiction boxplot groups "
-            "and write *_no_sym figure files."
+            "Include symmetric-interdiction boxplot groups in generated "
+            "figures. By default, symmetric-interdiction results are omitted "
+            "from plots (but are still computed and stored in the CSV)."
         ),
     )
     parser.add_argument(
@@ -889,7 +892,7 @@ def cli(
         mode=parsed.mode,
         input_path=_parse_input_paths_arg(parsed.input_path),
         exclude_symmetric_interdictions=(
-            parsed.exclude_symmetric_interdictions
+            not parsed.include_symmetric_interdictions
         ),
         legend_location=parsed.legend_location,
         scenarios=_parse_scenarios_arg(parsed.scenarios),

@@ -80,9 +80,10 @@ These are the main flags outside of `--set`.
 - `--input-path PATH [PATH ...]`: saved CSV file or files to read when
   `--mode replot`. You can pass several paths after one flag or repeat the
   flag.
-- `--exclude-symmetric-interdictions`: with `--mode replot`, omit the
-  symmetric-interdiction group from the regenerated boxplots. The output files
-  use a `_no_sym` suffix.
+- `--include-symmetric-interdictions`: include the symmetric-interdiction group
+  in generated boxplots. By default, symmetric-interdiction results are omitted
+  from all plots (but are still computed and stored in the CSV). Pass this flag
+  to add them back. Output files without the flag use a `_no_sym` suffix.
 - `--legend-location LOC`: place the result-boxplot legend with a Matplotlib
   location string such as `upper left`, `lower right`, or `best`.
 - `--figure-directory PATH`: directory for generated figures. Learning curves
@@ -115,7 +116,7 @@ Values are parsed with Python literal syntax. This means:
 - tuples use Python tuple syntax: `--set 'grid_size=(5, 5)'`
 - strings can be unquoted or quoted: `--set 'pred_model=linear'`
 - booleans use Python spelling: `--set 'some_flag=True'`
-- floats and integers are written normally: `--set 'spo_lr=0.001'`
+- floats and integers are written normally: `--set 'dfl_lr=0.001'`
 
 Commonly adjusted parameters:
 
@@ -123,7 +124,7 @@ Commonly adjusted parameters:
 - Graph shape: `grid_size`, `deg`, `noise_width`
 - Synthetic feature count: `num_features`
 - Interdiction setup: `budget`, `num_scenarios`
-- Training setup: `batch_size`, `po_epochs`, `spo_epochs`, `po_lr`, `spo_lr`,
+- Training setup: `batch_size`, `pfl_epochs`, `dfl_epochs`, `pfl_lr`, `dfl_lr`,
   `pred_model`
 - Solver tolerances: `benders_max_count`, `benders_eps`, `lsd`
 - Seeds: `seed`, `random_seed`, `intd_seed`, `loader_seed`,
@@ -147,8 +148,8 @@ dflintd-spni \
   --set 'num_val_samples=4' \
   --set 'num_test_samples=4' \
   --set 'num_scenarios=2' \
-  --set 'po_epochs=1' \
-  --set 'spo_epochs=1'
+  --set 'pfl_epochs=1' \
+  --set 'dfl_epochs=1'
 ```
 
 Normal synthetic grid seed sweep:
@@ -239,7 +240,9 @@ dflintd-spni \
   --legend-location "upper left"
 ```
 
-To regenerate only the uninterdicted and asymmetric groups, add:
+By default, symmetric-interdiction results are omitted from all generated plots.
+To regenerate plots with the symmetric group included, add
+`--include-symmetric-interdictions`:
 
 ```bash
 source ./.venv/bin/activate
@@ -247,7 +250,7 @@ source ./.venv/bin/activate
 dflintd-spni \
   --mode replot \
   --input-path results/results_train_500_valid_25_test_250_m_5_n_5_deg_16_noise_0.5_seeds_2.csv \
-  --exclude-symmetric-interdictions
+  --include-symmetric-interdictions
 ```
 
 Python helper form:
@@ -260,26 +263,25 @@ paths = replot_saved_sweep_outputs(
         "results/results_train_500_valid_100_test_250_m_5_n_5_deg_10_noise_0.5_seeds_3.csv",
         "results/results_train_500_valid_100_test_250_m_5_n_5_deg_10_noise_0.5_seeds_2.csv",
     ],
-    exclude_symmetric_interdictions=True,
     legend_location="upper left",
 )
 print(paths)
 ```
 
 This direct figure compiler recreates these files in `figures/` unless you pass
-`figure_directory=...`:
+`figure_directory=...`. By default (symmetric interdictions excluded):
+
+- `<figure_directory>/<csv_stem>_no_sym_boxplot.png`
+- `<figure_directory>/<csv_stem>_no_sym_boxplot_sims.png`
+
+When `exclude_symmetric_interdictions=False` (i.e. with `--include-symmetric-interdictions`):
 
 - `<figure_directory>/<csv_stem>_boxplot.png`
 - `<figure_directory>/<csv_stem>_boxplot_sims.png`
 
 For multiple compatible result filenames, the combined output stem uses the
 shared parameter prefix and the total number of loaded simulations, for example
-`results_train_..._seeds_5_combined_boxplot.png`.
-
-When `exclude_symmetric_interdictions=True`, the files are instead named:
-
-- `<figure_directory>/<csv_stem>_no_sym_boxplot.png`
-- `<figure_directory>/<csv_stem>_no_sym_boxplot_sims.png`
+`results_train_..._seeds_5_combined_no_sym_boxplot.png`.
 
 It can only regenerate plots that are supported by the saved CSV. It cannot
 recreate learning-curve figures from old CSVs because training logs are not

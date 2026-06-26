@@ -28,8 +28,8 @@ def simulation_result() -> SimpleNamespace:
             budget=2,
             pred_model="linear",
             num_scenarios=4,
-            po_epochs=2,
-            spo_epochs=3,
+            pfl_epochs=2,
+            dfl_epochs=3,
         ),
         seed_bundle=SimpleNamespace(
             sweep_seed=11,
@@ -382,8 +382,8 @@ def test_spni_reporting_save_learning_curve_plots_places_validation_by_epoch(
     result = SimpleNamespace(
         run_config=SimpleNamespace(
             num_scenarios=4,
-            po_epochs=400,
-            spo_epochs=400,
+            pfl_epochs=400,
+            dfl_epochs=400,
         ),
         seed_bundle=SimpleNamespace(sweep_seed=11),
         predictor_bundle=SimpleNamespace(

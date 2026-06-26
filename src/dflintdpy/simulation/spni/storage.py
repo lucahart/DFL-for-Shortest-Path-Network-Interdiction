@@ -189,6 +189,7 @@ def persist_sweep_outputs(
     output_path: str | Path | None = None,
     figure_directory: str | Path | None = None,
     legend_location: str | None = None,
+    exclude_symmetric_interdictions: bool = True,
 ) -> SweepStoragePaths:
     """Save one sweep CSV plus both result-summary boxplots.
 
@@ -205,9 +206,11 @@ def persist_sweep_outputs(
         num_seeds=num_seeds,
         output_path=output_path,
     )
+    suffix = "_no_sym" if exclude_symmetric_interdictions else ""
     sample_boxplot_path, simulation_boxplot_path = _resolve_figure_paths(
         results_path,
         figure_directory=figure_directory,
+        filename_suffix=suffix,
     )
 
     results_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,6 +221,7 @@ def persist_sweep_outputs(
     fig_samples = create_boxplots(
         sweep_result,
         save_path=sample_boxplot_path,
+        include_symmetric_interdiction=not exclude_symmetric_interdictions,
         legend_location=(
             legend_location or _DEFAULT_BOXPLOT_LEGEND_LOCATION
         ),
@@ -227,6 +231,7 @@ def persist_sweep_outputs(
     fig_sims = create_boxplots_by_simulation(
         sweep_result,
         save_path=simulation_boxplot_path,
+        include_symmetric_interdiction=not exclude_symmetric_interdictions,
         legend_location=(
             legend_location or _DEFAULT_BOXPLOT_LEGEND_LOCATION
         ),
@@ -244,7 +249,7 @@ def replot_saved_sweep_outputs(
     results_path: str | Path | Sequence[str | Path],
     *,
     figure_directory: str | Path | None = None,
-    exclude_symmetric_interdictions: bool = False,
+    exclude_symmetric_interdictions: bool = True,
     legend_location: str | None = None,
 ) -> ReplotStoragePaths:
     """Regenerate sweep boxplots from one or more saved result CSVs."""

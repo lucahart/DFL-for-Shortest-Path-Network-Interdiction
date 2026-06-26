@@ -255,7 +255,7 @@ def _configured_epochs_for_family(
 ) -> int:
     """Return the configured total training epochs for one predictor family."""
     fallback = max(len(logs.train_loss), len(logs.train_regret), 1) - 1
-    field_name = "po_epochs" if family == "pfl" else "spo_epochs"
+    field_name = "pfl_epochs" if family == "pfl" else "dfl_epochs"
     raw_value = getattr(run_cfg, field_name, fallback)
     try:
         return max(0, int(raw_value))

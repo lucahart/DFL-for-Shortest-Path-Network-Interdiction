@@ -40,10 +40,10 @@ def hp() -> HP:
     cfg.set("intd_seed", 31)
     cfg.set("loader_seed", 47)
     cfg.set("pred_model", "linear")
-    cfg.set("po_epochs", 9)
-    cfg.set("spo_epochs", 12)
-    cfg.set("po_lr", 5e-4)
-    cfg.set("spo_lr", 8e-4)
+    cfg.set("pfl_epochs", 9)
+    cfg.set("dfl_epochs", 12)
+    cfg.set("pfl_lr", 5e-4)
+    cfg.set("dfl_lr", 8e-4)
     cfg.set("num_seeds", 4)
     cfg.set("seed_sweep_offset", 104)
     cfg.set("metadata", {"label": "phase1"})
@@ -145,10 +145,10 @@ def test_spni_config_build_run_config_supports_mapping_inputs():
         "intd_seed": 9,
         "loader_seed": 10,
         "pred_model": None,
-        "po_epochs": 1,
-        "spo_epochs": 2,
-        "po_lr": 1e-3,
-        "spo_lr": 2e-3,
+        "pfl_epochs": 1,
+        "dfl_epochs": 2,
+        "pfl_lr": 1e-3,
+        "dfl_lr": 2e-3,
     }
 
     # Act by building the normalized config.
